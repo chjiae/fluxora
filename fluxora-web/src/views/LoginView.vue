@@ -3,103 +3,74 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
-import { Sun, Moon, Eye, EyeOff } from 'lucide-vue-next'
+import { Sun, Moon } from 'lucide-vue-next'
 
 const router = useRouter()
 const auth = useAuthStore()
 const themeStore = useThemeStore()
+const message = useMessage()
 
 const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const submitting = ref(false)
 const isDev = import.meta.env.DEV
-const errorMsg = ref('')
 
 async function handleLogin() {
-  if (!username.value || !password.value) {
-    errorMsg.value = '请输入用户名和密码'
-    return
-  }
+  if (!username.value || !password.value) { message.warning('请输入用户名和密码'); return }
   submitting.value = true
-  errorMsg.value = ''
   try {
     await auth.loginAction(username.value, password.value)
-    if (auth.isPlatformAdmin) {
-      await auth.checkSelfOperatedStatus()
-      if (!auth.selfOperatedInitialized) {
-        router.replace('/console/setup')
-      } else {
-        router.replace('/console/overview')
-      }
-    } else {
-      router.replace('/console/overview')
-    }
-  } catch (e: any) {
-    errorMsg.value = auth.error || '用户名或密码错误，请重新输入'
-  } finally {
-    submitting.value = false
-  }
+    if (auth.isPlatformAdmin) { await auth.checkSelfOperatedStatus(); router.replace(auth.selfOperatedInitialized ? '/console/overview' : '/console/setup') }
+    else { router.replace('/console/overview') }
+  } catch (e: any) { message.error(e.userMessage || '用户名或密码错误，请重新输入') } finally { submitting.value = false }
 }
 </script>
 
 <template>
   <div class="login-page">
-    <!-- 左侧：产品介绍 -->
     <div class="login-hero">
       <RouterLink to="/" class="brand">fluxora<span>.</span></RouterLink>
       <h2>API 中转平台</h2>
-      <p class="subtitle">统一接入多上游、多协议与流式 API，为开发者提供稳定、可靠的中转服务。</p>
-      <ul class="features">
-        <li>多租户管理与权限隔离</li>
-        <li>OpenAI / Anthropic 协议兼容</li>
-        <li>流式中继与用量治理</li>
-      </ul>
-      <div style="margin-top:auto;padding-top:48px;display:flex;align-items:center;gap:12px">
-        <button class="theme-toggle" :aria-label="themeStore.theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'" @click="themeStore.toggle()">
-          <Sun v-if="themeStore.theme === 'dark'" :size="16" />
-          <Moon v-else :size="16" />
-        </button>
-        <RouterLink to="/docs" style="font-size:13px;color:var(--text-muted)">文档</RouterLink>
-        <RouterLink to="/" style="font-size:13px;color:var(--text-muted)">官网</RouterLink>
+      <p class="subtitle">统一接入多上游、多协议与流式 API，为开发者提供稳定可靠的中转服务。</p>
+      <ul class="features"><li>多租户管理与权限隔离</li><li>OpenAI / Anthropic 协议兼容</li><li>流式中继与用量治理</li></ul>
+      <div class="hero-footer">
+        <n-button size="small" quaternary @click="themeStore.toggle()"><template #icon><Sun v-if="themeStore.theme==='dark'" :size="16"/><Moon v-else :size="16"/></template></n-button>
+        <RouterLink to="/docs" class="text-link">文档</RouterLink>
+        <RouterLink to="/" class="text-link">官网</RouterLink>
       </div>
     </div>
-
-    <!-- 右侧：登录表单 -->
     <div class="login-form-panel">
       <h3>登录控制台</h3>
-      <form @submit.prevent="handleLogin" class="login-form">
-        <div class="field">
-          <label for="username">用户名</label>
-          <input
-            id="username" v-model="username" type="text"
-            autocomplete="username" placeholder="请输入用户名"
-            :disabled="submitting"
-          />
-        </div>
-        <div class="field">
-          <label for="password">密码</label>
-          <div class="input-wrapper">
-            <input
-              id="password" v-model="password"
-              :type="showPassword ? 'text' : 'password'"
-              autocomplete="current-password" placeholder="请输入密码"
-              :disabled="submitting"
-            />
-            <button type="button" class="toggle-pass" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">
-              <EyeOff v-if="showPassword" :size="16" />
-              <Eye v-else :size="16" />
-            </button>
-          </div>
-        </div>
-        <p v-if="errorMsg" class="error-msg" role="alert">{{ errorMsg }}</p>
-        <button type="submit" class="primary" :disabled="submitting">
-          {{ submitting ? '登录中...' : '登录' }}
-        </button>
-      </form>
-      <div class="login-dev-hint" v-if="isDev">
-        本地开发初始账号：<code>admin</code> / 密码见环境变量 <code>INIT_ADMIN_PASSWORD</code>
-      </div>
+      <n-form class="login-form" @submit.prevent="handleLogin">
+        <n-form-item label="用户名" required><n-input v-model:value="username" placeholder="请输入用户名" :disabled="submitting" clearable /></n-form-item>
+        <n-form-item label="密码" required>
+          <n-input v-model:value="password" :type="showPassword?'text':'password'" placeholder="请输入密码" :disabled="submitting">
+            <template #suffix><n-button text @click="showPassword=!showPassword" style="font-size:18px">{{showPassword?'👁':'👁‍🗨'}}</n-button></template>
+          </n-input>
+        </n-form-item>
+        <n-button type="primary" block :loading="submitting" attr-type="submit" size="large">{{submitting?'登录中...':'登录'}}</n-button>
+      </n-form>
+      <div v-if="isDev" class="login-dev-hint">本地开发初始账号：<code>admin</code> / 密码见环境变量 <code>INIT_ADMIN_PASSWORD</code></div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.login-page{min-height:100dvh;display:flex;background:var(--bg)}
+.login-hero{flex:1;display:flex;flex-direction:column;justify-content:center;padding:60px 64px;background:var(--surface);border-right:1px solid var(--border)}
+.login-hero .brand{font-weight:700;font-size:22px;letter-spacing:-1.2px;margin-bottom:8px}
+.login-hero h2{font-size:1.75rem;font-weight:650;margin:0 0 10px}
+.subtitle{font-size:15px;color:var(--text-muted);line-height:1.6;max-width:400px;margin-bottom:32px}
+.features{list-style:none;padding:0;font-size:14px;color:var(--text-muted);display:flex;flex-direction:column;gap:10px}
+.features li{display:flex;align-items:center;gap:8px}
+.features li::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0}
+.hero-footer{margin-top:auto;padding-top:48px;display:flex;align-items:center;gap:12px}
+.text-link{font-size:13px;color:var(--text-muted)}
+.login-form-panel{width:420px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;padding:60px 48px}
+.login-form-panel h3{font-size:1.25rem;font-weight:650;margin-bottom:24px}
+.login-form{display:flex;flex-direction:column;gap:8px}
+.login-dev-hint{margin-top:32px;padding:12px;background:var(--surface-elevated);border-radius:8px;font-size:12px;color:var(--text-muted);line-height:1.5}
+.login-dev-hint code{font-family:var(--font-mono);font-size:12px}
+@media(max-width:800px){.login-page{flex-direction:column}.login-hero{flex:none;padding:40px 28px 24px;border-right:0;border-bottom:1px solid var(--border)}.login-hero .features{display:none}.login-form-panel{width:100%;padding:32px 28px}}
+</style>
