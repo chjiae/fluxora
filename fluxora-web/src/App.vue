@@ -9,10 +9,14 @@ const naiveTheme = computed(() => themeStore.theme === 'dark' ? darkTheme : ligh
 
 <template>
   <n-config-provider :theme="naiveTheme" :theme-overrides="themeStore.themeOverrides">
-    <n-message-provider>
-      <n-dialog-provider>
-        <RouterView />
-      </n-dialog-provider>
-    </n-message-provider>
+    <n-loading-bar-provider>
+      <n-notification-provider>
+        <n-message-provider>
+          <n-dialog-provider>
+            <RouterView />
+          </n-dialog-provider>
+        </n-message-provider>
+      </n-notification-provider>
+    </n-loading-bar-provider>
   </n-config-provider>
 </template>

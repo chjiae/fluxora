@@ -25,7 +25,8 @@ test.describe('真实验收（桌面端）', () => {
       await page.locator('button:has-text("创建自营租户")').click()
       await page.waitForURL(/\/console/, { timeout: 10000 })
       const btn = page.locator('button:has-text("进入控制台")')
-      if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) await btn.click()
+      await expect(btn).toBeVisible({ timeout: 8000 })
+      await btn.click()
     }
 
     await expect(page.locator('.console')).toBeVisible({ timeout: 8000 })

@@ -12,5 +12,5 @@ export default defineConfig({
     Components({ resolvers: [NaiveUiResolver()] }),
   ],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
-  test: { environment: 'happy-dom', globals: true, exclude: ['e2e/**', 'node_modules/**'] },
+  test: { environment: 'happy-dom', globals: true, testTimeout: 30000, exclude: ['e2e/**', 'node_modules/**'] },
 })

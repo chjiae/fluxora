@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { createPinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 
 import App from '@/App.vue'
@@ -21,7 +22,7 @@ describe('基础路由', () => {
     router.push(path)
     await router.isReady()
 
-    const wrapper = mount(App, { global: { plugins: [router] } })
+    const wrapper = mount(App, { global: { plugins: [createPinia(), router] } })
 
     expect(wrapper.text()).toContain(expectedText)
   })
