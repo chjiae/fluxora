@@ -12,7 +12,7 @@ const dark = ref(false)
 const menuItems = computed(() => {
   const items: { label: string; icon: any; to: string }[] = []
   items.push({ label: '概览', icon: LayoutDashboard, to: '/console/overview' })
-  if (auth.isPlatformAdmin) {
+  if (auth.canReadTenants) {
     items.push({ label: '租户管理', icon: Building2, to: '/console/tenants' })
   }
   return items

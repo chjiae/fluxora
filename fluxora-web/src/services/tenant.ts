@@ -22,8 +22,10 @@ export interface Tenant {
   id: number
   tenantCode: string
   name: string
+  description: string | null
   type: string
   enabled: boolean
+  status: string
   expireAt: string | null
   createdAt: string
   updatedAt: string
@@ -49,7 +51,9 @@ export async function initializeSelfOperated(req: SelfOperatedInitRequest): Prom
 export async function listTenants(params: {
   keyword?: string
   type?: string
-  enabled?: boolean | null
+  status?: string
+  expireFrom?: string
+  expireTo?: string
   page?: number
   size?: number
 }): Promise<TenantPage> {
@@ -65,6 +69,7 @@ export async function getTenant(id: number): Promise<Tenant> {
 export async function createTenant(req: {
   tenantCode: string
   name: string
+  description?: string
   type: string
   enabled: boolean
 }): Promise<Tenant> {
@@ -74,15 +79,27 @@ export async function createTenant(req: {
 
 export async function updateTenant(id: number, req: {
   name: string
-  enabled: boolean
+  description?: string
+  enabled?: boolean
   expireAt?: string | null
+  clearExpireAt?: boolean
 }): Promise<Tenant> {
   const res = await http.put(`/api/tenant/${id}`, req)
   return res.data.data
 }
 
-export async function toggleTenant(id: number, enabled: boolean): Promise<Tenant> {
-  const res = await http.put(`/api/tenant/${id}/toggle`, { enabled })
+export async function enableTenant(id: number): Promise<Tenant> {
+  const res = await http.put(`/api/tenant/${id}/enable`, {})
+  return res.data.data
+}
+
+export async function disableTenant(id: number): Promise<Tenant> {
+  const res = await http.put(`/api/tenant/${id}/disable`, {})
+  return res.data.data
+}
+
+export async function setTenantExpire(id: number, expireAt: string | null): Promise<Tenant> {
+  const res = await http.put(`/api/tenant/${id}/expire`, { expireAt })
   return res.data.data
 }
 

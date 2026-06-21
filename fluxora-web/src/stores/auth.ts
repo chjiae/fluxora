@@ -12,6 +12,13 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!user.value)
   const isPlatformAdmin = computed(() => user.value?.permissions?.includes('PLATFORM_ADMIN') ?? false)
   const isTenantAdmin = computed(() => user.value?.permissions?.includes('TENANT_ADMIN') ?? false)
+  const canReadTenants = computed(() => user.value?.permissions?.includes('TENANT_READ') ?? false)
+  const canCreateTenant = computed(() => user.value?.permissions?.includes('TENANT_CREATE') ?? false)
+  const canUpdateTenant = computed(() => user.value?.permissions?.includes('TENANT_UPDATE') ?? false)
+  const canEnableTenant = computed(() => user.value?.permissions?.includes('TENANT_ENABLE') ?? false)
+  const canDisableTenant = computed(() => user.value?.permissions?.includes('TENANT_DISABLE') ?? false)
+  const canDeleteTenant = computed(() => user.value?.permissions?.includes('TENANT_DELETE') ?? false)
+  const canSetTenantExpire = computed(() => user.value?.permissions?.includes('TENANT_EXPIRE_SET') ?? false)
 
   async function loginAction(username: string, password: string) {
     loading.value = true
@@ -80,6 +87,13 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn,
     isPlatformAdmin,
     isTenantAdmin,
+    canReadTenants,
+    canCreateTenant,
+    canUpdateTenant,
+    canEnableTenant,
+    canDisableTenant,
+    canDeleteTenant,
+    canSetTenantExpire,
     loginAction,
     checkAuth,
     logoutAction,
