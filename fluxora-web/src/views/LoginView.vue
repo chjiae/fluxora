@@ -71,6 +71,6 @@ async function handleLogin() {
 .login-form-panel h3{font-size:1.25rem;font-weight:650;margin-bottom:24px}
 .login-form{display:flex;flex-direction:column;gap:8px}
 .login-dev-hint{margin-top:32px;padding:12px;background:var(--surface-elevated);border-radius:8px;font-size:12px;color:var(--text-muted);line-height:1.5}
-.login-dev-hint code{font-family:var(--font-mono);font-size:12px}
+.login-dev-hint code{font-family:var(--font-mono),monospace;font-size:12px}
 @media(max-width:800px){.login-page{flex-direction:column}.login-hero{flex:none;padding:40px 28px 24px;border-right:0;border-bottom:1px solid var(--border)}.login-hero .features{display:none}.login-form-panel{width:100%;padding:32px 28px}}
 </style>

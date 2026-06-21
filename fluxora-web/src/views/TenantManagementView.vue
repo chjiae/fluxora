@@ -148,5 +148,5 @@ onMounted(() => loadTenants())
 .tenant-name-link{padding:0;border:0;background:transparent;color:var(--text);font:inherit;font-weight:600;cursor:pointer;text-align:left}
 .tenant-name-link:hover{color:var(--accent)}
 .drawer-hint{margin:0;color:var(--text-muted);font-size:13px;line-height:1.6}
-code{background:var(--surface-elevated);padding:2px 6px;border-radius:4px;border:1px solid var(--border);font-family:var(--font-mono);font-size:12px}
+code{background:var(--surface-elevated);padding:2px 6px;border-radius:4px;border:1px solid var(--border);font-family:var(--font-mono),monospace;font-size:12px}
 </style>
