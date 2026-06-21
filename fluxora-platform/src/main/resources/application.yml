@@ -1,0 +1,35 @@
+server:
+  port: ${PLATFORM_PORT:8080}
+
+spring:
+  application:
+    name: fluxora-platform
+  datasource:
+    # 保留后续 PostgreSQL 接入参数；本阶段不创建数据源，避免本地依赖离线时阻塞启动。
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DATABASE:fluxora}
+    username: ${POSTGRES_USERNAME:fluxora}
+    password: ${POSTGRES_PASSWORD:}
+  data:
+    redis:
+      # Redis 仅保留连接约定，尚未启用缓存、消息或运行时配置同步。
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  flyway:
+    # 当前没有迁移脚本；待数据库边界落地后再显式开启迁移。
+    enabled: false
+  autoconfigure:
+    exclude:
+      # 基础设施尚未接入应用运行时，必须保证最小健康检查可独立启动。
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
+
+mybatis:
+  # 后续所有 SQL 固定放在 XML 中；当前不扫描或创建 Mapper。
+  mapper-locations: classpath*:mapper/**/*.xml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
