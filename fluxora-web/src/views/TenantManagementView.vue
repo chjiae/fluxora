@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { h, onMounted, ref, watch } from 'vue'
-import { NTag } from 'naive-ui'
+import { NTag, NButton } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 import { listTenants, createTenant, updateTenant, deleteTenant, enableTenant, disableTenant, setTenantExpire, type Tenant, type TenantPage } from '@/services/tenant'
@@ -60,6 +60,7 @@ const columns: DataTableColumns<Tenant> = [
   { title: '类型', key: 'type', width: 90, render: (row) => h(NTag, { size: 'small', bordered: false, type: row.type === 'SELF_OPERATED' ? 'info' : 'default' }, { default: () => row.type === 'SELF_OPERATED' ? '自营' : '标准' }) },
   { title: '状态', key: 'status', width: 90, render: (row) => h(NTag, { size: 'small', bordered: false, type: statusType(row.status) }, { default: () => statusLabel(row.status) }) },
   { title: '过期时间', key: 'expireAt', width: 110 },
+  { title: '操作', key: 'actions', width: 80, render: (row) => h(NButton, { size: 'small', onClick: () => openDetail(row) }, { default: () => '详情' }) },
 ]
 
 const typeOptions = [{ label: '全部类型', value: '' }, { label: '自营', value: 'SELF_OPERATED' }, { label: '标准', value: 'STANDARD' }]
@@ -80,7 +81,7 @@ onMounted(() => loadTenants())
       <n-date-picker v-model:value="expireBefore" type="date" clearable style="width:140px" />
       <n-button quaternary @click="resetFilters">重置</n-button>
     </div>
-    <n-data-table :columns="columns" :data="tenants" :loading="loading" :pagination="false" :bordered="false" size="small" />
+    <n-data-table :columns="columns" :data="tenants" :loading="loading" :pagination="false" :bordered="false" size="small" @row-click="openDetail" />
     <div v-if="!loading && tenants.length===0" style="padding:60px 0;text-align:center"><div style="font-size:16px;font-weight:600;margin-bottom:8px">暂无租户</div></div>
     <div v-if="total>size" style="display:flex;justify-content:center;margin-top:20px"><n-pagination v-model:page="page" :page-count="Math.ceil(total/size)" /></div>
 
@@ -148,5 +149,7 @@ onMounted(() => loadTenants())
 .tenant-name-link{padding:0;border:0;background:transparent;color:var(--text);font:inherit;font-weight:600;cursor:pointer;text-align:left}
 .tenant-name-link:hover{color:var(--accent)}
 .drawer-hint{margin:0;color:var(--text-muted);font-size:13px;line-height:1.6}
+:deep(.n-data-table-tr){cursor:pointer}
+:deep(.n-data-table-tr:hover){background:var(--surface-elevated)}
 code{background:var(--surface-elevated);padding:2px 6px;border-radius:4px;border:1px solid var(--border);font-family:var(--font-mono),monospace;font-size:12px}
 </style>
