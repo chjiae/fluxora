@@ -74,7 +74,8 @@ export function buildThemeOverrides(theme: Theme): GlobalThemeOverrides {
 
 export const useThemeStore = defineStore('theme', () => {
   const storedTheme = readStoredTheme()
-  const hasManualPreference = ref(storedTheme !== null)
+  // 仅用于当前 store 生命周期内判断是否由用户主动选择，无需进入 Pinia 响应式状态。
+  let hasManualPreference = storedTheme !== null
   const theme = ref<Theme>(storedTheme ?? readSystemPreference())
   const themeOverrides = ref<GlobalThemeOverrides>(buildThemeOverrides(theme.value))
 
@@ -84,7 +85,7 @@ export const useThemeStore = defineStore('theme', () => {
     ? window.matchMedia('(prefers-color-scheme: dark)')
     : null
   const handleSystemThemeChange = (event: MediaQueryListEvent) => {
-    if (!hasManualPreference.value) theme.value = event.matches ? 'dark' : 'light'
+    if (!hasManualPreference) theme.value = event.matches ? 'dark' : 'light'
   }
   mediaQuery?.addEventListener('change', handleSystemThemeChange)
   onScopeDispose(() => mediaQuery?.removeEventListener('change', handleSystemThemeChange))
@@ -96,7 +97,7 @@ export const useThemeStore = defineStore('theme', () => {
 
   /** 用户主动切换后才写入本地，系统主题变化仍可继续跟随。 */
   function setTheme(value: Theme): void {
-    hasManualPreference.value = true
+    hasManualPreference = true
     theme.value = value
     if (typeof window !== 'undefined') {
       try {

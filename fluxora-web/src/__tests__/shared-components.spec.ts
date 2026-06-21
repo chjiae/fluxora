@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AsyncState from '@/components/AsyncState.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -24,6 +24,33 @@ describe('ThemeToggle', () => {
     await wrapper.get('button').trigger('click')
 
     expect(store.theme).toBe('light')
+  })
+})
+
+describe('主题偏好', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('首次跟随系统主题，手动选择后保持用户偏好', () => {
+    localStorage.clear()
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: false,
+      addEventListener: (_event: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener),
+      removeEventListener: (_event: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener),
+    })))
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useThemeStore()
+
+    listeners.forEach(listener => listener({ matches: true } as MediaQueryListEvent))
+    expect(store.theme).toBe('dark')
+
+    store.setTheme('light')
+    listeners.forEach(listener => listener({ matches: true } as MediaQueryListEvent))
+    expect(store.theme).toBe('light')
+    store.$dispose()
   })
 })
 
