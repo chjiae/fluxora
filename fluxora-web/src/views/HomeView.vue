@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ArrowUpRight, Check, Menu, X } from 'lucide-vue-next'
+import { ArrowUpRight, Check, Menu, X, Sun, Moon } from 'lucide-vue-next'
 import { ref } from 'vue'
+import { useThemeStore } from '@/stores/theme'
 const open = ref(false)
+const themeStore = useThemeStore()
 </script>
 <template>
   <div class="public-shell">
-    <header class="header"><RouterLink class="brand" to="/">fluxora<span>.</span></RouterLink><button class="mobile" @click="open=!open"><X v-if="open"/><Menu v-else/></button><nav :class="{open}"><a href="#product">产品介绍</a><a href="#advantages">产品优势</a><RouterLink to="/docs">文档</RouterLink><a href="#faq">FAQ</a><RouterLink class="console-link" to="/console">进入控制台 <ArrowUpRight :size="15"/></RouterLink></nav></header>
+    <header class="header"><RouterLink class="brand" to="/">fluxora<span>.</span></RouterLink><button class="mobile" @click="open=!open"><X v-if="open"/><Menu v-else/></button><nav :class="{open}"><a href="#product">产品介绍</a><a href="#advantages">产品优势</a><RouterLink to="/docs">文档</RouterLink><a href="#faq">FAQ</a><RouterLink class="console-link" to="/console">进入控制台 <ArrowUpRight :size="15"/></RouterLink><button class="theme-toggle" :aria-label="themeStore.theme === 'dark' ? '切换亮色' : '切换暗色'" @click="themeStore.toggle()"><Sun v-if="themeStore.theme === 'dark'" :size="16"/><Moon v-else :size="16"/></button></nav></header>
     <main>
       <section class="hero" id="product"><p class="eyebrow">API OPERATIONS, WITHOUT THE FRICTION</p><h1>把模型调用的复杂性，<br><em>留在</em> Fluxora 之后。</h1><p class="lede">面向开发者与运营团队的多租户 API 中转平台。统一接入、稳定流式响应、清晰的运行边界。</p><div class="actions"><RouterLink to="/docs" class="button primary">开始接入 <ArrowUpRight :size="17"/></RouterLink><a href="#advantages" class="button">了解能力</a></div><div class="signal"><span></span>运行时基础骨架 · 当前阶段</div></section>
       <section class="statement"><p>从一个 API 入口出发，组织多上游、多协议与多租户的调用秩序。</p></section>

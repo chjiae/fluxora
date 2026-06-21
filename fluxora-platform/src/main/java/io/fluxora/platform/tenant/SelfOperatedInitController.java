@@ -31,10 +31,10 @@ public class SelfOperatedInitController {
 
     /**
      * 查询自营租户是否已初始化。
-     * 需要权限：PERM_PLATFORM_CONSOLE_ACCESS（基本控制台访问权限）
+     * 仅平台管理员（PERM_PLATFORM_ADMIN）可访问，租户管理员不可见。
      */
     @GetMapping("/status")
-    @PreAuthorize("hasAuthority('PERM_PLATFORM_CONSOLE_ACCESS')")
+    @PreAuthorize("hasAuthority('PERM_PLATFORM_ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Boolean>>> status() {
         boolean initialized = tenantService.isSelfOperatedInitialized();
         return ResponseEntity.ok(ApiResponse.success(Map.of("initialized", initialized)));
@@ -42,11 +42,10 @@ public class SelfOperatedInitController {
 
     /**
      * 初始化自营租户。
-     * 在单个事务中创建 default 租户 + TENANT_ADMIN 用户 + 角色分配。
-     * 需要权限：PERM_TENANT_CREATE（租户创建权限）
+     * 仅平台管理员（PERM_PLATFORM_ADMIN）可执行，租户管理员返回 403。
      */
     @PostMapping("/initialize")
-    @PreAuthorize("hasAuthority('PERM_TENANT_CREATE')")
+    @PreAuthorize("hasAuthority('PERM_PLATFORM_ADMIN')")
     public ResponseEntity<ApiResponse<TenantService.TenantInitResult>> initialize(
             @RequestBody SelfOperatedInitRequest request) {
         String encodedPassword = passwordEncoder.encode(request.adminPassword());

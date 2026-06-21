@@ -2,13 +2,18 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
+import { Sun, Moon, Eye, EyeOff } from 'lucide-vue-next'
 
 const router = useRouter()
 const auth = useAuthStore()
+const themeStore = useThemeStore()
 
 const username = ref('')
 const password = ref('')
+const showPassword = ref(false)
 const submitting = ref(false)
+const isDev = import.meta.env.DEV
 const errorMsg = ref('')
 
 async function handleLogin() {
@@ -40,98 +45,61 @@ async function handleLogin() {
 
 <template>
   <div class="login-page">
-    <div class="login-card">
-      <h1 class="brand">fl<span>u</span>xora</h1>
-      <p class="subtitle">平台控制台</p>
+    <!-- 左侧：产品介绍 -->
+    <div class="login-hero">
+      <RouterLink to="/" class="brand">fluxora<span>.</span></RouterLink>
+      <h2>API 中转平台</h2>
+      <p class="subtitle">统一接入多上游、多协议与流式 API，为开发者提供稳定、可靠的中转服务。</p>
+      <ul class="features">
+        <li>多租户管理与权限隔离</li>
+        <li>OpenAI / Anthropic 协议兼容</li>
+        <li>流式中继与用量治理</li>
+      </ul>
+      <div style="margin-top:auto;padding-top:48px;display:flex;align-items:center;gap:12px">
+        <button class="theme-toggle" :aria-label="themeStore.theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'" @click="themeStore.toggle()">
+          <Sun v-if="themeStore.theme === 'dark'" :size="16" />
+          <Moon v-else :size="16" />
+        </button>
+        <RouterLink to="/docs" style="font-size:13px;color:var(--text-muted)">文档</RouterLink>
+        <RouterLink to="/" style="font-size:13px;color:var(--text-muted)">官网</RouterLink>
+      </div>
+    </div>
+
+    <!-- 右侧：登录表单 -->
+    <div class="login-form-panel">
+      <h3>登录控制台</h3>
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="field">
           <label for="username">用户名</label>
           <input
-            id="username"
-            v-model="username"
-            type="text"
-            autocomplete="username"
-            placeholder="请输入用户名"
+            id="username" v-model="username" type="text"
+            autocomplete="username" placeholder="请输入用户名"
             :disabled="submitting"
           />
         </div>
         <div class="field">
           <label for="password">密码</label>
-          <input
-            id="password"
-            v-model="password"
-            type="password"
-            autocomplete="current-password"
-            placeholder="请输入密码"
-            :disabled="submitting"
-          />
+          <div class="input-wrapper">
+            <input
+              id="password" v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              autocomplete="current-password" placeholder="请输入密码"
+              :disabled="submitting"
+            />
+            <button type="button" class="toggle-pass" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">
+              <EyeOff v-if="showPassword" :size="16" />
+              <Eye v-else :size="16" />
+            </button>
+          </div>
         </div>
-        <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
+        <p v-if="errorMsg" class="error-msg" role="alert">{{ errorMsg }}</p>
         <button type="submit" class="primary" :disabled="submitting">
           {{ submitting ? '登录中...' : '登录' }}
         </button>
       </form>
+      <div class="login-dev-hint" v-if="isDev">
+        本地开发初始账号：<code>admin</code> / 密码见环境变量 <code>INIT_ADMIN_PASSWORD</code>
+      </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.login-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg);
-}
-.login-card {
-  width: 360px;
-  padding: 40px 32px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: #fff;
-}
-.login-card .brand {
-  text-align: center;
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: -1.8px;
-  margin: 0 0 4px;
-}
-.login-card .brand span { color: var(--accent); }
-.login-card .subtitle {
-  text-align: center;
-  color: var(--muted);
-  font-size: 14px;
-  margin: 0 0 28px;
-}
-.login-form { display: flex; flex-direction: column; gap: 16px; }
-.field { display: flex; flex-direction: column; gap: 4px; }
-.field label { font-size: 13px; font-weight: 600; color: var(--text); }
-.field input {
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color .15s;
-}
-.field input:focus { border-color: var(--accent); }
-.error-msg {
-  color: #d92d20;
-  font-size: 13px;
-  margin: 0;
-}
-.primary {
-  width: 100%;
-  padding: 10px;
-  border: none;
-  border-radius: 6px;
-  background: #151515;
-  color: #f5f4f0;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity .15s;
-}
-.primary:disabled { opacity: .5; cursor: not-allowed; }
-</style>

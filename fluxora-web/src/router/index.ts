@@ -52,6 +52,11 @@ router.beforeEach(async (to, _from, next) => {
       return next('/console/overview')
     }
 
+    // 自营初始化仅平台管理员可访问，租户管理员重定向到概览
+    if (to.path === '/console/setup' && !auth.isPlatformAdmin) {
+      return next('/console/overview')
+    }
+
     // 平台管理员且自营未初始化时，跳转初始化向导（setup页面除外）
     if (auth.isPlatformAdmin && to.path !== '/console/setup') {
       await auth.checkSelfOperatedStatus()
