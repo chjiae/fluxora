@@ -3,6 +3,7 @@ package io.fluxora.platform.common;
 import io.fluxora.common.error.BusinessErrorCode;
 import io.fluxora.common.error.ErrorResponse;
 import io.fluxora.platform.auth.AuthException;
+import io.fluxora.platform.identity.MemberException;
 import io.fluxora.platform.tenant.TenantException;
 import io.fluxora.platform.tenant.TenantService;
 import org.slf4j.Logger;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * - AuthException              → 401（登录认证失败）
  * - AuthTenantException        → 401（租户状态异常：停用/过期/删除）
  * - TenantException            → 400 或 403（业务规则校验，如租户码重复、自营保护）
+ * - MemberException            → 400 / 403 / 404（成员管理业务规则）
  * - IllegalArgumentException  → 400（参数校验失败）
  * - 其他 Exception             → 500（服务内部异常，记录日志后返回通用提示）
  */
@@ -55,6 +57,22 @@ public class GlobalExceptionHandler {
         // 仅使用受控错误码的默认安全文案，不暴露构造时传入的动态消息
         return ResponseEntity.status(status)
                 .body(ErrorResponse.of(ex.getErrorCode()));
+    }
+
+    /**
+     * 成员管理异常映射。
+     * 不同错误码映射到不同 HTTP 状态，便于前端 axios 区分；
+     * 用户始终看到错误码默认的安全中文文案，不暴露 ex.getMessage() 的动态内容。
+     */
+    @ExceptionHandler(MemberException.class)
+    public ResponseEntity<ErrorResponse> handleMemberException(MemberException ex) {
+        BusinessErrorCode code = ex.getErrorCode();
+        HttpStatus status = switch (code) {
+            case MEMBER_NOT_FOUND, RESOURCE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case CROSS_TENANT_ACCESS_DENIED, ACCESS_DENIED -> HttpStatus.FORBIDDEN;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(ErrorResponse.of(code));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
