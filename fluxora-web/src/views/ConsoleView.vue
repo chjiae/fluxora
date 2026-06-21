@@ -18,7 +18,7 @@ const menuOptions = computed(() => {
 
 const currentLabel = computed(() => (menuOptions.value.find((m: any) => m.key === route.path)?.label as string) || '概览')
 
-async function handleLogout() { await auth.logoutAction(); router.replace('/login') }
+async function handleLogout() { await auth.logoutAction(); await router.replace('/login') }
 </script>
 
 <template>

@@ -21,8 +21,8 @@ async function handleLogin() {
   submitting.value = true
   try {
     await auth.loginAction(username.value, password.value)
-    if (auth.isPlatformAdmin) { await auth.checkSelfOperatedStatus(); router.replace(auth.selfOperatedInitialized ? '/console/overview' : '/console/setup') }
-    else { router.replace('/console/overview') }
+    if (auth.isPlatformAdmin) { await auth.checkSelfOperatedStatus(); await router.replace(auth.selfOperatedInitialized ? '/console/overview' : '/console/setup') }
+    else { await router.replace('/console/overview') }
   } catch (e: any) { message.error(e.userMessage || '用户名或密码错误，请重新输入') } finally { submitting.value = false }
 }
 </script>
