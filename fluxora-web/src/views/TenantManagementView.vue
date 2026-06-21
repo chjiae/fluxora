@@ -17,8 +17,7 @@ const size = ref(10)
 const keyword = ref('')
 const typeFilter = ref('')
 const statusFilter = ref('')
-const expireFrom = ref('')
-const expireTo = ref('')
+const expireBefore = ref('')
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -45,13 +44,13 @@ function typeLabel(t: string) { return t === 'SELF_OPERATED' ? '自营' : '标�
 async function loadTenants() {
   loading.value = true; errorMsg.value = ''
   try {
-    const result: TenantPage = await listTenants({ keyword: keyword.value || undefined, type: typeFilter.value || undefined, status: statusFilter.value || undefined, expireFrom: expireFrom.value || undefined, expireTo: expireTo.value || undefined, page: page.value, size: size.value })
+    const result: TenantPage = await listTenants({ keyword: keyword.value || undefined, type: typeFilter.value || undefined, status: statusFilter.value || undefined, expireTo: expireBefore.value || undefined, page: page.value, size: size.value })
     tenants.value = result.items; total.value = result.total
   } catch (e: any) { errorMsg.value = e.userMessage || '加载失败' } finally { loading.value = false }
 }
 
 function showToast(msg: string) { toastMsg.value = msg; if (toastTimer) clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastMsg.value = '' }, 3000) }
-function resetFilters() { keyword.value = ''; typeFilter.value = ''; statusFilter.value = ''; expireFrom.value = ''; expireTo.value = ''; page.value = 1; loadTenants() }
+function resetFilters() { keyword.value = ''; typeFilter.value = ''; statusFilter.value = ''; expireBefore.value = ''; page.value = 1; loadTenants() }
 function openCreate() { form.value = { tenantCode: '', name: '', description: '', type: 'STANDARD', enabled: true, expireAt: '' }; formError.value = ''; showCreateDrawer.value = true }
 function openDetail(t: Tenant) { detailTenant.value = t; editMode.value = false }
 
@@ -79,7 +78,7 @@ async function handleSetExpire() { if (!detailTenant.value) return; formSubmitti
 
 async function handleDelete() { if (!detailTenant.value) return; formSubmitting.value = true; try { await deleteTenant(detailTenant.value.id); confirmAction.value = null; detailTenant.value = null; showToast('已删除'); loadTenants() } catch (e: any) { showToast(e.userMessage || '删除失败') } finally { formSubmitting.value = false } }
 
-watch([keyword, typeFilter, statusFilter, expireFrom, expireTo], () => { page.value = 1; loadTenants() })
+watch([keyword, typeFilter, statusFilter, expireBefore], () => { page.value = 1; loadTenants() })
 watch(page, () => loadTenants())
 onMounted(() => loadTenants())
 </script>
@@ -95,8 +94,7 @@ onMounted(() => loadTenants())
       <div class="search-box"><Search :size="16" /><input v-model="keyword" placeholder="搜索租户码或名称..." /></div>
       <select v-model="typeFilter"><option value="">全部类型</option><option value="SELF_OPERATED">自营</option><option value="STANDARD">标准</option></select>
       <select v-model="statusFilter"><option value="">全部状态</option><option value="ENABLED">已启用</option><option value="DISABLED">已停用</option><option value="EXPIRED">已过期</option></select>
-      <input v-model="expireFrom" type="date" class="date-input" title="过期起始" />
-      <input v-model="expireTo" type="date" class="date-input" title="过期截止" />
+      <input v-model="expireBefore" type="date" class="date-input" placeholder="过期时间截止" title="筛选在此日期前过期的租户" />
       <button class="btn-text" @click="resetFilters">重置</button>
     </div>
 
