@@ -6,9 +6,9 @@
 
 /* ===== Light Theme (default) ===== */
 :root, [data-theme="light"] {
-  --bg: #f5f4f0;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-elevated: #fafaf8;
+  --surface-elevated: #f8f8f7;
   --text: #151515;
   --text-muted: #565653;
   --border: #dddcd7;

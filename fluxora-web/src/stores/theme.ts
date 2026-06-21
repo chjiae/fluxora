@@ -24,7 +24,7 @@ function buildOverrides(theme: Theme) {
       fontFamily: "-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','PingFang SC','Hiragino Sans GB','Microsoft YaHei UI',sans-serif",
       fontFamilyMono: "'SF Mono',Consolas,monospace",
       fontSize: '14px', borderRadius: '8px', lineHeight: '1.55',
-      bodyColor: isDark ? '#111110' : '#f5f4f0',
+      bodyColor: isDark ? '#111110' : '#ffffff',
       cardColor: isDark ? '#1c1c1b' : '#ffffff',
       modalColor: isDark ? '#1c1c1b' : '#ffffff',
       popoverColor: isDark ? '#1c1c1b' : '#ffffff',
