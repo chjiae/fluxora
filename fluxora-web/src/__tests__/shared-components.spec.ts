@@ -43,6 +43,14 @@ describe('StatusTag', () => {
 })
 
 describe('AsyncState', () => {
+  it('将受限安全文案键映射为固定中文提示', () => {
+    const wrapper = mount(AsyncState, {
+      props: { state: 'error', errorKey: 'network' },
+    })
+
+    expect(wrapper.text()).toContain('网络连接失败，请检查网络后重试')
+  })
+
   it('错误状态仅显示安全提示并允许重试', async () => {
     const wrapper = mount(AsyncState, {
       props: {
@@ -56,5 +64,17 @@ describe('AsyncState', () => {
     expect(wrapper.text()).not.toContain('/internal/users')
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+
+  it('不会透传未受限的技术文本', () => {
+    const wrapper = mount(AsyncState, {
+      props: {
+        state: 'error',
+        description: 'com.zaxxer.hikari.HikariDataSource',
+      },
+    })
+
+    expect(wrapper.text()).toContain('服务暂时不可用，请稍后重试')
+    expect(wrapper.html()).not.toContain('com.zaxxer.hikari.HikariDataSource')
   })
 })
