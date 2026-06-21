@@ -3,6 +3,7 @@ package io.fluxora.platform.common;
 import io.fluxora.common.error.BusinessErrorCode;
 import io.fluxora.common.error.ErrorResponse;
 import io.fluxora.platform.auth.AuthException;
+import io.fluxora.platform.tenant.TenantException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -19,6 +20,14 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAuthException(AuthException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ErrorResponse.of(ex.getErrorCode()));
+    }
+
+    @ExceptionHandler(TenantException.class)
+    public ResponseEntity<ErrorResponse> handleTenantException(TenantException ex) {
+        HttpStatus status = ex.getErrorCode() == BusinessErrorCode.ACCESS_DENIED
+                ? HttpStatus.FORBIDDEN : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status)
+                .body(ErrorResponse.of(ex.getErrorCode(), ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
