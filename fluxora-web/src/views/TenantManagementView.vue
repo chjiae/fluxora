@@ -6,7 +6,7 @@ import {
   enableTenant, disableTenant, setTenantExpire,
   type Tenant, type TenantPage,
 } from '@/services/tenant'
-import { Search, Plus, Pencil, Trash2, ShieldCheck, AlertTriangle, X, ChevronRight } from 'lucide-vue-next'
+import { Search, Plus, Pencil, Trash2, ShieldCheck, AlertTriangle, X, ChevronRight, Calendar } from 'lucide-vue-next'
 
 const auth = useAuthStore()
 
@@ -94,7 +94,11 @@ onMounted(() => loadTenants())
       <div class="search-box"><Search :size="16" /><input v-model="keyword" placeholder="搜索租户码或名称..." /></div>
       <select v-model="typeFilter"><option value="">全部类型</option><option value="SELF_OPERATED">自营</option><option value="STANDARD">标准</option></select>
       <select v-model="statusFilter"><option value="">全部状态</option><option value="ENABLED">已启用</option><option value="DISABLED">已停用</option><option value="EXPIRED">已过期</option></select>
-      <input v-model="expireBefore" type="date" class="date-input" placeholder="过期时间截止" title="筛选在此日期前过期的租户" />
+      <div class="date-field">
+        <Calendar :size="14" />
+        <input v-model="expireBefore" type="date" title="筛选在此日期前过期的租户" />
+        <span v-if="!expireBefore" class="date-placeholder">过期时间</span>
+      </div>
       <button class="btn-text" @click="resetFilters">重置</button>
     </div>
 
@@ -264,8 +268,22 @@ onMounted(() => loadTenants())
 .filters { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap }
 .search-box { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); flex: 1; min-width: 160px }
 .search-box input { border: none; outline: none; font-size: 13px; width: 100%; background: none; color: var(--text) }
-.filters select, .date-input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--surface); outline: none; color: var(--text) }
-.date-input { width: 130px }
+.filters select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--surface); outline: none; color: var(--text) }
+.date-field {
+  position: relative; display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text-muted);
+}
+.date-field input[type="date"] {
+  border: none; outline: none; font-size: 13px; font-family: var(--font-sans);
+  background: none; color: var(--text); width: 120px;
+}
+.date-field input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .6 }
+.date-field input[type="date"]:focus-within { outline: none }
+.date-placeholder {
+  position: absolute; left: 30px; font-size: 13px; color: var(--text-muted);
+  pointer-events: none;
+}
 .btn-text { padding: 6px 12px; border: none; background: none; color: var(--accent); font-size: 13px; cursor: pointer; font-weight: 500 }
 .error-msg { color: var(--danger); font-size: 13px; margin: 4px 0 0 }
 .error-banner { padding: 10px 14px; border-radius: 8px; background: color-mix(in srgb, var(--danger) 8%, var(--bg)); color: var(--danger); font-size: 13px; margin-bottom: 12px }
@@ -338,7 +356,7 @@ onMounted(() => loadTenants())
 .muted { color: var(--text-muted); font-size: 13px }
 @media (max-width: 720px) {
   .filters { flex-direction: column }
-  .filters select, .date-input { width: 100% }
+  .filters select { width: 100% }
   .drawer { width: 100vw }
 }
 </style>
