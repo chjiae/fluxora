@@ -137,7 +137,8 @@ p { margin: 0; }
 .faq details p { padding-top: 10px; font-size: 14px; color: var(--text-muted); line-height: 1.6 }
 
 /* ===== Docs ===== */
-.docs { max-width: 1200px; margin: auto; display: flex; gap: 0; min-height: calc(100vh - 64px) }
+.docs { max-width: 1200px; margin: auto; display: flex; flex-wrap: wrap; gap: 0; min-height: calc(100vh - 64px) }
+.docs > .header { width: 100%; flex-basis: 100% }
 .docs aside { width: 220px; border-right: 1px solid var(--border); padding: 32px 24px; flex-shrink: 0 }
 .docs aside nav { display: flex; flex-direction: column; gap: 4px }
 .docs aside a { font-size: 13px; padding: 6px 10px; border-radius: 6px; color: var(--text-muted); transition: background .1s }
