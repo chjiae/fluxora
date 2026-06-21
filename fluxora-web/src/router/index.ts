@@ -5,6 +5,7 @@ import ConsoleView from '../views/ConsoleView.vue'
 import LoginView from '../views/LoginView.vue'
 import SelfOperatedSetupView from '../views/SelfOperatedSetupView.vue'
 import TenantManagementView from '../views/TenantManagementView.vue'
+import ConsoleOverviewView from '../views/ConsoleOverviewView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 export const router = createRouter({
@@ -15,12 +16,13 @@ export const router = createRouter({
     { path: '/login', component: LoginView, meta: { guest: true } },
     { path: '/console/setup', component: SelfOperatedSetupView, meta: { requiresAuth: true } },
     {
-      path: '/console/:section?',
+      path: '/console',
       component: ConsoleView,
       meta: { requiresAuth: true },
       children: [
+        { path: '', redirect: '/console/overview' },
         { path: 'tenants', component: TenantManagementView },
-        { path: 'overview', component: { template: '<div></div>' } },
+        { path: 'overview', component: ConsoleOverviewView },
       ],
     },
   ],

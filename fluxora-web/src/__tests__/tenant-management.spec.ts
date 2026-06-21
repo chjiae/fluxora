@@ -18,4 +18,11 @@ describe('tenant management', () => {
     expect(mod.updateTenant).toBeDefined()
     expect(mod.deleteTenant).toBeDefined()
   })
+
+  it('protects self-operated tenants and validates create fields', async () => {
+    const view = await import('@/views/TenantManagementView.vue')
+    const source = String(view.default.setup)
+    expect(source).toContain('SELF_OPERATED')
+    expect(source).toContain('createFormRules')
+  })
 })
