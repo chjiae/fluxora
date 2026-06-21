@@ -1,5 +1,10 @@
 package io.fluxora.common.error;
 
+/**
+ * 业务错误码枚举。
+ * 每个错误码关联默认的非技术中文提示，前后端通过错误码（非消息文本）进行程序化识别。
+ * 用户界面不得直接展示错误码名称（如 AUTH_INVALID_CREDENTIALS）。
+ */
 public enum BusinessErrorCode {
 
     AUTH_INVALID_CREDENTIALS("用户名或密码错误，请重新输入"),
@@ -10,6 +15,7 @@ public enum BusinessErrorCode {
     AUTH_SESSION_EXPIRED("登录已失效，请重新登录"),
     ACCESS_DENIED("当前账号没有此操作权限"),
     TENANT_CODE_DUPLICATE("该租户码已被使用，请更换后重试"),
+    /** 格式化字符串，调用时使用 String.format 填入具体操作描述 */
     SELF_OPERATED_TENANT_PROTECTED("自营租户受保护，无法%s"),
     VALIDATION_ERROR("输入内容不符合要求，请检查后重试"),
     RESOURCE_NOT_FOUND("请求的资源不存在"),

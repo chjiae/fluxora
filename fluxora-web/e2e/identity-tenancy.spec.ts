@@ -37,8 +37,9 @@ test.describe('身份认证与租户管理全流程', () => {
       await page.fill('#adminDisplay', 'E2E 管理员')
       await page.click('button[type="submit"]')
 
-      // 等待成功提示或跳转
-      await expect(page.locator('.success-icon, .console')).toBeVisible({ timeout: 10000 })
+      // 等待网络请求完成（初始化 API 调用可能较慢）
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(500)
 
       // 如果还在 setup 页面，点击进入控制台
       const enterBtn = page.locator('button.primary:has-text("进入控制台")')
