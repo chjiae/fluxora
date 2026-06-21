@@ -12,4 +12,25 @@
 
     <artifactId>fluxora-gateway</artifactId>
     <name>Fluxora Gateway</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.fluxora</groupId>
+            <artifactId>fluxora-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-redis-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
