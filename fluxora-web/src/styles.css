@@ -141,13 +141,14 @@ p { margin: 0; }
 .docs > .header { width: 100%; flex-basis: 100% }
 .docs aside { width: 220px; border-right: 1px solid var(--border); padding: 32px 24px; flex-shrink: 0 }
 .docs aside nav { display: flex; flex-direction: column; gap: 4px }
-.docs aside a { font-size: 13px; padding: 6px 10px; border-radius: 6px; color: var(--text-muted); transition: background .1s }
-.docs aside a:hover, .docs aside a.active { background: var(--surface-elevated); color: var(--text) }
+.docs aside a, .docs aside button { font-size: 13px; padding: 6px 10px; border-radius: 6px; color: var(--text-muted); transition: background .1s; display: block; width: 100%; text-align: left }
+.docs aside a:hover, .docs aside a.active, .docs aside button:hover, .docs aside button.active { background: var(--surface-elevated); color: var(--text) }
 .docs article { flex: 1; padding: 32px 40px; min-width: 0 }
 .docs article h2 { font-size: 1.5rem; margin: 32px 0 12px }
 .docs article h2:first-of-type { margin-top: 0 }
 .docs article p { font-size: 14px; color: var(--text-muted); line-height: 1.7; margin-bottom: 14px }
 .docs article pre { background: var(--surface-elevated); padding: 14px 16px; border-radius: 8px; border: 1px solid var(--border); overflow-x: auto; font-size: 13px; font-family: var(--font-mono); line-height: 1.55 }
+.toc-button { display: none }
 
 @media (max-width: 720px) {
   .docs { flex-direction: column }
