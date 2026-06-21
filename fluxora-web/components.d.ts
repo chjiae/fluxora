@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AsyncState: typeof import('./src/components/AsyncState.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
     NButton: typeof import('naive-ui')['NButton']
     NCard: typeof import('naive-ui')['NCard']
@@ -39,5 +40,7 @@ declare module 'vue' {
     NTag: typeof import('naive-ui')['NTag']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    StatusTag: typeof import('./src/components/StatusTag.vue')['default']
+    ThemeToggle: typeof import('./src/components/ThemeToggle.vue')['default']
   }
 }
