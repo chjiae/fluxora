@@ -9,23 +9,26 @@ import {
   NNotificationProvider,
   zhCN,
 } from 'naive-ui'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import App from '@/App.vue'
 
 describe('App 全局提供器', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
+  function mountApp() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
 
-  it('为 Naive UI 配置中文语言与日期语言', () => {
-    const wrapper = mount(App, {
+    return mount(App, {
       global: {
-        plugins: [createPinia()],
+        plugins: [pinia],
         stubs: {
           RouterView: true,
         },
       },
     })
+  }
+
+  it('为 Naive UI 配置中文语言与日期语言', () => {
+    const wrapper = mountApp()
 
     const configProvider = wrapper.findComponent(NConfigProvider)
     expect(configProvider.props('locale')).toBe(zhCN)
@@ -33,14 +36,7 @@ describe('App 全局提供器', () => {
   })
 
   it('提供全局反馈能力', () => {
-    const wrapper = mount(App, {
-      global: {
-        plugins: [createPinia()],
-        stubs: {
-          RouterView: true,
-        },
-      },
-    })
+    const wrapper = mountApp()
 
     expect(wrapper.findComponent(NLoadingBarProvider).exists()).toBe(true)
     expect(wrapper.findComponent(NNotificationProvider).exists()).toBe(true)
