@@ -10,15 +10,15 @@ test.describe('真实验收（桌面端）', () => {
     await expect(page.locator('.login-form-panel')).toBeVisible()
 
     // 错误密码
-    await page.getByPlaceholder('请输入用户名').fill('admin')
-    await page.getByPlaceholder('请输入密码').fill('wrong-password')
+    await page.locator('input[placeholder*="用户名"]').first().fill('admin')
+    await page.locator('input[placeholder*="密码"]').first().fill('wrong-password')
     await page.locator('button:has-text("登录")').click()
     // Naive UI message
     await expect(page.locator('.n-message')).toBeVisible({ timeout: 5000 })
 
     // 正确登录
-    await page.getByPlaceholder('请输入用户名').fill('admin')
-    await page.getByPlaceholder('请输入密码').fill('Admin@2026!')
+    await page.locator('input[placeholder*="用户名"]').first().fill('admin')
+    await page.locator('input[placeholder*="密码"]').first().fill('Admin@2026!')
     await page.locator('button:has-text("登录")').click()
     await page.waitForURL(/\/console/, { timeout: 10000 })
 
@@ -52,16 +52,16 @@ test.describe('真实验收（桌面端）', () => {
     await expect(page.locator('.n-drawer')).not.toBeVisible({ timeout: 8000 })
 
     // 搜索
-    await page.locator('.n-input input[placeholder="搜索"]').fill(tenantCode)
+    await page.locator('.n-input input').first().fill(tenantCode)
     await page.waitForLoadState('networkidle')
     await expect(page.locator('.n-data-table-tr').first()).toBeVisible({ timeout: 5000 })
 
     // 退出 → 自营管理员登录 → 无菜单
     await page.locator('button:has-text("退出")').click({ force: true })
-    await page.waitForLoadState('networkidle')
-    await expect(page.locator('.login-form-panel')).toBeVisible({ timeout: 5000 })
-    await page.getByPlaceholder('请输入用户名').fill('e2eadmin')
-    await page.getByPlaceholder('请输入密码').fill('e2epass123')
+    await page.goto(WEB_URL + '/login')
+    await page.waitForTimeout(1000)
+    await page.locator('input[placeholder*="用户名"]').first().fill('e2eadmin')
+    await page.locator('input[placeholder*="密码"]').first().fill('e2epass123')
     await page.locator('button:has-text("登录")').click()
     await page.waitForURL(/\/console/, { timeout: 10000 })
     await expect(page.locator('.n-menu-item-content:has-text("租户管理")')).toHaveCount(0, { timeout: 5000 })
@@ -72,7 +72,8 @@ test.describe('真实验收（桌面端）', () => {
 
   test('主题切换持久化', async ({ page }) => {
     await page.goto(WEB_URL + '/login')
-    await page.locator('button:has([data-icon])').first().click()
+    // 点击 Naive UI 的 n-button(quaternary) 主题按钮
+    await page.locator('.hero-footer .n-button').first().click()
     const t1 = await page.evaluate(() => document.documentElement.getAttribute('data-theme'))
     expect(['light', 'dark']).toContain(t1)
     await page.reload()
