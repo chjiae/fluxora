@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.fluxora.platform.identity.mapper.IdentityMapper">
+
+    <!-- 按用户名查询用户账号 -->
+    <select id="findByUsername" resultType="io.fluxora.platform.identity.entity.UserAccount">
+        SELECT id, username, password_hash, display_name, email,
+               scope_type, tenant_id, enabled, created_at, updated_at
+        FROM user_account
+        WHERE username = #{username}
+    </select>
+
+    <!-- 按ID查询用户账号 -->
+    <select id="findById" resultType="io.fluxora.platform.identity.entity.UserAccount">
+        SELECT id, username, password_hash, display_name, email,
+               scope_type, tenant_id, enabled, created_at, updated_at
+        FROM user_account
+        WHERE id = #{id}
+    </select>
+
+    <!-- 查询用户拥有的角色列表 -->
+    <select id="findRolesByUserId" resultType="io.fluxora.platform.identity.entity.Role">
+        SELECT r.id, r.code, r.name, r.description, r.scope_type, r.created_at, r.updated_at
+        FROM role r
+        INNER JOIN user_role ur ON ur.role_id = r.id
+        WHERE ur.user_id = #{userId}
+    </select>
+
+    <!-- 查询用户拥有的权限列表（通过角色间接获取） -->
+    <select id="findPermissionsByUserId" resultType="io.fluxora.platform.identity.entity.Permission">
+        SELECT DISTINCT p.id, p.code, p.name, p.description, p.created_at, p.updated_at
+        FROM permission p
+        INNER JOIN role_permission rp ON rp.permission_id = p.id
+        INNER JOIN user_role ur ON ur.role_id = rp.role_id
+        WHERE ur.user_id = #{userId}
+    </select>
+
+    <!-- 按角色ID列表查询权限 -->
+    <select id="findPermissionsByRoleIds" resultType="io.fluxora.platform.identity.entity.Permission">
+        SELECT DISTINCT p.id, p.code, p.name, p.description, p.created_at, p.updated_at
+        FROM permission p
+        INNER JOIN role_permission rp ON rp.permission_id = p.id
+        WHERE rp.role_id IN
+        <foreach collection="roleIds" item="roleId" open="(" separator="," close=")">
+            #{roleId}
+        </foreach>
+    </select>
+
+    <!-- 按角色码查询角色 -->
+    <select id="findRoleByCode" resultType="io.fluxora.platform.identity.entity.Role">
+        SELECT id, code, name, description, scope_type, created_at, updated_at
+        FROM role
+        WHERE code = #{code}
+    </select>
+
+    <!-- 检查用户名是否已存在 -->
+    <select id="existsByUsername" resultType="boolean">
+        SELECT COUNT(*) > 0 FROM user_account WHERE username = #{username}
+    </select>
+
+    <!-- 插入用户账号 -->
+    <insert id="insertUser" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_account (username, password_hash, display_name, email,
+                                  scope_type, tenant_id, enabled, created_at, updated_at)
+        VALUES (#{username}, #{passwordHash}, #{displayName}, #{email},
+                #{scopeType}, #{tenantId}, #{enabled}, NOW(), NOW())
+    </insert>
+
+    <!-- 插入用户角色关联 -->
+    <insert id="insertUserRole">
+        INSERT INTO user_role (user_id, role_id, created_at)
+        VALUES (#{userId}, #{roleId}, NOW())
+    </insert>
+
+</mapper>
