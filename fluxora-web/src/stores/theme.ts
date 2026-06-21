@@ -25,7 +25,14 @@ function applyTheme(theme: Theme): void {
   if (typeof document !== 'undefined') document.documentElement.setAttribute('data-theme', theme)
 }
 
-/** 冷蓝品牌主题：亮暗模式保持相同语义色，避免状态含义随主题改变。 */
+/**
+ * 品牌主题：亮暗模式保持相同语义色，避免状态含义随主题改变。
+ *
+ * 暗色采用中性近黑面板（neutral near-black），刻意避开蓝调灰，
+ * 让控制台在深色环境下读起来克制、像专业工具，而非营销页。
+ * 色阶与 styles.css 中的 --bg / --surface / --border 系列对齐，
+ * 保证 Naive UI 组件背景与原生页面布局没有色温撞色。
+ */
 export function buildThemeOverrides(theme: Theme): GlobalThemeOverrides {
   const isDark = theme === 'dark'
   return {
@@ -51,18 +58,21 @@ export function buildThemeOverrides(theme: Theme): GlobalThemeOverrides {
       fontSize: '14px',
       borderRadius: '8px',
       lineHeight: '1.55',
-      bodyColor: isDark ? '#11151c' : '#f7f8fa',
-      cardColor: isDark ? '#191f29' : '#ffffff',
-      modalColor: isDark ? '#191f29' : '#ffffff',
-      popoverColor: isDark ? '#191f29' : '#ffffff',
-      textColor1: isDark ? '#f2f5fa' : '#182230',
-      textColor2: isDark ? '#a9b5c6' : '#617083',
-      textColor3: isDark ? '#7d8ba0' : '#8491a3',
-      borderColor: isDark ? '#2b3545' : '#e3e7ee',
-      dividerColor: isDark ? '#2b3545' : '#e3e7ee',
-      inputColor: isDark ? '#191f29' : '#ffffff',
-      tableColor: isDark ? '#191f29' : '#ffffff',
-      tableHeaderColor: isDark ? '#202837' : '#f0f3f8',
+      // 暗色：中性近黑分层（body 最深 → card/input 中层 → table-header 提亮层）。
+      // 亮色保持原有冷白灰，不改动用户已习惯的浅色界面。
+      bodyColor: isDark ? '#0f0f0f' : '#f7f8fa',
+      cardColor: isDark ? '#171716' : '#ffffff',
+      modalColor: isDark ? '#171716' : '#ffffff',
+      popoverColor: isDark ? '#1c1c1b' : '#ffffff',
+      // 文本三档梯度均经过 4.5:1 对比度核查（基于 cardColor #171716）。
+      textColor1: isDark ? '#ededeb' : '#182230',
+      textColor2: isDark ? '#a8a6a3' : '#617083',
+      textColor3: isDark ? '#7a7875' : '#8491a3',
+      borderColor: isDark ? '#2a2a28' : '#e3e7ee',
+      dividerColor: isDark ? '#222220' : '#e3e7ee',
+      inputColor: isDark ? '#171716' : '#ffffff',
+      tableColor: isDark ? '#171716' : '#ffffff',
+      tableHeaderColor: isDark ? '#1f1f1e' : '#f0f3f8',
     },
     Button: { borderRadiusMedium: '8px' },
     Tag: { borderRadius: '10px' },

@@ -18,15 +18,15 @@
 }
 
 [data-theme="dark"] {
-  --bg: #111110;
-  --surface: #1c1c1b;
-  --surface-elevated: #262625;
-  --text: #e8e6e3;
-  --text-muted: #989694;
-  --border: #333231;
-  --accent: #2dd4bf;
-  --danger: #f87171;
-  --focus-ring: rgba(45, 212, 191, 0.35);
+  --bg: #0f0f0f;
+  --surface: #171716;
+  --surface-elevated: #1f1f1e;
+  --text: #ededeb;
+  --text-muted: #a8a6a3;
+  --border: #2a2a28;
+  --accent: #4f7cff;
+  --danger: #dd5a63;
+  --focus-ring: rgba(79, 124, 255, 0.4);
   color-scheme: dark;
 }
 
