@@ -21,7 +21,7 @@ test.describe('身份认证与租户管理全流程', () => {
 
     // 3. 输入正确密码登录
     await page.fill('#username', 'admin')
-    await page.fill('#password', 'admin123')
+    await page.fill('#password', 'Admin@2026!')
     await page.click('button[type="submit"]')
 
     // 4. 等待导航到 setup 或 console
