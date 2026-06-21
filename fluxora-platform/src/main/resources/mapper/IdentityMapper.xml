@@ -1,21 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    用户身份与权限 MyBatis 映射。
+    所有业务查询默认追加 `AND deleted_at IS NULL`；软删除用户对认证、JWT 过滤器、登录、
+    成员管理列表均不可见。username 唯一性检查也仅在未删除记录中进行——配合
+    user_account 的 WHERE deleted_at IS NULL 部分唯一索引，软删后的用户名可被复用。
+-->
 <mapper namespace="io.fluxora.platform.identity.mapper.IdentityMapper">
 
-    <!-- 按用户名查询用户账号 -->
+    <!-- 按用户名查询用户账号（登录认证用），仅未删除记录 -->
     <select id="findByUsername" resultType="io.fluxora.platform.identity.entity.UserAccount">
         SELECT id, username, password_hash, display_name, email,
-               scope_type, tenant_id, enabled, created_at, updated_at
+               scope_type, tenant_id, enabled, deleted_at, created_at, updated_at
         FROM user_account
-        WHERE username = #{username}
+        WHERE username = #{username} AND deleted_at IS NULL
     </select>
 
-    <!-- 按ID查询用户账号 -->
+    <!-- 按ID查询用户账号，仅未删除记录；JWT 过滤器每次请求调用 -->
     <select id="findById" resultType="io.fluxora.platform.identity.entity.UserAccount">
         SELECT id, username, password_hash, display_name, email,
-               scope_type, tenant_id, enabled, created_at, updated_at
+               scope_type, tenant_id, enabled, deleted_at, created_at, updated_at
         FROM user_account
-        WHERE id = #{id}
+        WHERE id = #{id} AND deleted_at IS NULL
     </select>
 
     <!-- 查询用户拥有的角色列表 -->
@@ -53,12 +59,12 @@
         WHERE code = #{code}
     </select>
 
-    <!-- 检查用户名是否已存在 -->
+    <!-- 检查用户名是否已存在（仅未删除记录；软删后用户名可被复用） -->
     <select id="existsByUsername" resultType="boolean">
-        SELECT COUNT(*) > 0 FROM user_account WHERE username = #{username}
+        SELECT COUNT(*) > 0 FROM user_account WHERE username = #{username} AND deleted_at IS NULL
     </select>
 
-    <!-- 插入用户账号 -->
+    <!-- 插入用户账号；deleted_at 默认 NULL -->
     <insert id="insertUser" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO user_account (username, password_hash, display_name, email,
                                   scope_type, tenant_id, enabled, created_at, updated_at)
@@ -71,5 +77,160 @@
         INSERT INTO user_role (user_id, role_id, created_at)
         VALUES (#{userId}, #{roleId}, NOW())
     </insert>
+
+    <!-- ============================================================ -->
+    <!--             成员管理相关查询与变更                            -->
+    <!-- ============================================================ -->
+
+    <!--
+        分页查询成员列表。
+        通过 user_role + role 连接获得角色信息；通过 tenant 连接获得租户码与名称。
+        默认 ORDER BY created_at DESC, id DESC 保证翻页稳定。
+    -->
+    <select id="findMembers" resultType="io.fluxora.platform.identity.mapper.MemberRow">
+        SELECT
+            u.id AS id,
+            u.username AS username,
+            u.display_name AS displayName,
+            u.email AS email,
+            u.enabled AS enabled,
+            u.tenant_id AS tenantId,
+            t.tenant_code AS tenantCode,
+            t.name AS tenantName,
+            r.code AS roleCode,
+            r.name AS roleName,
+            u.created_at AS createdAt,
+            u.updated_at AS updatedAt
+        FROM user_account u
+        INNER JOIN tenant t ON t.id = u.tenant_id
+        LEFT JOIN user_role ur ON ur.user_id = u.id
+        LEFT JOIN role r ON r.id = ur.role_id
+        WHERE u.deleted_at IS NULL
+          AND u.scope_type = 'TENANT'
+          AND u.tenant_id = #{tenantId}
+        <if test="keyword != null and keyword != ''">
+            AND (u.username ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.display_name ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.email ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null and status != ''">
+            <choose>
+                <when test="status == 'ENABLED'">AND u.enabled = TRUE</when>
+                <when test="status == 'DISABLED'">AND u.enabled = FALSE</when>
+            </choose>
+        </if>
+        <if test="roleCode != null and roleCode != ''">
+            AND r.code = #{roleCode}
+        </if>
+        ORDER BY u.created_at DESC, u.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 统计成员总数，用于分页 -->
+    <select id="countMembers" resultType="long">
+        SELECT COUNT(DISTINCT u.id)
+        FROM user_account u
+        LEFT JOIN user_role ur ON ur.user_id = u.id
+        LEFT JOIN role r ON r.id = ur.role_id
+        WHERE u.deleted_at IS NULL
+          AND u.scope_type = 'TENANT'
+          AND u.tenant_id = #{tenantId}
+        <if test="keyword != null and keyword != ''">
+            AND (u.username ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.display_name ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.email ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null and status != ''">
+            <choose>
+                <when test="status == 'ENABLED'">AND u.enabled = TRUE</when>
+                <when test="status == 'DISABLED'">AND u.enabled = FALSE</when>
+            </choose>
+        </if>
+        <if test="roleCode != null and roleCode != ''">
+            AND r.code = #{roleCode}
+        </if>
+    </select>
+
+    <!-- 按ID查询单个成员详情（含角色与租户信息） -->
+    <select id="findMemberDetail" resultType="io.fluxora.platform.identity.mapper.MemberRow">
+        SELECT
+            u.id AS id,
+            u.username AS username,
+            u.display_name AS displayName,
+            u.email AS email,
+            u.enabled AS enabled,
+            u.tenant_id AS tenantId,
+            t.tenant_code AS tenantCode,
+            t.name AS tenantName,
+            r.code AS roleCode,
+            r.name AS roleName,
+            u.created_at AS createdAt,
+            u.updated_at AS updatedAt
+        FROM user_account u
+        INNER JOIN tenant t ON t.id = u.tenant_id
+        LEFT JOIN user_role ur ON ur.user_id = u.id
+        LEFT JOIN role r ON r.id = ur.role_id
+        WHERE u.id = #{id}
+          AND u.deleted_at IS NULL
+          AND u.scope_type = 'TENANT'
+        LIMIT 1
+    </select>
+
+    <!-- 更新成员基础资料：仅 display_name、email -->
+    <update id="updateProfile">
+        UPDATE user_account
+        SET display_name = #{displayName},
+            email = #{email},
+            updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <!-- 更新成员密码哈希；新哈希立即生效，原哈希立即失效 -->
+    <update id="updatePasswordHash">
+        UPDATE user_account
+        SET password_hash = #{passwordHash},
+            updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <!-- 设置成员启用/停用状态 -->
+    <update id="setEnabled">
+        UPDATE user_account
+        SET enabled = #{enabled},
+            updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <!-- 软删除成员：写入 deleted_at；幂等保证仅对未删除记录执行 -->
+    <update id="softDelete">
+        UPDATE user_account
+        SET deleted_at = NOW(),
+            updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <!-- 删除指定用户的全部角色关联：用于角色替换 -->
+    <delete id="deleteUserRoles">
+        DELETE FROM user_role WHERE user_id = #{userId}
+    </delete>
+
+    <!--
+        统计租户内启用状态的 TENANT_ADMIN 数量，支持排除某个用户。
+        用于「最后管理员保护」预检：停用/删除/降级目标后，剩余有效管理员是否仍 >= 1。
+        excludeUserId 为 null 时不排除，统计当前真实管理员总数。
+    -->
+    <select id="countActiveTenantAdmins" resultType="long">
+        SELECT COUNT(DISTINCT u.id)
+        FROM user_account u
+        INNER JOIN user_role ur ON ur.user_id = u.id
+        INNER JOIN role r ON r.id = ur.role_id
+        WHERE u.tenant_id = #{tenantId}
+          AND u.deleted_at IS NULL
+          AND u.enabled = TRUE
+          AND r.code = 'TENANT_ADMIN'
+        <if test="excludeUserId != null">
+            AND u.id != #{excludeUserId}
+        </if>
+    </select>
 
 </mapper>

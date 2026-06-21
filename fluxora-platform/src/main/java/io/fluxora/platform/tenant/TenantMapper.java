@@ -57,6 +57,6 @@ public interface TenantMapper {
     /** 设置租户过期时间，expireAt 为 null 表示永不过期 */
     void setExpireAt(@Param("id") Long id, @Param("expireAt") Instant expireAt);
 
-    /** 逻辑删除租户（设置 is_deleted = true） */
+    /** 逻辑删除租户（写入 deleted_at = NOW()），软删除遵循 AGENT.md 软删除规范 */
     void softDelete(@Param("id") Long id);
 }

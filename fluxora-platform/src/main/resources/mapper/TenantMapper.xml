@@ -1,26 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    租户表 MyBatis 映射。
+    所有业务查询默认追加 `AND deleted_at IS NULL`；仅 findByIdIncludeDeleted 显式包含已删除记录，
+    供 JwtAuthenticationFilter 与 AuthService 在认证阶段识别软删除租户。
+    软删除写入统一使用 SET deleted_at = NOW()，遵循 AGENT.md「软删除字段规范」。
+-->
 <mapper namespace="io.fluxora.platform.tenant.TenantMapper">
 
-    <!-- 按租户码查询租户（含已删除，用于幂等检查） -->
+    <!-- 按租户码查询租户：仅未删除记录，用于业务查询与唯一性检查 -->
     <select id="findByCode" resultType="io.fluxora.platform.tenant.Tenant">
-        SELECT id, tenant_code, name, description, type, enabled, expire_at, is_deleted, created_at, updated_at
+        SELECT id, tenant_code, name, description, type, enabled, expire_at, deleted_at, created_at, updated_at
         FROM tenant
-        WHERE tenant_code = #{tenantCode} AND is_deleted = FALSE
+        WHERE tenant_code = #{tenantCode} AND deleted_at IS NULL
     </select>
 
-    <!-- 按ID查询租户 -->
+    <!-- 按ID查询租户：仅未删除记录 -->
     <select id="findById" resultType="io.fluxora.platform.tenant.Tenant">
-        SELECT id, tenant_code, name, description, type, enabled, expire_at, is_deleted, created_at, updated_at
+        SELECT id, tenant_code, name, description, type, enabled, expire_at, deleted_at, created_at, updated_at
         FROM tenant
-        WHERE id = #{id} AND is_deleted = FALSE
+        WHERE id = #{id} AND deleted_at IS NULL
     </select>
 
     <!-- 分页查询租户列表，支持关键词、类型、状态（计算字段）筛选、过期时间范围、排序 -->
     <select id="findAll" resultType="io.fluxora.platform.tenant.Tenant">
-        SELECT id, tenant_code, name, description, type, enabled, expire_at, is_deleted, created_at, updated_at
+        SELECT id, tenant_code, name, description, type, enabled, expire_at, deleted_at, created_at, updated_at
         FROM tenant
-        WHERE is_deleted = FALSE
+        WHERE deleted_at IS NULL
         <if test="keyword != null and keyword != ''">
             AND (tenant_code ILIKE CONCAT('%', #{keyword}, '%') OR name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
@@ -47,7 +53,7 @@
     <!-- 统计符合条件的租户数量 -->
     <select id="countAll" resultType="long">
         SELECT COUNT(*) FROM tenant
-        WHERE is_deleted = FALSE
+        WHERE deleted_at IS NULL
         <if test="keyword != null and keyword != ''">
             AND (tenant_code ILIKE CONCAT('%', #{keyword}, '%') OR name ILIKE CONCAT('%', #{keyword}, '%'))
         </if>
@@ -69,49 +75,49 @@
         </if>
     </select>
 
-    <!-- 检查租户码是否已存在 -->
+    <!-- 检查租户码是否已存在（仅在未删除记录中检查；软删后租户码可被复用） -->
     <select id="existsByCode" resultType="boolean">
-        SELECT COUNT(*) > 0 FROM tenant WHERE tenant_code = #{tenantCode} AND is_deleted = FALSE
+        SELECT COUNT(*) > 0 FROM tenant WHERE tenant_code = #{tenantCode} AND deleted_at IS NULL
     </select>
 
-    <!-- 查询租户完整状态，不排除已删除（用于认证阶段校验） -->
+    <!-- 按ID查询租户（含已删除记录）：仅用于认证阶段识别已被软删租户 -->
     <select id="findByIdIncludeDeleted" resultType="io.fluxora.platform.tenant.Tenant">
-        SELECT id, tenant_code, name, description, type, enabled, expire_at, is_deleted, created_at, updated_at
+        SELECT id, tenant_code, name, description, type, enabled, expire_at, deleted_at, created_at, updated_at
         FROM tenant
         WHERE id = #{id}
     </select>
 
-    <!-- 新增租户 -->
+    <!-- 新增租户：deleted_at 默认为 NULL，无需显式赋值 -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO tenant (tenant_code, name, description, type, enabled, expire_at, is_deleted, created_at, updated_at)
-        VALUES (#{tenantCode}, #{name}, #{description}, #{type}, #{enabled}, #{expireAt}, FALSE, NOW(), NOW())
+        INSERT INTO tenant (tenant_code, name, description, type, enabled, expire_at, created_at, updated_at)
+        VALUES (#{tenantCode}, #{name}, #{description}, #{type}, #{enabled}, #{expireAt}, NOW(), NOW())
     </insert>
 
     <!-- 更新租户基础信息（名称、描述） -->
     <update id="update">
         UPDATE tenant
         SET name = #{name}, description = #{description}, updated_at = NOW()
-        WHERE id = #{id}
+        WHERE id = #{id} AND deleted_at IS NULL
     </update>
 
     <!-- 启用租户 -->
     <update id="enableTenant">
-        UPDATE tenant SET enabled = TRUE, updated_at = NOW() WHERE id = #{id}
+        UPDATE tenant SET enabled = TRUE, updated_at = NOW() WHERE id = #{id} AND deleted_at IS NULL
     </update>
 
     <!-- 停用租户 -->
     <update id="disableTenant">
-        UPDATE tenant SET enabled = FALSE, updated_at = NOW() WHERE id = #{id}
+        UPDATE tenant SET enabled = FALSE, updated_at = NOW() WHERE id = #{id} AND deleted_at IS NULL
     </update>
 
     <!-- 设置租户过期时间 -->
     <update id="setExpireAt">
-        UPDATE tenant SET expire_at = #{expireAt}, updated_at = NOW() WHERE id = #{id}
+        UPDATE tenant SET expire_at = #{expireAt}, updated_at = NOW() WHERE id = #{id} AND deleted_at IS NULL
     </update>
 
-    <!-- 逻辑删除租户 -->
+    <!-- 逻辑删除租户：写入当前时刻；幂等保证：仅对未删除记录执行 -->
     <update id="softDelete">
-        UPDATE tenant SET is_deleted = TRUE, updated_at = NOW() WHERE id = #{id}
+        UPDATE tenant SET deleted_at = NOW(), updated_at = NOW() WHERE id = #{id} AND deleted_at IS NULL
     </update>
 
 </mapper>

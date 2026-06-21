@@ -57,10 +57,40 @@ class FlywayMigrationTest {
     @Test
     void shouldHaveLogicalDeleteColumnOnTenant() {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-        Integer count = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'tenant' AND column_name = 'is_deleted'",
+        // V4 迁移已将 tenant.is_deleted BOOLEAN 改造为 tenant.deleted_at TIMESTAMPTZ
+        Integer deletedAtCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_name = 'tenant' AND column_name = 'deleted_at'",
                 Integer.class);
-        assertThat(count).isEqualTo(1);
+        assertThat(deletedAtCount).as("tenant 表应包含 deleted_at 软删除字段").isEqualTo(1);
+
+        Integer isDeletedCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_name = 'tenant' AND column_name = 'is_deleted'",
+                Integer.class);
+        assertThat(isDeletedCount).as("V4 后 tenant.is_deleted 应已被移除").isEqualTo(0);
+    }
+
+    @Test
+    void shouldHaveLogicalDeleteColumnOnUserAccount() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_name = 'user_account' AND column_name = 'deleted_at'",
+                Integer.class);
+        assertThat(count).as("user_account 表应包含 deleted_at 软删除字段").isEqualTo(1);
+    }
+
+    @Test
+    void shouldSeedMemberPermissions() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        // V4 引入 7 个成员管理细粒度权限
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM permission WHERE code IN ("
+                        + "'MEMBER_READ','MEMBER_CREATE','MEMBER_UPDATE',"
+                        + "'MEMBER_ENABLE','MEMBER_DISABLE','MEMBER_DELETE','MEMBER_PASSWORD_RESET')",
+                Integer.class);
+        assertThat(count).as("应注入 7 条 MEMBER_* 权限").isEqualTo(7);
     }
 
     @Test
