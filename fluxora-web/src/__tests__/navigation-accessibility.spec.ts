@@ -8,7 +8,7 @@ function mountView(component: typeof HomeView | typeof DocsView) {
   return mount(component, {
     global: {
       plugins: [createPinia()],
-      stubs: { RouterLink: true },
+      stubs: { RouterLink: { template: '<a><slot /></a>' } },
     },
   })
 }
@@ -20,11 +20,10 @@ describe('移动端导航可访问性', () => {
   ])('%s 的菜单按钮公开导航状态和关联关系', async (_, component) => {
     const wrapper = mountView(component)
     const menuButton = wrapper.find('.mobile')
-    const navigation = wrapper.find('nav')
 
     expect(menuButton.attributes('aria-label')).toBe('打开导航菜单')
     expect(menuButton.attributes('aria-expanded')).toBe('false')
-    expect(menuButton.attributes('aria-controls')).toBe(navigation.attributes('id'))
+    expect(menuButton.attributes('aria-controls')).toBe('public-navigation')
 
     await menuButton.trigger('click')
 
