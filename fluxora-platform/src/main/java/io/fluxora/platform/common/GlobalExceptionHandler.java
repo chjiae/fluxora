@@ -52,15 +52,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleTenantException(TenantException ex) {
         HttpStatus status = ex.getErrorCode() == BusinessErrorCode.ACCESS_DENIED
                 ? HttpStatus.FORBIDDEN : HttpStatus.BAD_REQUEST;
+        // 仅使用受控错误码的默认安全文案，不暴露构造时传入的动态消息
         return ResponseEntity.status(status)
-                .body(ErrorResponse.of(ex.getErrorCode(), ex.getMessage()));
+                .body(ErrorResponse.of(ex.getErrorCode()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
         log.warn("参数校验失败", ex);
+        // 不返回 ex.getMessage()，其可能包含日期解析异常等原始技术文本
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ErrorResponse.of(BusinessErrorCode.VALIDATION_ERROR, ex.getMessage()));
+                .body(ErrorResponse.of(BusinessErrorCode.VALIDATION_ERROR));
     }
 
     @ExceptionHandler(Exception.class)

@@ -41,14 +41,14 @@ npm run dev
 
 | 账号 | 密码 | 角色 |
 | --- | --- | --- |
-| `admin` | `admin123` | 平台管理员（PLATFORM_ADMIN） |
+| `admin` | `Admin@2026!` | 平台管理员（PLATFORM_ADMIN） |
 
 默认密码仅用于本地开发测试，生产环境请通过环境变量 `INIT_ADMIN_USERNAME`、`INIT_ADMIN_PASSWORD` 覆盖。
 
 ## 启动后流程
 
 1. 浏览器打开 `http://localhost:5173/login`
-2. 使用 `admin / admin123` 登录
+2. 使用 `admin / Admin@2026!` 登录
 3. 系统检测到自营租户未初始化，自动跳转初始化向导
 4. 填写自营租户名称与管理员信息，点击创建
 5. 自营租户创建完成后进入控制台，可管理租户（分页、搜索、筛选、新增、编辑、启停、过期设置、删除）

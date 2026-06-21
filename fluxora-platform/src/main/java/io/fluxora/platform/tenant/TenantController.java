@@ -15,9 +15,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
 
+/**
+ * 租户管理控制器。
+ * 所有端点通过 @PreAuthorize 进行细粒度权限校验，
+ * 自营租户保护在服务层统一执行。
+ */
 @RestController
 @RequestMapping("/api/tenant")
 public class TenantController {
@@ -38,7 +41,7 @@ public class TenantController {
      */
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_TENANT_READ')")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> list(
+    public ResponseEntity<ApiResponse<TenantPageResponse>> list(
             @RequestParam(defaultValue = "") String keyword,
             @RequestParam(defaultValue = "") String type,
             @RequestParam(defaultValue = "") String status,
@@ -51,7 +54,7 @@ public class TenantController {
         Instant from = expireFrom != null && !expireFrom.isBlank() ? Instant.parse(expireFrom + "T00:00:00Z") : null;
         Instant to = expireTo != null && !expireTo.isBlank() ? Instant.parse(expireTo + "T23:59:59Z") : null;
 
-        List<Tenant> tenants = tenantMapper.findAll(
+        var tenants = tenantMapper.findAll(
                 keyword.isBlank() ? null : keyword,
                 type.isBlank() ? null : type,
                 status.isBlank() ? null : status,
@@ -63,7 +66,7 @@ public class TenantController {
                 from, to);
 
         return ResponseEntity.ok(ApiResponse.success(
-                Map.of("items", (Object) tenants, "total", total, "page", page, "size", size)));
+                new TenantPageResponse(tenants, total, page, size)));
     }
 
     @GetMapping("/{id}")
@@ -80,7 +83,6 @@ public class TenantController {
         if (tenantMapper.existsByCode(request.tenantCode())) {
             throw new TenantException(BusinessErrorCode.TENANT_CODE_DUPLICATE);
         }
-
         String type = request.type() != null ? request.type() : TenantService.STANDARD;
         tenantService.assertNotSelfOperatedType(type);
 
@@ -96,8 +98,10 @@ public class TenantController {
     }
 
     /**
-     * 编辑租户基础信息。
-     * 自营租户仅允许修改 name 和 description，不允许修改 enabled、expireAt。
+     * 编辑租户基础信息（仅 name、description）。
+     * 启用/停用请使用 /enable、/disable 专用接口，
+     * 设置过期时间请使用 /expire 专用接口。
+     * 自营租户同样仅允许修改 name、description。
      * 需要权限：PERM_TENANT_UPDATE
      */
     @PutMapping("/{id}")
@@ -107,24 +111,12 @@ public class TenantController {
         Tenant tenant = tenantMapper.findById(id)
                 .orElseThrow(() -> new TenantException(BusinessErrorCode.RESOURCE_NOT_FOUND, "租户不存在"));
 
-        // 自营租户仅允许修改 name、description
         tenant.setName(request.name());
         if (request.description() != null) {
             tenant.setDescription(request.description());
         }
-        // 非自营租户允许修改 enabled、expireAt
-        if (!TenantService.SELF_OPERATED.equals(tenant.getType())) {
-            if (request.enabled() != null) {
-                tenant.setEnabled(request.enabled());
-            }
-            if (request.expireAt() != null) {
-                tenant.setExpireAt(Instant.parse(request.expireAt()));
-            } else if (request.clearExpireAt() != null && request.clearExpireAt()) {
-                tenant.setExpireAt(null);
-            }
-        }
-
         tenantMapper.update(tenant);
+
         return ResponseEntity.ok(ApiResponse.success(tenant));
     }
 
@@ -156,11 +148,11 @@ public class TenantController {
     @PutMapping("/{id}/expire")
     @PreAuthorize("hasAuthority('PERM_TENANT_EXPIRE_SET')")
     public ResponseEntity<ApiResponse<Tenant>> setExpire(@PathVariable Long id,
-                                                          @RequestBody Map<String, String> body) {
+                                                          @RequestBody SetTenantExpireRequest request) {
         tenantService.assertSelfOperatedProtected(id);
         Instant expireAt = null;
-        if (body.containsKey("expireAt") && body.get("expireAt") != null && !body.get("expireAt").isBlank()) {
-            expireAt = Instant.parse(body.get("expireAt"));
+        if (request.expireAt() != null && !request.expireAt().isBlank()) {
+            expireAt = Instant.parse(request.expireAt());
         }
         tenantMapper.setExpireAt(id, expireAt);
         Tenant tenant = tenantMapper.findById(id)
@@ -178,6 +170,6 @@ public class TenantController {
 
     public record TenantCreateRequest(String tenantCode, String name, String description,
                                        String type, Boolean enabled) {}
-    public record TenantUpdateRequest(String name, String description, Boolean enabled,
-                                       String expireAt, Boolean clearExpireAt) {}
+    /** 编辑租户请求：仅 name、description，启用/停用/过期使用专用接口 */
+    public record TenantUpdateRequest(String name, String description) {}
 }

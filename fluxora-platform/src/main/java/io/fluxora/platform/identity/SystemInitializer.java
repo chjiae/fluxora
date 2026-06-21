@@ -23,7 +23,7 @@ public class SystemInitializer {
     @Value("${fluxora.init.admin.username:admin}")
     private String adminUsername;
 
-    @Value("${fluxora.init.admin.password:admin123}")
+    @Value("${fluxora.init.admin.password:Admin@2026!}")
     private String adminPassword;
 
     public SystemInitializer(IdentityMapper identityMapper, PasswordEncoder passwordEncoder) {

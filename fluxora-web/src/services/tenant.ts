@@ -80,9 +80,6 @@ export async function createTenant(req: {
 export async function updateTenant(id: number, req: {
   name: string
   description?: string
-  enabled?: boolean
-  expireAt?: string | null
-  clearExpireAt?: boolean
 }): Promise<Tenant> {
   const res = await http.put(`/api/tenant/${id}`, req)
   return res.data.data

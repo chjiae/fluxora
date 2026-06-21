@@ -47,6 +47,11 @@ router.beforeEach(async (to, _from, next) => {
       return next('/login')
     }
 
+    // 租户管理页面需要 TENANT_READ 权限，无权限用户重定向到概览
+    if (to.path === '/console/tenants' && !auth.canReadTenants) {
+      return next('/console/overview')
+    }
+
     // 平台管理员且自营未初始化时，跳转初始化向导（setup页面除外）
     if (auth.isPlatformAdmin && to.path !== '/console/setup') {
       await auth.checkSelfOperatedStatus()

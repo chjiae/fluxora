@@ -63,7 +63,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // 租户级用户每次请求都必须校验所属租户状态。
             // 如果租户已被停用、过期或删除，立即拒绝访问并返回对应的业务错误码，
             // 前端据此展示安全的中文提示（而非 401 技术文本）。
-            if ("TENANT".equals(user.getScopeType()) && user.getTenantId() != null) {
+            // tenant_id 缺失的租户级用户视为无效。
+            if ("TENANT".equals(user.getScopeType())) {
+                if (user.getTenantId() == null) {
+                    SecurityExceptionHandler.writeErrorResponse(response, 401,
+                            BusinessErrorCode.AUTH_TENANT_DELETED);
+                    return;
+                }
                 try {
                     tenantService.assertTenantValidOrThrow(user.getTenantId());
                 } catch (TenantService.AuthTenantException e) {

@@ -141,13 +141,10 @@ async function handleUpdate() {
   formSubmitting.value = true
   formError.value = ''
   try {
-    const payload: any = { name: form.value.name, description: form.value.description }
-    if (!isSelfOperated(selectedTenant.value!)) {
-      payload.enabled = form.value.enabled
-      payload.expireAt = form.value.expireAt ? form.value.expireAt + 'T23:59:59Z' : null
-      payload.clearExpireAt = !form.value.expireAt
-    }
-    await updateTenant(selectedTenant.value!.id, payload)
+    await updateTenant(selectedTenant.value!.id, {
+      name: form.value.name,
+      description: form.value.description,
+    })
     showEditDialog.value = false
     showToast('租户更新成功')
     loadTenants()

@@ -49,8 +49,11 @@ public class AuthService {
             throw new AuthException(BusinessErrorCode.AUTH_INVALID_CREDENTIALS);
         }
 
-        // 租户用户登录时校验所属租户状态
-        if ("TENANT".equals(user.getScopeType()) && user.getTenantId() != null) {
+        // 租户用户登录时校验所属租户状态，tenant_id 缺失视为无效
+        if ("TENANT".equals(user.getScopeType())) {
+            if (user.getTenantId() == null) {
+                throw new AuthException(BusinessErrorCode.AUTH_TENANT_DELETED);
+            }
             tenantService.assertTenantValidOrThrow(user.getTenantId());
         }
 
