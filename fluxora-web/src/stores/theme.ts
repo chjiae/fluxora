@@ -1,40 +1,68 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import type { GlobalThemeOverrides } from 'naive-ui'
+import { onScopeDispose, ref, watch } from 'vue'
 
 export type Theme = 'light' | 'dark'
+
 const STORAGE_KEY = 'fluxora-theme'
 
 function readSystemPreference(): Theme {
-  if (typeof window === 'undefined') return 'light'
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'light'
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
-function readStored(): Theme | null {
-  try { const v = localStorage.getItem(STORAGE_KEY); if (v === 'light' || v === 'dark') return v } catch { }
-  return null
-}
-function applyTheme(theme: Theme) { document.documentElement.setAttribute('data-theme', theme) }
 
-function buildOverrides(theme: Theme) {
+function readStoredTheme(): Theme | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEY)
+    return value === 'light' || value === 'dark' ? value : null
+  } catch {
+    return null
+  }
+}
+
+function applyTheme(theme: Theme): void {
+  if (typeof document !== 'undefined') document.documentElement.setAttribute('data-theme', theme)
+}
+
+/** 冷蓝品牌主题：亮暗模式保持相同语义色，避免状态含义随主题改变。 */
+export function buildThemeOverrides(theme: Theme): GlobalThemeOverrides {
   const isDark = theme === 'dark'
   return {
     common: {
-      primaryColor: isDark ? '#2dd4bf' : '#16a394',
-      primaryColorHover: isDark ? '#5ee0cd' : '#1db8a6',
-      primaryColorPressed: isDark ? '#1abc9c' : '#128578',
-      fontFamily: "-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','PingFang SC','Hiragino Sans GB','Microsoft YaHei UI',sans-serif",
-      fontFamilyMono: "'SF Mono',Consolas,monospace",
-      fontSize: '14px', borderRadius: '8px', lineHeight: '1.55',
-      bodyColor: isDark ? '#111110' : '#ffffff',
-      cardColor: isDark ? '#1c1c1b' : '#ffffff',
-      modalColor: isDark ? '#1c1c1b' : '#ffffff',
-      popoverColor: isDark ? '#1c1c1b' : '#ffffff',
-      textColor1: isDark ? '#e8e6e3' : '#151515',
-      textColor2: isDark ? '#989694' : '#565653',
-      borderColor: isDark ? '#333231' : '#dddcd7',
-      dividerColor: isDark ? '#333231' : '#dddcd7',
-      inputColor: isDark ? '#1c1c1b' : '#f5f4f0',
-      tableColor: isDark ? '#1c1c1b' : '#ffffff',
-      tableHeaderColor: isDark ? '#262625' : '#fafaf8',
+      primaryColor: '#4f7cff',
+      primaryColorHover: '#6b90ff',
+      primaryColorPressed: '#3d67e8',
+      primaryColorSuppl: '#dce6ff',
+      infoColor: '#4f7cff',
+      infoColorHover: '#6b90ff',
+      infoColorPressed: '#3d67e8',
+      successColor: '#20a779',
+      successColorHover: '#36b98b',
+      successColorPressed: '#16865f',
+      warningColor: '#d98b20',
+      warningColorHover: '#e5a143',
+      warningColorPressed: '#b96e10',
+      errorColor: '#dd5a63',
+      errorColorHover: '#e7757c',
+      errorColorPressed: '#bd424b',
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei UI', sans-serif",
+      fontFamilyMono: "'SF Mono', Consolas, monospace",
+      fontSize: '14px',
+      borderRadius: '8px',
+      lineHeight: '1.55',
+      bodyColor: isDark ? '#11151c' : '#f7f8fa',
+      cardColor: isDark ? '#191f29' : '#ffffff',
+      modalColor: isDark ? '#191f29' : '#ffffff',
+      popoverColor: isDark ? '#191f29' : '#ffffff',
+      textColor1: isDark ? '#f2f5fa' : '#182230',
+      textColor2: isDark ? '#a9b5c6' : '#617083',
+      textColor3: isDark ? '#7d8ba0' : '#8491a3',
+      borderColor: isDark ? '#2b3545' : '#e3e7ee',
+      dividerColor: isDark ? '#2b3545' : '#e3e7ee',
+      inputColor: isDark ? '#191f29' : '#ffffff',
+      tableColor: isDark ? '#191f29' : '#ffffff',
+      tableHeaderColor: isDark ? '#202837' : '#f0f3f8',
     },
     Button: { borderRadiusMedium: '8px' },
     Tag: { borderRadius: '10px' },
@@ -45,21 +73,44 @@ function buildOverrides(theme: Theme) {
 }
 
 export const useThemeStore = defineStore('theme', () => {
-  const theme = ref<Theme>(readStored() || readSystemPreference())
-  const themeOverrides = ref(buildOverrides(theme.value))
+  const storedTheme = readStoredTheme()
+  // 仅用于当前 store 生命周期内判断是否由用户主动选择，无需进入 Pinia 响应式状态。
+  let hasManualPreference = storedTheme !== null
+  const theme = ref<Theme>(storedTheme ?? readSystemPreference())
+  const themeOverrides = ref<GlobalThemeOverrides>(buildThemeOverrides(theme.value))
+
   applyTheme(theme.value)
 
-  const mq = window.matchMedia('(prefers-color-scheme: dark)')
-  mq.addEventListener('change', (e) => { if (!readStored()) { theme.value = e.matches ? 'dark' : 'light' } })
+  const mediaQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : null
+  const handleSystemThemeChange = (event: MediaQueryListEvent) => {
+    if (!hasManualPreference) theme.value = event.matches ? 'dark' : 'light'
+  }
+  mediaQuery?.addEventListener('change', handleSystemThemeChange)
+  onScopeDispose(() => mediaQuery?.removeEventListener('change', handleSystemThemeChange))
 
-  watch(theme, (v) => {
-    applyTheme(v)
-    themeOverrides.value = buildOverrides(v)
-    try { localStorage.setItem(STORAGE_KEY, v) } catch { }
+  watch(theme, (value) => {
+    applyTheme(value)
+    themeOverrides.value = buildThemeOverrides(value)
   })
 
-  function toggle() { theme.value = theme.value === 'dark' ? 'light' : 'dark' }
-  function setTheme(t: Theme) { theme.value = t }
+  /** 用户主动切换后才写入本地，系统主题变化仍可继续跟随。 */
+  function setTheme(value: Theme): void {
+    hasManualPreference = true
+    theme.value = value
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, value)
+      } catch {
+        // 隐私模式下存储不可用不影响当前主题切换。
+      }
+    }
+  }
+
+  function toggle(): void {
+    setTheme(theme.value === 'dark' ? 'light' : 'dark')
+  }
 
   return { theme, themeOverrides, toggle, setTheme }
 })

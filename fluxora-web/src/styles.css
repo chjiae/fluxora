@@ -1,11 +1,10 @@
-/* ===== Font Stack ===== */
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI", Roboto, Arial, sans-serif;
   --font-mono: "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
-/* ===== Light Theme (default) ===== */
-:root, [data-theme="light"] {
+:root,
+[data-theme="light"] {
   --bg: #ffffff;
   --surface: #ffffff;
   --surface-elevated: #f8f8f7;
@@ -18,7 +17,6 @@
   color-scheme: light;
 }
 
-/* ===== Dark Theme ===== */
 [data-theme="dark"] {
   --bg: #111110;
   --surface: #1c1c1b;
@@ -32,291 +30,49 @@
   color-scheme: dark;
 }
 
-/* ===== Reset ===== */
-*, *::before, *::after { box-sizing: border-box }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.55;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-a { color: inherit; text-decoration: none }
-button {
-  font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
+
+a {
+  color: inherit;
+  text-decoration: none;
 }
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 3px;
 }
 
-/* ===== Typography ===== */
-h1, h2, h3, h4 { margin: 0; font-weight: 600; line-height: 1.25; }
-h1 { font-size: 2rem; letter-spacing: -0.02em; }
-h2 { font-size: 1.5rem; letter-spacing: -0.015em; }
-h3 { font-size: 1.125rem; }
-p { margin: 0; }
-
-/* ===== Theme Toggle ===== */
-.theme-toggle {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--surface); cursor: pointer; color: var(--text-muted);
-  transition: color .15s, border-color .15s;
-  aria-label: theme toggle;
-}
-.theme-toggle:hover { color: var(--text); border-color: var(--text-muted); }
-
-/* ===== Button ===== */
-.button {
-  border: 1px solid var(--border); padding: 10px 16px; border-radius: 6px;
-  display: inline-flex; gap: 6px; align-items: center; font-size: 14px;
-  font-weight: 500; transition: background .15s, border-color .15s;
-}
-.button:hover { border-color: var(--text-muted) }
-.primary {
-  background: var(--text); color: var(--bg); border-color: var(--text);
-}
-.primary:hover { opacity: .88 }
-.primary:disabled { opacity: .4; cursor: not-allowed }
-
-/* ===== Brand ===== */
-.brand { font-weight: 700; font-size: 22px; letter-spacing: -1.2px }
-.brand span { color: var(--accent) }
-
-/* ===== Header (public pages) ===== */
-.header {
-  height: 64px; max-width: 1200px; margin: auto; padding: 0 32px;
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-}
-.header nav { display: flex; align-items: center; gap: 28px; font-size: 14px }
-.header nav a:not(.console-link) { color: var(--text-muted) }
-.header nav a:not(.console-link):hover { color: var(--text) }
-.console-link { display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 600 }
-.mobile { display: none }
-
-/* ===== Home Hero ===== */
-.hero {
-  max-width: 1200px; margin: auto; padding: 110px 32px 100px;
-  background: radial-gradient(circle at 70% 20%, rgba(22,163,148,.08), transparent 32%);
-}
-.hero h1 { font-size: clamp(2.5rem, 6vw, 5.5rem); line-height: 1.02; letter-spacing: -0.03em; margin: 16px 0 24px }
-.hero em { font-family: Georgia, serif; font-weight: 400 }
-.lede { max-width: 540px; font-size: 17px; line-height: 1.7; color: var(--text-muted) }
-.actions { display: flex; gap: 12px; margin-top: 32px }
-.signal { margin-top: 72px; font-size: 12px; color: var(--text-muted) }
-.signal span { display: inline-block; width: 7px; height: 7px; background: var(--accent); border-radius: 50%; margin-right: 8px }
-
-/* ===== Statement ===== */
-.statement { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 64px 32px }
-.statement p { max-width: 760px; margin: auto; font-size: clamp(1.5rem, 3.5vw, 2.5rem); line-height: 1.22; letter-spacing: -0.03em }
-
-/* ===== Capabilities ===== */
-.capabilities { max-width: 1200px; margin: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0; padding: 28px 32px 88px }
-.capabilities article { border-left: 1px solid var(--border); padding: 24px 22px; min-height: 200px }
-.capabilities b { font-size: 16px; display: block; margin-bottom: 10px }
-.capabilities p { font-size: 14px; color: var(--text-muted); line-height: 1.6 }
-.capabilities .icon { margin-bottom: 14px; color: var(--accent) }
-
-/* ===== Onboarding section ===== */
-.onboard { background: var(--text); color: var(--bg); padding: 72px 32px }
-.onboard h2 { font-size: 1.75rem; margin-bottom: 28px }
-.onboard ol { max-width: 600px; margin: auto; padding-left: 20px; font-size: 15px; line-height: 1.8 }
-.onboard li { margin-bottom: 10px }
-
-/* ===== FAQ ===== */
-.faq { max-width: 760px; margin: auto; padding: 72px 32px }
-.faq details { border-bottom: 1px solid var(--border); padding: 18px 0 }
-.faq summary { font-weight: 600; font-size: 15px; cursor: pointer; list-style: none }
-.faq summary::-webkit-details-marker { display: none }
-.faq details p { padding-top: 10px; font-size: 14px; color: var(--text-muted); line-height: 1.6 }
-
-/* ===== Docs ===== */
-.docs { max-width: 1200px; margin: auto; display: flex; flex-wrap: wrap; gap: 0; min-height: calc(100vh - 64px) }
-.docs > .header { width: 100%; flex-basis: 100% }
-.docs aside { width: 220px; border-right: 1px solid var(--border); padding: 32px 24px; flex-shrink: 0 }
-.docs aside nav { display: flex; flex-direction: column; gap: 4px }
-.docs aside a, .docs aside button { font-size: 13px; padding: 6px 10px; border-radius: 6px; color: var(--text-muted); transition: background .1s; display: block; width: 100%; text-align: left }
-.docs aside a:hover, .docs aside a.active, .docs aside button:hover, .docs aside button.active { background: var(--surface-elevated); color: var(--text) }
-.docs article { flex: 1; padding: 32px 40px; min-width: 0 }
-.docs article h2 { font-size: 1.5rem; margin: 32px 0 12px }
-.docs article h2:first-of-type { margin-top: 0 }
-.docs article p { font-size: 14px; color: var(--text-muted); line-height: 1.7; margin-bottom: 14px }
-.docs article pre { background: var(--surface-elevated); padding: 14px 16px; border-radius: 8px; border: 1px solid var(--border); overflow-x: auto; font-size: 13px; font-family: var(--font-mono); line-height: 1.55 }
-.toc-button { display: none }
-
-@media (max-width: 720px) {
-  .docs { flex-direction: column }
-  .docs aside { width: 100%; border-right: 0; border-bottom: 1px solid var(--border); padding: 16px 20px }
-  .docs article { padding: 24px 20px }
-}
-
-/* ===== Console Shell ===== */
-.console {
-  height: 100dvh; overflow: hidden; display: flex;
-}
-.console > aside {
-  width: 240px; flex-shrink: 0; height: 100dvh; overflow-y: auto;
-  border-right: 1px solid var(--border); background: var(--surface);
-  display: flex; flex-direction: column; padding: 20px 16px;
-}
-.console > aside .brand { margin-bottom: 28px; font-size: 20px; padding: 0 8px }
-.console > aside nav { display: flex; flex-direction: column; gap: 2px; flex: 1 }
-.console > aside nav a {
-  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
-  border-radius: 8px; font-size: 14px; color: var(--text-muted);
-  transition: background .12s, color .12s;
-}
-.console > aside nav a:hover { background: var(--surface-elevated); color: var(--text) }
-.console > aside nav a.active {
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  color: var(--accent); font-weight: 600;
-}
-.console > aside .collapse {
-  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-  border-radius: 8px; font-size: 13px; color: var(--text-muted);
-  margin-top: auto; transition: background .12s;
-}
-.console > aside .collapse:hover { background: var(--surface-elevated) }
-
-.console-main {
-  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
-}
-.console-main > header {
-  height: 56px; padding: 0 24px; display: flex; align-items: center;
-  justify-content: space-between; border-bottom: 1px solid var(--border);
-  flex-shrink: 0; background: var(--surface);
-}
-.console-main > header .crumb { font-size: 13px; color: var(--text-muted) }
-.console-main > header .crumb b { color: var(--text); font-weight: 600 }
-.console-main > header .top-actions { display: flex; align-items: center; gap: 10px }
-.console-main > header .user-name {
-  display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text);
-}
-.console-main > header .logout-btn {
-  display: flex; align-items: center; gap: 4px; padding: 5px 8px;
-  border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
-  color: var(--text-muted); transition: color .15s;
-}
-.console-main > header .logout-btn:hover { color: var(--danger) }
-.console-main > main {
-  flex: 1; min-height: 0; overflow-y: auto; padding: 28px 32px;
-}
-
-/* ===== Collapsed sidebar ===== */
-.console.collapsed > aside { width: 64px; padding: 20px 10px }
-.console.collapsed > aside .brand { font-size: 16px; text-align: center; padding: 0 }
-.console.collapsed > aside nav a { justify-content: center; padding: 10px }
-.console.collapsed > aside nav a span { display: none }
-.console.collapsed > aside .collapse span { display: none }
-
-/* ===== Console metrics ===== */
-.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 28px }
-.metrics article {
-  padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
-}
-.metrics small { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px }
-.metrics strong { display: block; font-size: 18px; font-weight: 650; margin-bottom: 4px }
-.metrics span { font-size: 13px; color: var(--text-muted) }
-
-/* ===== Empty state ===== */
-.empty-state { padding: 60px 0; text-align: center }
-.empty-state > div:first-child { font-size: 16px; font-weight: 600; margin-bottom: 8px }
-.muted { color: var(--text-muted); font-size: 13px }
-
-/* ===== Login Page ===== */
-.login-page {
-  min-height: 100dvh; display: flex; background: var(--bg);
-}
-.login-hero {
-  flex: 1; display: flex; flex-direction: column; justify-content: center;
-  padding: 60px 64px; background: var(--surface); border-right: 1px solid var(--border);
-}
-.login-hero .brand { margin-bottom: 8px }
-.login-hero h2 { font-size: 1.75rem; font-weight: 650; margin: 0 0 10px }
-.login-hero .subtitle { font-size: 15px; color: var(--text-muted); line-height: 1.6; max-width: 400px; margin-bottom: 32px }
-.login-hero .features { list-style: none; padding: 0; font-size: 14px; color: var(--text-muted); display: flex; flex-direction: column; gap: 10px }
-.login-hero .features li { display: flex; align-items: center; gap: 8px }
-.login-hero .features li::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0 }
-.login-form-panel {
-  width: 420px; flex-shrink: 0; display: flex; flex-direction: column;
-  justify-content: center; padding: 60px 48px;
-}
-.login-form-panel h3 { font-size: 1.25rem; font-weight: 650; margin-bottom: 24px }
-.login-form { display: flex; flex-direction: column; gap: 16px }
-.field { display: flex; flex-direction: column; gap: 4px }
-.field label { font-size: 13px; font-weight: 600 }
-.field-hint { font-size: 12px; color: var(--text-muted); margin-top: 2px }
-.field input {
-  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
-  font-size: 14px; font-family: var(--font-sans); background: var(--bg);
-  outline: none; transition: border-color .15s, box-shadow .15s;
-}
-.field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring) }
-.field input:disabled { opacity: .5; cursor: not-allowed }
-.field .input-wrapper { position: relative; display: flex; align-items: center }
-.field .input-wrapper input { width: 100%; padding-right: 42px }
-.field .input-wrapper .toggle-pass {
-  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-  padding: 4px; font-size: 13px; color: var(--text-muted); background: none;
-  border: 0; cursor: pointer; transition: color .15s;
-}
-.field .input-wrapper .toggle-pass:hover { color: var(--text) }
-.error-msg { color: var(--danger); font-size: 13px; margin: 0 }
-.login-form .primary {
-  width: 100%; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 600;
-  margin-top: 4px;
-}
-.login-dev-hint { margin-top: 32px; padding: 12px; background: var(--surface-elevated); border-radius: 8px; font-size: 12px; color: var(--text-muted); line-height: 1.5 }
-.login-dev-hint code { font-family: var(--font-mono); font-size: 12px }
-
-@media (max-width: 800px) {
-  .login-page { flex-direction: column }
-  .login-hero { flex: none; padding: 40px 28px 24px; border-right: 0; border-bottom: 1px solid var(--border) }
-  .login-hero h2 { font-size: 1.35rem }
-  .login-hero .features { display: none }
-  .login-form-panel { width: 100%; padding: 32px 28px }
-}
-
-/* ===== Setup Page ===== */
-.setup-page {
-  min-height: 100dvh; display: flex; align-items: center; justify-content: center;
-  background: var(--bg); padding: 24px;
-}
-.setup-card {
-  width: 420px; padding: 40px 36px; border: 1px solid var(--border);
-  border-radius: 12px; background: var(--surface);
-}
-.setup-card .brand { text-align: center; margin-bottom: 4px }
-.setup-card .subtitle { text-align: center; color: var(--text-muted); font-size: 14px; margin-bottom: 24px }
-.setup-card .step-desc { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; text-align: center }
-.setup-form { display: flex; flex-direction: column; gap: 14px }
-.setup-form .primary { width: 100%; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 600 }
-.success-icon {
-  width: 52px; height: 52px; border-radius: 50%; background: var(--accent);
-  color: var(--bg); display: flex; align-items: center; justify-content: center;
-  font-size: 22px; margin: 0 auto 14px;
-}
-.success-msg { font-size: 17px; font-weight: 650; text-align: center; margin-bottom: 6px }
-.hint { font-size: 14px; color: var(--text-muted); text-align: center; margin-bottom: 24px }
-
-/* ===== Tenant Management ===== */
-.tenant-mgmt { /* scoped in TenantManagementView */ }
-
-/* ===== Mobile Nav ===== */
-@media (max-width: 720px) {
-  .mobile { display: block }
-  .header { padding: 0 20px }
-  .header nav { display: none }
-  .hero { padding: 64px 20px 60px }
-  .hero h1 { font-size: clamp(2rem, 8vw, 3rem) }
-  .capabilities { grid-template-columns: 1fr; padding: 20px 20px 60px }
-  .capabilities article { border-left: 0; border-top: 1px solid var(--border); padding: 20px 0 }
-  .console > aside { display: none }
-  .console-main > main { padding: 20px 16px }
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

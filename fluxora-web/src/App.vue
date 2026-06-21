@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { useThemeStore } from '@/stores/theme'
-import { lightTheme, darkTheme } from 'naive-ui'
+import {
+  darkTheme,
+  dateZhCN,
+  lightTheme,
+  zhCN,
+} from 'naive-ui'
 import { computed } from 'vue'
 
 const themeStore = useThemeStore()
@@ -8,7 +13,12 @@ const naiveTheme = computed(() => themeStore.theme === 'dark' ? darkTheme : ligh
 </script>
 
 <template>
-  <n-config-provider :theme="naiveTheme" :theme-overrides="themeStore.themeOverrides">
+  <n-config-provider
+    :theme="naiveTheme"
+    :theme-overrides="themeStore.themeOverrides"
+    :locale="zhCN"
+    :date-locale="dateZhCN"
+  >
     <n-loading-bar-provider>
       <n-notification-provider>
         <n-message-provider>

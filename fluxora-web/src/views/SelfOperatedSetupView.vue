@@ -1,60 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import type { FormInst, FormRules } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-
-const router = useRouter()
-const auth = useAuthStore()
-const message = useMessage()
-const step = ref(1)
-const submitting = ref(false)
-const tenantName = ref('Fluxora 自营')
-const adminUsername = ref('tenantadmin')
-const adminPassword = ref('')
-const adminDisplayName = ref('自营管理员')
-
-async function handleInit() {
-  if (!tenantName.value || !adminUsername.value || !adminPassword.value || !adminDisplayName.value) { message.warning('请填写所有必填项'); return }
-  submitting.value = true
-  try { await auth.initSelfOperated({ tenantName: tenantName.value, adminUsername: adminUsername.value, adminPassword: adminPassword.value, adminDisplayName: adminDisplayName.value }); message.success('自营租户创建成功'); step.value = 2 }
-  catch (e: any) { message.error(e.userMessage || '初始化失败') } finally { submitting.value = false }
-}
+const router = useRouter(); const auth = useAuthStore(); const message = useMessage(); const step = ref(1); const formRef = ref<FormInst | null>(null); const submitting = ref(false)
+const form = ref({ tenantName: 'Fluxora 自营', adminUsername: 'tenantadmin', adminPassword: '', confirmPassword: '', adminDisplayName: '自营管理员' })
+const rules: FormRules = { tenantName: [{ required: true, message: '请输入租户名称', trigger: 'blur' }], adminUsername: [{ required: true, message: '请输入管理员用户名', trigger: 'blur' }], adminPassword: [{ required: true, min: 8, message: '密码至少需要 8 个字符', trigger: 'input' }], confirmPassword: [{ required: true, validator: () => form.value.confirmPassword === form.value.adminPassword, message: '两次输入的密码不一致', trigger: ['input', 'blur'] }], adminDisplayName: [{ required: true, message: '请输入管理员显示名', trigger: 'blur' }] }
+async function next() { if (!form.value.tenantName.trim()) return; step.value = 2 }
+async function submit() { try { await formRef.value?.validate() } catch { return }; submitting.value = true; try { const { confirmPassword: _, ...request } = form.value; await auth.initSelfOperated(request); message.success('自营租户创建成功'); await router.replace('/console/overview') } catch { message.error('初始化暂时不可用，请稍后重试') } finally { submitting.value = false } }
 </script>
-
-<template>
-  <div class="setup-page">
-    <div class="setup-card">
-      <h1 class="brand">fluxora<span>.</span></h1>
-      <p class="subtitle">自营租户初始化</p>
-      <n-steps :current="step" style="margin-bottom:24px"><n-step title="创建信息" /><n-step title="完成" /></n-steps>
-      <div v-if="step===1">
-        <p class="step-desc">创建自营租户（tenantCode: <n-tag size="small" bordered>default</n-tag>，类型: <n-tag size="small" type="info" bordered>SELF_OPERATED</n-tag>）及管理员账号。</p>
-        <n-form label-placement="top">
-          <n-form-item label="租户名称" required><n-input v-model:value="tenantName" /></n-form-item>
-          <n-form-item label="管理员用户名" required><n-input v-model:value="adminUsername" /></n-form-item>
-          <n-form-item label="管理员密码" required><n-input v-model:value="adminPassword" type="password" /></n-form-item>
-          <n-form-item label="管理员显示名" required><n-input v-model:value="adminDisplayName" /></n-form-item>
-        </n-form>
-        <n-button type="primary" block :loading="submitting" @click="handleInit">创建自营租户</n-button>
-      </div>
-      <div v-else class="step-done">
-        <div class="success-icon">&#10003;</div>
-        <p class="success-msg">自营租户创建成功！</p>
-        <p class="hint">现在可以进入控制台管理平台了。</p>
-        <n-button type="primary" block @click="router.replace('/console/overview')">进入控制台</n-button>
-      </div>
-    </div>
-  </div>
-</template>
-
-<style scoped>
-.setup-page{min-height:100dvh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:24px}
-.setup-card{width:440px;padding:40px 36px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
-.brand{text-align:center;font-weight:700;font-size:22px;letter-spacing:-1.2px;margin-bottom:4px}
-.subtitle{text-align:center;color:var(--text-muted);font-size:14px;margin-bottom:20px}
-.step-desc{font-size:14px;color:var(--text-muted);margin-bottom:20px;line-height:1.6}
-.step-done{text-align:center}
-.success-icon{width:52px;height:52px;border-radius:50%;background:var(--accent);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 14px}
-.success-msg{font-size:17px;font-weight:650;margin-bottom:6px}
-.hint{font-size:14px;color:var(--text-muted);margin-bottom:24px}
-</style>
+<template><main class="setup-page"><n-card class="setup-card"><h1>自营租户初始化</h1><p>完成初始租户与管理员配置后即可进入控制台。</p><n-steps :current="step" size="small"><n-step title="确认租户" /><n-step title="创建管理员" /></n-steps><n-form ref="formRef" :model="form" :rules="rules" label-placement="top" class="setup-form"><template v-if="step===1"><n-alert type="info" :show-icon="false">将创建固定租户码 <b>default</b>，类型为 <b>SELF_OPERATED</b>。该租户受保护，不能停用、删除或设置过期时间。</n-alert><n-form-item label="租户名称" path="tenantName"><n-input v-model:value="form.tenantName" /></n-form-item><n-button type="primary" block @click="next">下一步</n-button></template><template v-else><n-form-item label="管理员用户名" path="adminUsername"><n-input v-model:value="form.adminUsername" /></n-form-item><n-form-item label="管理员显示名" path="adminDisplayName"><n-input v-model:value="form.adminDisplayName" /></n-form-item><n-form-item label="管理员密码" path="adminPassword"><n-input v-model:value="form.adminPassword" type="password" show-password-on="click" /></n-form-item><n-form-item label="确认密码" path="confirmPassword"><n-input v-model:value="form.confirmPassword" type="password" show-password-on="click" /></n-form-item><div class="actions"><n-button @click="step=1">上一步</n-button><n-button type="primary" :loading="submitting" @click="submit">创建并进入控制台</n-button></div></template></n-form></n-card></main></template>
+<style scoped>.setup-page{min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg)}.setup-card{width:min(100%,520px)}h1{margin:0;font-size:1.45rem}p{color:var(--text-muted);margin:8px 0 24px}.setup-form{margin-top:26px}.actions{display:flex;justify-content:flex-end;gap:8px}</style>
