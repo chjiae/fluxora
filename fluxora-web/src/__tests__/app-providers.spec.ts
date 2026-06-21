@@ -1,6 +1,14 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { dateZhCN, NConfigProvider, NMessageProvider, zhCN } from 'naive-ui'
+import {
+  dateZhCN,
+  NConfigProvider,
+  NDialogProvider,
+  NLoadingBarProvider,
+  NMessageProvider,
+  NNotificationProvider,
+  zhCN,
+} from 'naive-ui'
 import { beforeEach, describe, expect, it } from 'vitest'
 import App from '@/App.vue'
 
@@ -24,7 +32,7 @@ describe('App 全局提供器', () => {
     expect(configProvider.props('dateLocale')).toBe(dateZhCN)
   })
 
-  it('提供全局消息能力', () => {
+  it('提供全局反馈能力', () => {
     const wrapper = mount(App, {
       global: {
         plugins: [createPinia()],
@@ -34,6 +42,9 @@ describe('App 全局提供器', () => {
       },
     })
 
+    expect(wrapper.findComponent(NLoadingBarProvider).exists()).toBe(true)
+    expect(wrapper.findComponent(NNotificationProvider).exists()).toBe(true)
     expect(wrapper.findComponent(NMessageProvider).exists()).toBe(true)
+    expect(wrapper.findComponent(NDialogProvider).exists()).toBe(true)
   })
 })

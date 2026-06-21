@@ -17,3 +17,43 @@ const themeStore = useThemeStore()
     </main><footer><span>© 2026 Fluxora</span><span>开发者基础设施 · 公开预览</span></footer>
   </div>
 </template>
+
+<style scoped>
+.public-shell { min-height: 100dvh; background: var(--bg); }
+.header { max-width: 1200px; height: 64px; margin: auto; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+.brand { font-size: 22px; font-weight: 700; letter-spacing: -1.2px; }
+.brand span { color: var(--accent); }
+.header nav { display: flex; align-items: center; gap: 24px; font-size: 14px; color: var(--text-muted); }
+.header nav a:hover { color: var(--text); }
+.console-link, .actions, .onboard li, .text-link { display: inline-flex; align-items: center; gap: 6px; }
+.theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.mobile { display: none; }
+.hero, .capabilities, .faq { max-width: 1200px; margin: auto; padding-inline: 32px; }
+.hero { padding-block: 96px; }
+.eyebrow { margin: 0; font-size: 12px; letter-spacing: .08em; color: var(--text-muted); }
+.hero h1 { max-width: 780px; margin: 16px 0 24px; font-size: clamp(2.5rem, 6vw, 5.5rem); line-height: 1.05; letter-spacing: -.04em; }
+.hero em { font-family: Georgia, serif; font-weight: 400; }
+.lede { max-width: 540px; color: var(--text-muted); line-height: 1.7; }
+.actions { margin-top: 32px; flex-wrap: wrap; }
+.button { padding: 10px 16px; border: 1px solid var(--border); border-radius: 6px; }
+.primary { color: var(--bg); background: var(--text); border-color: var(--text); }
+.signal { margin-top: 64px; font-size: 12px; color: var(--text-muted); }
+.signal span { display: inline-block; width: 7px; height: 7px; margin-right: 8px; background: var(--accent); border-radius: 50%; }
+.statement { padding: 64px 32px; border-block: 1px solid var(--border); }
+.statement p { max-width: 760px; margin: auto; font-size: clamp(1.5rem, 3.5vw, 2.5rem); line-height: 1.25; }
+.capabilities { display: grid; grid-template-columns: repeat(3, 1fr); padding-block: 48px 88px; }
+.capabilities article { min-height: 180px; padding: 24px; border-left: 1px solid var(--border); }
+.capabilities h2 { margin: 8px 0; font-size: 18px; }
+.capabilities p, .faq p { color: var(--text-muted); line-height: 1.7; }
+.onboard { padding: 72px max(32px, calc((100% - 1136px) / 2)); color: var(--bg); background: var(--text); }
+.onboard h2 { max-width: 560px; margin: 12px 0 24px; font-size: 28px; }
+.onboard ol { margin: 0 0 28px; padding-left: 20px; line-height: 1.9; }
+.onboard li svg { color: var(--accent); }
+.faq { max-width: 820px; padding-block: 72px; }
+.faq h2 { margin: 12px 0 20px; }
+.faq details { padding: 18px 0; border-bottom: 1px solid var(--border); }
+.faq summary { cursor: pointer; font-weight: 600; }
+.faq details p { margin: 10px 0 0; }
+footer { display: flex; justify-content: space-between; gap: 16px; padding: 24px 32px; font-size: 13px; color: var(--text-muted); border-top: 1px solid var(--border); }
+@media (max-width: 720px) { .header { padding: 0 20px; } .mobile { display: inline-flex; } .header nav { display: none; } .header nav.open { position: absolute; top: 64px; right: 20px; z-index: 1; display: flex; flex-direction: column; align-items: stretch; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; } .hero, .capabilities, .faq { padding-inline: 20px; } .hero { padding-block: 64px; } .capabilities { grid-template-columns: 1fr; } .capabilities article { border-top: 1px solid var(--border); border-left: 0; padding-inline: 0; } .onboard { padding: 56px 20px; } footer { flex-direction: column; padding-inline: 20px; } }
+</style>
