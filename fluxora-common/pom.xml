@@ -12,4 +12,12 @@
 
     <artifactId>fluxora-common</artifactId>
     <name>Fluxora Common</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
