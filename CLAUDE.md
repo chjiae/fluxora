@@ -15,6 +15,15 @@
 - 只有存在严格顺序依赖且无法批量处理时才允许逐项操作；必须在关键代码处用中文说明业务原因、数据量边界和性能影响。
 - 新增接口、Mapper XML 和服务逻辑必须考虑分页、索引命中、批量参数规模、事务范围与避免重复查询。
 
+### 软删除
+
+- 业务表的逻辑删除统一使用 `deleted_at TIMESTAMPTZ NULL`，禁止使用 `is_deleted BOOLEAN` 等布尔标记。`NULL` 表示未删除；删除时执行 `UPDATE … SET deleted_at = NOW(), updated_at = NOW() WHERE deleted_at IS NULL`，不得物理删除核心业务数据。
+- 删除后允许复用的业务唯一字段（如租户码、用户名、邮箱）必须使用 `WHERE deleted_at IS NULL` 部分唯一索引；不允许复用时在迁移注释中说明原因。
+- 所有业务查询、列表、详情、计数、唯一性检查的 SQL 默认追加 `AND deleted_at IS NULL`；仅在认证、审计、恢复等明确场景下提供命名带 `IncludeDeleted` 的独立方法，并附中文注释说明用途与调用方。
+- JWT、Session、登录与状态过滤器在每次请求时必须校验目标账号 / 租户 `deleted_at IS NULL`；软删除后已签发的凭证必须立即失效。
+- 实体字段命名为 `deletedAt`（`Instant`），三态状态（ENABLED / DISABLED / DELETED）通过 `getStatus()` 在 Java 端派生，不得入库。响应 DTO 不向普通用户返回 `deletedAt`，仅返回派生 `status`。
+- 软删除字段的写入与恢复只能由服务层统一管理；Controller、Job、外部脚本不得直接更新 `deleted_at`。仓库内仍在使用 `is_deleted BOOLEAN` 的历史表必须在最近的 Flyway 迁移中改造为 `deleted_at`，禁止新增任何 `is_deleted BOOLEAN` 字段。
+
 ### 安全错误提示与交互
 
 - 普通用户可见页面、弹窗、Toast、表单提示和错误页不得显示 HTTP 状态码、业务错误码、异常类名、堆栈、SQL/数据库错误、字段名、后端原始异常、内部路径、配置、Token、密码或其他敏感信息。

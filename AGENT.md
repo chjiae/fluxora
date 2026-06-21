@@ -24,6 +24,35 @@
 
 新增接口、Mapper XML 和服务逻辑必须考虑分页、索引命中、批量参数规模、事务范围与避免重复查询；不得以牺牲数据库性能换取实现上的便利。
 
+## 软删除字段规范
+
+业务表的逻辑删除统一使用 `deleted_at TIMESTAMPTZ NULL` 时间戳字段，禁止使用 `is_deleted BOOLEAN` 等布尔标记。
+
+### 字段与索引
+
+1. 所有支持逻辑删除的业务表必须包含 `deleted_at TIMESTAMPTZ` 列，默认值为 `NULL`，并通过 `COMMENT ON COLUMN` 写明：`NULL 表示未删除；非 NULL 表示已删除并记录删除时刻，用于审计、未来窗口期恢复与排查`。
+2. 删除操作执行 `UPDATE … SET deleted_at = NOW(), updated_at = NOW() WHERE deleted_at IS NULL`，禁止物理删除核心业务数据；重复删除已删行的请求应返回成功幂等响应或忽略，不得报错。
+3. 删除后允许复用的业务唯一字段（如租户码、用户名、邮箱）必须使用部分唯一索引：`CREATE UNIQUE INDEX … ON table (field) WHERE deleted_at IS NULL;`。删除后不允许复用的字段也应在文件头注释处明确说明原因，避免无意中阻断未来的重用需求。
+4. 高频查询路径上的 `deleted_at IS NULL` 过滤条件如果与租户、状态等组合，应通过额外索引覆盖；不得依赖全表扫描后过滤。
+
+### 查询与服务层
+
+1. 所有业务查询、列表、详情、计数、唯一性检查的 SQL 默认追加 `AND deleted_at IS NULL` 过滤；不得返回已删除记录。
+2. 仅在认证阶段、审计接口、恢复流程等明确需要识别已删除记录的场景，提供独立的 `findByIdIncludeDeleted` 类方法，命名必须显式包含 `IncludeDeleted` 或 `Deleted`，且在 XML/Java 中均附中文注释说明用途与调用方。
+3. JWT、Session、登录、状态过滤器等长会话路径必须在每次请求时校验目标账号 / 租户 `deleted_at IS NULL`；软删后已签发的凭证必须立即失效。
+4. 软删除字段的写入只能由服务层统一管理（如 `MemberService.softDelete`、`TenantService.softDelete`），禁止在 Controller、Job、外部脚本中直接更新 `deleted_at`。
+5. 对软删除字段的反操作（恢复）必须经过显式的服务方法和权限校验，禁止前端、调用方直接置 `deleted_at = NULL`。
+
+### 实体层
+
+1. 实体类对应字段命名为 `deletedAt`，类型 `Instant`，附中文注释说明业务语义。
+2. 实体如需对外暴露三态状态（如 ENABLED / DISABLED / DELETED），通过 `getStatus()` 类计算方法在 Java 端派生，禁止把状态枚举写入数据库列。
+3. 响应 DTO 不得直接返回 `deletedAt` 时间戳给普通用户，必要时仅返回派生 `status` 字段。
+
+### 历史遗留
+
+仓库内任何仍在使用 `is_deleted BOOLEAN` 的表都视为历史遗留，必须在最近的 Flyway 迁移中改造为 `deleted_at TIMESTAMPTZ NULL`，同步迁移历史数据（`is_deleted = true` 的行将 `deleted_at` 置为 `updated_at`），并删除旧的 `is_deleted` 列与对应布尔索引。不允许新增任何使用 `is_deleted BOOLEAN` 的表或列。
+
 ## 用户可理解的错误提示规范
 
 所有页面和接口必须面向普通用户提供清晰、可理解、可操作的中文错误提示。
