@@ -10,6 +10,19 @@
 
 ---
 
+## Claude Code 交接说明
+
+从仓库根目录的 `master` 分支开始实施；当前基础骨架可构建，尚无本轮业务表、业务 SQL、认证或真实租户页面。开始前必须阅读以下文件：
+
+1. `AGENT.md`：用户可见错误的强制安全规范。
+2. `docs/superpowers/specs/2026-06-21-identity-rbac-tenancy-design.md`：已经确认的数据、认证和页面边界。
+3. 本计划：按 Task 1 至 Task 7 顺序执行，不跳过失败测试、验证和提交。
+4. `README.md` 与 `.env.example`：现有本地依赖和启动约定。
+
+实现时保持以下不可变边界：所有数据库 SQL 只能写入 MyBatis XML；全部 Flyway 脚本必须含中文业务注释；`fluxora-gateway` 不得加入任何本轮业务；不实现 Provider、模型、API Key、计费、Redis Pub/Sub/Stream 或 HTTP/SSE 中继；前端不得 Mock 登录、权限或租户 CRUD；用户界面不得显示原始异常、HTTP 状态码、业务错误码或敏感信息。
+
+每个任务完成后运行其列出的命令并执行 `git status --short`、`git diff --check`，只暂存任务相关文件，使用列出的 Conventional Commit。Task 7 是交付门槛：仅当 Maven、前端单测、生产构建和 Playwright 真实流程全部通过，才可宣称本轮完成。
+
 ## 文件结构
 
 - `fluxora-common/**`：安全响应、业务错误代码和异常契约。
