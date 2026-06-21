@@ -11,8 +11,8 @@ public enum BusinessErrorCode {
     ACCESS_DENIED("当前账号没有此操作权限"),
     TENANT_CODE_DUPLICATE("该租户码已被使用，请更换后重试"),
     SELF_OPERATED_TENANT_PROTECTED("自营租户受保护，无法%s"),
-    VALIDATION_ERROR(null),
-    RESOURCE_NOT_FOUND(null),
+    VALIDATION_ERROR("输入内容不符合要求，请检查后重试"),
+    RESOURCE_NOT_FOUND("请求的资源不存在"),
     INTERNAL_ERROR("服务暂时不可用，请稍后重试");
 
     private final String defaultUserMessage;

@@ -33,7 +33,7 @@ fluxora:
   init:
     admin:
       username: ${INIT_ADMIN_USERNAME:admin}
-      password: ${INIT_ADMIN_PASSWORD:admin123}
+      password: ${INIT_ADMIN_PASSWORD:Admin@2026!}
 
 management:
   endpoints:

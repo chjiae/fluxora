@@ -5,6 +5,7 @@ import io.fluxora.platform.identity.entity.Permission;
 import io.fluxora.platform.identity.entity.Role;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.identity.mapper.IdentityMapper;
+import io.fluxora.platform.tenant.TenantService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -30,10 +31,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final IdentityMapper identityMapper;
+    private final TenantService tenantService;
 
-    public JwtAuthenticationFilter(JwtService jwtService, IdentityMapper identityMapper) {
+    public JwtAuthenticationFilter(JwtService jwtService, IdentityMapper identityMapper,
+                                   TenantService tenantService) {
         this.jwtService = jwtService;
         this.identityMapper = identityMapper;
+        this.tenantService = tenantService;
     }
 
     @Override
@@ -54,6 +58,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityExceptionHandler.writeErrorResponse(response, 401,
                         BusinessErrorCode.AUTH_ACCOUNT_DISABLED);
                 return;
+            }
+
+            // 租户级用户每次请求都必须校验所属租户状态。
+            // 如果租户已被停用、过期或删除，立即拒绝访问并返回对应的业务错误码，
+            // 前端据此展示安全的中文提示（而非 401 技术文本）。
+            if ("TENANT".equals(user.getScopeType()) && user.getTenantId() != null) {
+                try {
+                    tenantService.assertTenantValidOrThrow(user.getTenantId());
+                } catch (TenantService.AuthTenantException e) {
+                    SecurityExceptionHandler.writeErrorResponse(response, 401, e.getErrorCode());
+                    return;
+                }
             }
 
             List<Role> roles = identityMapper.findRolesByUserId(userId);

@@ -31,6 +31,12 @@ public class SystemInitializer {
         this.passwordEncoder = passwordEncoder;
     }
 
+    /**
+     * 应用启动后幂等初始化平台管理员。
+     * 如果管理员已存在则跳过，不会重置已有密码或覆盖角色分配。
+     * 密码仅通过 BCrypt 哈希存储，不会打印到日志或返回给接口。
+     * 管理员用户名和初始密码可通过环境变量 INIT_ADMIN_USERNAME / INIT_ADMIN_PASSWORD 覆盖。
+     */
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void initializeAdminUser() {

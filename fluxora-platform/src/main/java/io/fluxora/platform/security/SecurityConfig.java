@@ -17,6 +17,13 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+/**
+ * Spring Security 配置。
+ * - 所有请求默认拒绝，仅显式放行 login、health、认证路径。
+ * - 认证通过 JwtAuthenticationFilter 从 Cookie 解析 JWT。
+ * - CORS 允许 localhost:5173（Vite dev server）。
+ * - 认证入口返回 401 + 安全中文提示，禁止返回技术异常。
+ */
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
