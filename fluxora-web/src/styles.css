@@ -6,9 +6,9 @@
 
 /* ===== Light Theme (default) ===== */
 :root, [data-theme="light"] {
-  --bg: #ffffff;
-  --surface: #f7f7f5;
-  --surface-elevated: #f0f0ee;
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --surface-elevated: #fafaf8;
   --text: #151515;
   --text-muted: #565653;
   --border: #dddcd7;
@@ -20,9 +20,9 @@
 
 /* ===== Dark Theme ===== */
 [data-theme="dark"] {
-  --bg: #0a0a09;
-  --surface: #151514;
-  --surface-elevated: #1e1e1c;
+  --bg: #111110;
+  --surface: #1c1c1b;
+  --surface-elevated: #262625;
   --text: #e8e6e3;
   --text-muted: #989694;
   --border: #333231;
