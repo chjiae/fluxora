@@ -66,7 +66,7 @@ class AuthenticationIntegrationTest {
 
     @Test
     void shouldLoginWithAdminCredentials() throws Exception {
-        String requestJson = objectMapper.writeValueAsString(Map.of("username", "admin", "password", "admin123"));
+        String requestJson = objectMapper.writeValueAsString(Map.of("username", "admin", "password", "Admin@2026!"));
         HttpHeaders headers = new HttpHeaders();
         headers.set("Content-Type", "application/json");
         HttpEntity<String> entity = new HttpEntity<>(requestJson, headers);
@@ -94,7 +94,6 @@ class AuthenticationIntegrationTest {
                 baseUrl + "/api/auth/login", HttpMethod.POST, entity, String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        // 验证响应不含技术细节（即使body为null也通过，关键是状态码正确）
         if (response.getBody() != null) {
             assertThat(response.getBody()).doesNotContain("401", "UNAUTHORIZED",
                     "BadCredentialsException", "SQL", "stackTrace");
@@ -104,7 +103,7 @@ class AuthenticationIntegrationTest {
 
     @Test
     void shouldReturnCurrentUserInfo() throws Exception {
-        String loginJson = objectMapper.writeValueAsString(Map.of("username", "admin", "password", "admin123"));
+        String loginJson = objectMapper.writeValueAsString(Map.of("username", "admin", "password", "Admin@2026!"));
         HttpHeaders loginHeaders = new HttpHeaders();
         loginHeaders.set("Content-Type", "application/json");
         ResponseEntity<String> loginResp = restTemplate.exchange(
@@ -112,6 +111,7 @@ class AuthenticationIntegrationTest {
                 new HttpEntity<>(loginJson, loginHeaders), String.class);
 
         List<String> cookies = loginResp.getHeaders().get(HttpHeaders.SET_COOKIE);
+        assertThat(cookies).isNotNull();
 
         HttpHeaders meHeaders = new HttpHeaders();
         meHeaders.put(HttpHeaders.COOKIE, cookies);
@@ -123,8 +123,7 @@ class AuthenticationIntegrationTest {
     }
 
     @Test
-    void shouldRejectUnauthenticatedRequest() throws Exception {
-        // 使用不带错误处理的RestTemplate来接收原始错误响应
+    void shouldRejectUnauthenticatedRequest() {
         ResponseEntity<String> response = restTemplate.exchange(
                 baseUrl + "/api/auth/me", HttpMethod.GET, HttpEntity.EMPTY, String.class);
 
@@ -133,7 +132,7 @@ class AuthenticationIntegrationTest {
 
     @Test
     void idempotentInitializationShouldNotResetPassword() throws Exception {
-        String requestJson = objectMapper.writeValueAsString(Map.of("username", "admin", "password", "admin123"));
+        String requestJson = objectMapper.writeValueAsString(Map.of("username", "admin", "password", "Admin@2026!"));
         HttpHeaders headers = new HttpHeaders();
         headers.set("Content-Type", "application/json");
         HttpEntity<String> entity = new HttpEntity<>(requestJson, headers);
