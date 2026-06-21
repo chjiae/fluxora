@@ -19,6 +19,15 @@ export const useAuthStore = defineStore('auth', () => {
   const canDisableTenant = computed(() => user.value?.permissions?.includes('TENANT_DISABLE') ?? false)
   const canDeleteTenant = computed(() => user.value?.permissions?.includes('TENANT_DELETE') ?? false)
   const canSetTenantExpire = computed(() => user.value?.permissions?.includes('TENANT_EXPIRE_SET') ?? false)
+  // 成员管理细粒度权限（V4 引入），同时授予平台管理员与租户管理员，
+  // 跨租户与角色升级保护放在后端服务层强制
+  const canReadMembers = computed(() => user.value?.permissions?.includes('MEMBER_READ') ?? false)
+  const canCreateMember = computed(() => user.value?.permissions?.includes('MEMBER_CREATE') ?? false)
+  const canUpdateMember = computed(() => user.value?.permissions?.includes('MEMBER_UPDATE') ?? false)
+  const canEnableMember = computed(() => user.value?.permissions?.includes('MEMBER_ENABLE') ?? false)
+  const canDisableMember = computed(() => user.value?.permissions?.includes('MEMBER_DISABLE') ?? false)
+  const canDeleteMember = computed(() => user.value?.permissions?.includes('MEMBER_DELETE') ?? false)
+  const canResetMemberPassword = computed(() => user.value?.permissions?.includes('MEMBER_PASSWORD_RESET') ?? false)
 
   async function loginAction(username: string, password: string) {
     loading.value = true
@@ -94,6 +103,13 @@ export const useAuthStore = defineStore('auth', () => {
     canDisableTenant,
     canDeleteTenant,
     canSetTenantExpire,
+    canReadMembers,
+    canCreateMember,
+    canUpdateMember,
+    canEnableMember,
+    canDisableMember,
+    canDeleteMember,
+    canResetMemberPassword,
     loginAction,
     checkAuth,
     logoutAction,

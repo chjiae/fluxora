@@ -21,6 +21,13 @@ const USER_MESSAGES: Record<string, string> = {
   VALIDATION_ERROR: '输入内容不符合要求，请检查后重试',
   RESOURCE_NOT_FOUND: '请求的资源不存在',
   INTERNAL_ERROR: '服务暂时不可用，请稍后重试',
+  // 成员管理（V4 引入）
+  USERNAME_DUPLICATE: '该用户名已被使用，请更换后重试',
+  LAST_TENANT_ADMIN_PROTECTED: '该租户至少需要保留一名启用状态的租户管理员，无法继续操作',
+  ROLE_NOT_ASSIGNABLE: '当前账号无权分配该角色',
+  MEMBER_NOT_FOUND: '成员不存在或已被删除',
+  CROSS_TENANT_ACCESS_DENIED: '当前账号没有此操作权限',
+  PASSWORD_WEAK: '密码强度不符合要求，请使用至少 8 位且包含字母与数字',
 }
 
 const FALLBACK_MESSAGE = '服务暂时不可用，请稍后重试'

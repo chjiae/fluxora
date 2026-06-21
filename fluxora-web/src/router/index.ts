@@ -5,6 +5,7 @@ import ConsoleView from '../views/ConsoleView.vue'
 import LoginView from '../views/LoginView.vue'
 import SelfOperatedSetupView from '../views/SelfOperatedSetupView.vue'
 import TenantManagementView from '../views/TenantManagementView.vue'
+import MemberManagementView from '../views/MemberManagementView.vue'
 import ConsoleOverviewView from '../views/ConsoleOverviewView.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -22,6 +23,17 @@ export const router = createRouter({
       children: [
         { path: '', redirect: '/console/overview' },
         { path: 'tenants', component: TenantManagementView },
+        {
+          // 平台管理员视角：在具体租户上下文里管理成员
+          path: 'tenants/:tenantId/members',
+          component: MemberManagementView,
+          props: route => ({ tenantId: Number(route.params.tenantId) }),
+        },
+        {
+          // 租户管理员视角：管理自身租户内的成员
+          path: 'members',
+          component: MemberManagementView,
+        },
         { path: 'overview', component: ConsoleOverviewView },
       ],
     },
@@ -51,6 +63,12 @@ router.beforeEach(async (to, _from, next) => {
 
     // 租户管理页面需要 TENANT_READ 权限，无权限用户重定向到概览
     if (to.path === '/console/tenants' && !auth.canReadTenants) {
+      return next('/console/overview')
+    }
+
+    // 成员管理页面：嵌套租户路径与租户管理员入口均需要 MEMBER_READ
+    if ((to.path === '/console/members' || /^\/console\/tenants\/[^/]+\/members$/.test(to.path))
+        && !auth.canReadMembers) {
       return next('/console/overview')
     }
 
