@@ -84,7 +84,38 @@ public enum BusinessErrorCode {
     /** 卡密批次不存在或已被删除 */
     CARD_BATCH_NOT_FOUND("卡密批次不存在或已被删除"),
     /** 批量生成数量超出配置上限 */
-    CARD_BATCH_COUNT_EXCEEDED("本次生成数量超出允许范围，请调整后重试");
+    CARD_BATCH_COUNT_EXCEEDED("本次生成数量超出允许范围，请调整后重试"),
+
+    // ---------------- 上游配置相关业务错误码 ----------------
+
+    /** 上游厂商编码重复：同租户或共享范围内已存在未删除的同编码厂商 */
+    UPSTREAM_PROVIDER_CODE_DUPLICATE("该上游厂商编码已被使用，请更换后重试"),
+    /** 上游厂商仍被接入地址引用，不能逻辑删除 */
+    UPSTREAM_PROVIDER_IN_USE("该上游厂商仍有关联配置，无法删除"),
+    /** 接入基础地址格式不合法（非 http/https、含 query/fragment、写了业务接口路径等） */
+    UPSTREAM_BASE_URL_INVALID("请输入有效的 HTTP 或 HTTPS 接入基础地址"),
+    /** 同一厂商下协议与规范化地址组合已存在 */
+    UPSTREAM_BASE_URL_DUPLICATE("当前厂商下已存在相同协议和接入地址"),
+    /** 接入地址仍被通道引用，不能逻辑删除 */
+    UPSTREAM_BASE_URL_IN_USE("该接入地址仍被通道使用，无法删除"),
+    /** 通道仍被凭证引用，不能逻辑删除 */
+    UPSTREAM_CHANNEL_IN_USE("该上游通道仍有关联凭证，无法删除"),
+    /** 租户管理员尝试修改平台共享上游配置 */
+    UPSTREAM_SHARED_READONLY("当前账号无权修改平台共享上游配置"),
+    /** 通道运行参数（优先级、权重、超时）不合法 */
+    UPSTREAM_CHANNEL_PARAM_INVALID("请检查优先级、权重或超时时间后重试"),
+    /** 目标租户停用、过期或已删除，不能操作上游配置 */
+    UPSTREAM_TENANT_UNAVAILABLE("所属租户当前不可用，无法操作上游配置"),
+    /** 凭证明文为空或仅空白 */
+    CREDENTIAL_REQUIRED("请输入上游访问凭证"),
+    /** 凭证替换处理失败（明文缺失或加密失败） */
+    CREDENTIAL_REPLACE_FAILED("凭证更新失败，请检查输入后重试"),
+    /** 单条凭证与当前租户未删除凭证重复，未重复添加 */
+    CREDENTIAL_DUPLICATE("该凭证已存在于当前租户，未重复添加"),
+    /** 批量导入提交的凭证全部已存在或重复，未导入任何凭证 */
+    CREDENTIAL_ALL_DUPLICATE("未导入任何凭证：提交的凭证均已存在或重复"),
+    /** 批量导入数量超出配置上限 */
+    CREDENTIAL_LIMIT_EXCEEDED("本次导入数量超出允许范围，请拆分后重试");
 
     private final String defaultUserMessage;
 

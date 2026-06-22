@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 通道 SQL：列表一次 JOIN 取出关联字段与凭证数量；查询均排除已逻辑删除记录。 -->
+<mapper namespace="io.fluxora.platform.upstream.channel.ProviderChannelMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO provider_channel(tenant_id,provider_base_url_id,name,enabled,priority,weight,connect_timeout_ms,read_timeout_ms,remark,created_at,updated_at)
+        VALUES(#{tenantId},#{providerBaseUrlId},#{name},#{enabled},#{priority},#{weight},#{connectTimeoutMs},#{readTimeoutMs},#{remark},NOW(),NOW())
+    </insert>
+    <select id="findById" resultType="io.fluxora.platform.upstream.channel.ProviderChannel">
+        SELECT id,tenant_id,provider_base_url_id,name,enabled,priority,weight,connect_timeout_ms,read_timeout_ms,remark,created_at,updated_at
+        FROM provider_channel WHERE id=#{id} AND deleted_at IS NULL
+    </select>
+
+    <!-- 行列：租户名称、厂商名称、协议、规范化地址、凭证数量一次取出。 -->
+    <sql id="channelColumns">
+        c.id, c.tenant_id, t.name AS tenant_name, p.id AS provider_id, p.name AS provider_name,
+        c.provider_base_url_id, b.protocol, b.normalized_base_url,
+        c.name, c.enabled, c.priority, c.weight, c.connect_timeout_ms, c.read_timeout_ms, c.remark,
+        (SELECT COUNT(*) FROM provider_credential cr WHERE cr.provider_channel_id = c.id AND cr.deleted_at IS NULL) AS credential_count,
+        c.created_at, c.updated_at
+    </sql>
+    <sql id="channelJoins">FROM provider_channel c
+        JOIN provider_base_url b ON b.id = c.provider_base_url_id
+        JOIN provider p ON p.id = b.provider_id
+        LEFT JOIN tenant t ON t.id = c.tenant_id</sql>
+    <sql id="channelFilters">WHERE c.deleted_at IS NULL AND (#{platformAdmin}=TRUE OR c.tenant_id=#{tenantId})
+        <if test="keyword != null and keyword != ''">AND c.name ILIKE CONCAT('%',#{keyword},'%')</if>
+        <if test="providerId != null">AND p.id=#{providerId}</if>
+        <if test="protocol != null and protocol != ''">AND b.protocol=#{protocol}</if>
+        <if test="enabled != null">AND c.enabled=#{enabled}</if>
+    </sql>
+
+    <select id="findRows" resultType="io.fluxora.platform.upstream.channel.mapper.ProviderChannelRow">
+        SELECT <include refid="channelColumns"/> <include refid="channelJoins"/> <include refid="channelFilters"/>
+        ORDER BY c.created_at DESC,c.id DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="countRows" resultType="long">
+        SELECT COUNT(*) <include refid="channelJoins"/> <include refid="channelFilters"/>
+    </select>
+    <select id="findRowById" resultType="io.fluxora.platform.upstream.channel.mapper.ProviderChannelRow">
+        SELECT <include refid="channelColumns"/> <include refid="channelJoins"/>
+        WHERE c.id=#{id} AND c.deleted_at IS NULL AND (#{platformAdmin}=TRUE OR c.tenant_id=#{tenantId})
+    </select>
+
+    <update id="update">UPDATE provider_channel SET provider_base_url_id=#{providerBaseUrlId},name=#{name},priority=#{priority},weight=#{weight},connect_timeout_ms=#{connectTimeoutMs},read_timeout_ms=#{readTimeoutMs},remark=#{remark},updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
+    <update id="setEnabled">UPDATE provider_channel SET enabled=#{enabled},updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
+    <update id="softDelete">UPDATE provider_channel SET deleted_at=NOW(),updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
+    <select id="hasCredentials" resultType="boolean">SELECT EXISTS(SELECT 1 FROM provider_credential WHERE provider_channel_id=#{channelId} AND deleted_at IS NULL)</select>
+
+    <select id="stats" resultType="io.fluxora.platform.upstream.channel.dto.ProviderChannelStats">
+        SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE c.enabled = TRUE) AS enabled,
+            COUNT(*) FILTER (WHERE c.enabled = FALSE) AS disabled
+        FROM provider_channel c WHERE c.deleted_at IS NULL AND (#{platformAdmin}=TRUE OR c.tenant_id=#{tenantId})
+    </select>
+</mapper>

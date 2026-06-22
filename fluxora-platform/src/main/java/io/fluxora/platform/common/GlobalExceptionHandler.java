@@ -9,6 +9,7 @@ import io.fluxora.platform.credit.CreditException;
 import io.fluxora.platform.identity.MemberException;
 import io.fluxora.platform.tenant.TenantException;
 import io.fluxora.platform.tenant.TenantService;
+import io.fluxora.platform.upstream.provider.ProviderException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * - AuthTenantException        → 401（租户状态异常：停用/过期/删除）
  * - TenantException            → 400 或 403（业务规则校验，如租户码重复、自营保护）
  * - MemberException            → 400 / 403 / 404（成员管理业务规则）
+ * - ProviderException          → 400 / 403 / 404（上游配置业务规则：厂商/地址/通道/凭证）
  * - IllegalArgumentException  → 400（参数校验失败）
  * - 其他 Exception             → 500（服务内部异常，记录日志后返回通用提示）
  */
@@ -127,6 +129,23 @@ public class GlobalExceptionHandler {
         // 不返回 ex.getMessage()，其可能包含日期解析异常等原始技术文本
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(BusinessErrorCode.VALIDATION_ERROR));
+    }
+
+    /**
+     * 上游配置异常映射。
+     * NOT_FOUND 类 → 404；ACCESS_DENIED / CROSS_TENANT / 共享只读 → 403；其余业务校验 → 400。
+     * 始终返回错误码默认安全文案，不暴露 ex.getMessage() 的动态构造内容。
+     */
+    @ExceptionHandler(ProviderException.class)
+    public ResponseEntity<ErrorResponse> handleUpstreamException(ProviderException ex) {
+        BusinessErrorCode code = ex.getErrorCode();
+        HttpStatus status = switch (code) {
+            case RESOURCE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case ACCESS_DENIED, CROSS_TENANT_ACCESS_DENIED, UPSTREAM_SHARED_READONLY ->
+                    HttpStatus.FORBIDDEN;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(ErrorResponse.of(code));
     }
 
     @ExceptionHandler(Exception.class)

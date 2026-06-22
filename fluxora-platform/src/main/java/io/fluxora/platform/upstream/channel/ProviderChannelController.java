@@ -1,4 +1,4 @@
-package io.fluxora.platform.upstream.provider;
+package io.fluxora.platform.upstream.channel;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,75 +16,75 @@ import org.springframework.web.bind.annotation.RestController;
 
 import io.fluxora.common.response.ApiResponse;
 import io.fluxora.platform.identity.entity.UserAccount;
+import io.fluxora.platform.upstream.channel.dto.ProviderChannelStats;
+import io.fluxora.platform.upstream.channel.dto.ProviderChannelSummary;
 import io.fluxora.platform.upstream.dto.UpstreamPage;
-import io.fluxora.platform.upstream.provider.dto.ProviderStats;
-import io.fluxora.platform.upstream.provider.dto.ProviderSummary;
 
 /**
- * 上游厂商 REST 接口。
- * 共享资源可读不可由租户管理员写；作用域、租户隔离与引用保护最终边界在 {@link ProviderService}。
+ * 租户上游通道接口。
+ * 控制器只做协议转换，租户归属、引用可见性与参数边界统一由 {@link ProviderChannelService} 强制。
  */
 @RestController
-@RequestMapping("/api/providers")
-public class ProviderController {
+@RequestMapping("/api/provider-channels")
+public class ProviderChannelController {
 
-    private final ProviderService service;
+    private final ProviderChannelService service;
 
-    public ProviderController(ProviderService service) {
+    public ProviderChannelController(ProviderChannelService service) {
         this.service = service;
     }
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_READ')")
-    public ResponseEntity<ApiResponse<UpstreamPage<ProviderSummary>>> list(
+    public ResponseEntity<ApiResponse<UpstreamPage<ProviderChannelSummary>>> list(
             @AuthenticationPrincipal UserAccount user, Authentication auth,
+            @RequestParam(required = false) Long tenantId,
             @RequestParam(defaultValue = "") String keyword,
-            @RequestParam(defaultValue = "") String scopeType,
+            @RequestParam(required = false) Long providerId,
+            @RequestParam(defaultValue = "") String protocol,
             @RequestParam(required = false) Boolean enabled,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(ApiResponse.success(
-                service.listProviders(user, auth, keyword, scopeType, enabled, page, size)));
+                service.listChannels(user, auth, tenantId, keyword, providerId, protocol, enabled, page, size)));
     }
 
     @GetMapping("/stats")
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_READ')")
-    public ResponseEntity<ApiResponse<ProviderStats>> stats(
-            @AuthenticationPrincipal UserAccount user, Authentication auth) {
-        return ResponseEntity.ok(ApiResponse.success(service.providerStats(user, auth)));
+    public ResponseEntity<ApiResponse<ProviderChannelStats>> stats(
+            @AuthenticationPrincipal UserAccount user, Authentication auth,
+            @RequestParam(required = false) Long tenantId) {
+        return ResponseEntity.ok(ApiResponse.success(service.channelStats(user, auth, tenantId)));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_READ')")
-    public ResponseEntity<ApiResponse<ProviderSummary>> detail(
+    public ResponseEntity<ApiResponse<ProviderChannelSummary>> detail(
             @PathVariable Long id, @AuthenticationPrincipal UserAccount user, Authentication auth) {
-        return ResponseEntity.ok(ApiResponse.success(service.providerDetail(id, user, auth)));
+        return ResponseEntity.ok(ApiResponse.success(service.channelDetail(id, user, auth)));
     }
 
     @PostMapping
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_CREATE')")
-    public ResponseEntity<ApiResponse<ProviderSummary>> create(
-            @RequestBody CreateProviderRequest req,
+    public ResponseEntity<ApiResponse<ProviderChannelSummary>> create(
+            @RequestBody ChannelRequest r,
             @AuthenticationPrincipal UserAccount user, Authentication auth) {
-        return ResponseEntity.ok(ApiResponse.success(service.createProvider(
-                req.name(), req.code(), req.scopeType(), req.description(), req.enabled(),
-                req.tenantId(), user, auth)));
+        return ResponseEntity.ok(ApiResponse.success(service.create(toEntity(r), r.tenantId(), user, auth)));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_UPDATE')")
-    public ResponseEntity<ApiResponse<ProviderSummary>> update(
-            @PathVariable Long id, @RequestBody UpdateProviderRequest req,
+    public ResponseEntity<ApiResponse<ProviderChannelSummary>> update(
+            @PathVariable Long id, @RequestBody ChannelRequest r,
             @AuthenticationPrincipal UserAccount user, Authentication auth) {
-        return ResponseEntity.ok(ApiResponse.success(
-                service.updateProvider(id, req.name(), req.description(), user, auth)));
+        return ResponseEntity.ok(ApiResponse.success(service.update(id, toEntity(r), user, auth)));
     }
 
     @PutMapping("/{id}/enable")
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_ENABLE')")
     public ResponseEntity<ApiResponse<Void>> enable(
             @PathVariable Long id, @AuthenticationPrincipal UserAccount user, Authentication auth) {
-        service.setProviderEnabled(id, true, user, auth);
+        service.setEnabled(id, true, user, auth);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 
@@ -92,7 +92,7 @@ public class ProviderController {
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_DISABLE')")
     public ResponseEntity<ApiResponse<Void>> disable(
             @PathVariable Long id, @AuthenticationPrincipal UserAccount user, Authentication auth) {
-        service.setProviderEnabled(id, false, user, auth);
+        service.setEnabled(id, false, user, auth);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 
@@ -100,15 +100,25 @@ public class ProviderController {
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_DELETE')")
     public ResponseEntity<ApiResponse<Void>> delete(
             @PathVariable Long id, @AuthenticationPrincipal UserAccount user, Authentication auth) {
-        service.deleteProvider(id, user, auth);
+        service.delete(id, user, auth);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 
-    /** tenantId 仅平台管理员创建租户私有厂商时使用；租户管理员会被服务层忽略并强制本租户。 */
-    public record CreateProviderRequest(String name, String code, String scopeType, String description,
-                                        Boolean enabled, Long tenantId) {
+    private ProviderChannel toEntity(ChannelRequest r) {
+        ProviderChannel c = new ProviderChannel();
+        c.setProviderBaseUrlId(r.providerBaseUrlId());
+        c.setName(r.name());
+        c.setEnabled(r.enabled() == null || r.enabled());
+        c.setPriority(r.priority() == null ? 100 : r.priority());
+        c.setWeight(r.weight() == null ? 100 : r.weight());
+        c.setConnectTimeoutMs(r.connectTimeoutMs() == null ? 5000 : r.connectTimeoutMs());
+        c.setReadTimeoutMs(r.readTimeoutMs() == null ? 60000 : r.readTimeoutMs());
+        c.setRemark(r.remark());
+        return c;
     }
 
-    public record UpdateProviderRequest(String name, String description) {
+    public record ChannelRequest(Long tenantId, Long providerBaseUrlId, String name, Boolean enabled,
+                                 Integer priority, Integer weight, Integer connectTimeoutMs,
+                                 Integer readTimeoutMs, String remark) {
     }
 }
