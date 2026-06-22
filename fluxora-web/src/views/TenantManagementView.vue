@@ -25,16 +25,19 @@ import {
   X,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
+import MetricStrip from '@/components/MetricStrip.vue'
 import {
   createTenant,
   deleteTenant,
   disableTenant,
   enableTenant,
+  fetchTenantStats,
   listTenants,
   setTenantExpire,
   updateTenant,
   type Tenant,
   type TenantPage,
+  type TenantStats,
 } from '@/services/tenant'
 
 const auth = useAuthStore()
@@ -51,6 +54,29 @@ const keyword = ref('')
 const typeFilter = ref<'' | 'SELF_OPERATED' | 'STANDARD'>('')
 const statusFilter = ref<'' | 'ENABLED' | 'DISABLED' | 'EXPIRED'>('')
 const loading = ref(false)
+
+// ---------- 顶部指标条：聚合 SQL，单次拉取，与列表查询解耦 ----------
+const stats = ref<TenantStats | null>(null)
+const statsLoading = ref(false)
+async function loadStats() {
+  statsLoading.value = true
+  try {
+    stats.value = await fetchTenantStats(30)
+  } catch {
+    // 指标条失败不影响主表；静默处理，由表格的错误兜底承担显式反馈
+    stats.value = null
+  } finally {
+    statsLoading.value = false
+  }
+}
+const metricItems = computed(() => [
+  { label: '租户总数', value: stats.value?.total ?? null, hint: '未删除' },
+  { label: '启用中', value: stats.value?.enabled ?? null },
+  { label: '已停用', value: stats.value?.disabled ?? null, tone: 'warn' as const },
+  { label: '已过期', value: stats.value?.expired ?? null, tone: 'danger' as const },
+  { label: '即将到期', value: stats.value?.expiringSoon ?? null, hint: '30 天内', tone: 'warn' as const },
+  { label: '自营租户', value: stats.value?.selfOperated ?? null },
+])
 
 // ---------- Modal 状态 ----------
 // 'edit' 是一个统一的管理面板，内部三段独立操作；不再为"过期时间"开第二个 Modal。
@@ -130,6 +156,13 @@ async function loadTenants() {
     loading.value = false
   }
 }
+/**
+ * 写操作后的轻量刷新：表格与指标条并行重拉。
+ * 指标条静默失败，不打扰用户的当前操作反馈。
+ */
+async function refreshAfterWrite() {
+  await Promise.all([loadTenants(), loadStats()])
+}
 function resetFilters() {
   keyword.value = ''
   typeFilter.value = ''
@@ -143,7 +176,11 @@ watch([keyword, typeFilter, statusFilter], () => {
   loadTenants()
 })
 watch(page, () => loadTenants())
-onMounted(() => loadTenants())
+onMounted(() => {
+  // 列表与指标并行加载，互不阻塞
+  loadStats()
+  loadTenants()
+})
 
 // ---------- Modal 控制 ----------
 function openDetail(t: Tenant) {
@@ -184,7 +221,7 @@ async function handleCreate() {
     await createTenant({ ...createForm.value, enabled: true })
     closeModal()
     message.success('租户已创建')
-    await loadTenants()
+    await refreshAfterWrite()
   } catch {
     message.error('创建租户失败，请稍后重试')
   } finally {
@@ -203,7 +240,7 @@ async function saveProfile() {
     const updated = await updateTenant(selectedTenant.value.id, editForm.value)
     selectedTenant.value = updated
     message.success('租户资料已保存')
-    await loadTenants()
+    await refreshAfterWrite()
   } catch {
     message.error('保存租户资料失败，请稍后重试')
   } finally {
@@ -219,7 +256,7 @@ async function doEnable() {
     const updated = await enableTenant(t.id)
     selectedTenant.value = updated
     message.success('租户已启用')
-    await loadTenants()
+    await refreshAfterWrite()
   } catch {
     message.error('启用租户失败，请稍后重试')
   } finally {
@@ -235,7 +272,7 @@ async function doDisable() {
     const updated = await disableTenant(t.id)
     selectedTenant.value = updated
     message.success('租户已停用')
-    await loadTenants()
+    await refreshAfterWrite()
   } catch {
     message.error('停用租户失败，请稍后重试')
   } finally {
@@ -250,7 +287,7 @@ async function doDelete() {
     await deleteTenant(t.id)
     closeModal()
     message.success('租户已删除')
-    await loadTenants()
+    await refreshAfterWrite()
   } catch {
     message.error('删除租户失败，请稍后重试')
   }
@@ -267,7 +304,7 @@ async function saveExpireAt() {
     )
     selectedTenant.value = updated
     message.success('过期时间已更新')
-    await loadTenants()
+    await refreshAfterWrite()
   } catch {
     message.error('更新过期时间失败，请稍后重试')
   } finally {
@@ -450,7 +487,10 @@ const expireDirty = computed(() => {
       </n-button>
     </header>
 
-    <!-- 行 2：工具栏。搜索 + chip 类型 + chip 状态。日期筛选已移除。 -->
+    <!-- 行 2：指标条。聚合 SQL 提供租户总数、启停、过期、即将到期等上下文 -->
+    <MetricStrip :items="metricItems" :loading="statsLoading" />
+
+    <!-- 行 3：工具栏。搜索 + chip 类型 + chip 状态。日期筛选已移除。 -->
     <div class="toolbar">
       <label class="search">
         <n-icon class="search-icon" :size="16"><Search /></n-icon>
@@ -850,8 +890,9 @@ const expireDirty = computed(() => {
   /* console-content 的 padding 已经包了外边距，这里完全填满父容器 */
   height: 100%;
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
-  gap: 16px;
+  /* 行：页头 / 指标条 / 工具栏 / 表格(1fr) / 分页。指标条引入后页头与表格之间有了节奏 */
+  grid-template-rows: auto auto auto 1fr auto;
+  gap: 20px;
   min-height: 0; /* 让 1fr 行能正确收缩，避免溢出父容器 */
 }
 

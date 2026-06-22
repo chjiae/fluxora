@@ -301,6 +301,18 @@ public class MemberService {
         return List.of();
     }
 
+    /**
+     * 成员聚合统计。
+     * 平台管理员需显式指定 tenantId；租户管理员强制使用自身 tenantId。
+     * 用于成员管理页顶部指标条；不暴露敏感字段。
+     */
+    @Transactional(readOnly = true)
+    public io.fluxora.platform.identity.mapper.MemberStats getStats(UserAccount currentUser, Long requestedTenantId) {
+        Long tenantId = resolveOperableTenantId(currentUser, requestedTenantId);
+        assertTenantExists(tenantId);
+        return identityMapper.memberStats(tenantId);
+    }
+
     // ============================================================
     // 内部辅助
     // ============================================================

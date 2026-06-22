@@ -120,4 +120,24 @@
         UPDATE tenant SET deleted_at = NOW(), updated_at = NOW() WHERE id = #{id} AND deleted_at IS NULL
     </update>
 
+    <!--
+        租户聚合统计：单次 SQL 返回 6 个计数。
+        所有计数均限定 deleted_at IS NULL（软删除规范），避免逐次往返。
+        - enabled：启用且未过期；与 findAll 中 status='ENABLED' 的语义一致
+        - disabled：停用且未过期
+        - expired：expire_at 已过去（无论 enabled 真假）
+        - expiringSoon：启用中、且 expire_at 在 (NOW(), NOW() + N 天] 区间
+    -->
+    <select id="stats" resultType="io.fluxora.platform.tenant.TenantStats">
+        SELECT
+            COUNT(*) FILTER (WHERE deleted_at IS NULL)                                                                                                       AS total,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND enabled = TRUE  AND (expire_at IS NULL OR expire_at &gt; NOW()))                                    AS enabled,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND enabled = FALSE AND (expire_at IS NULL OR expire_at &gt; NOW()))                                    AS disabled,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND expire_at IS NOT NULL AND expire_at &lt;= NOW())                                                    AS expired,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND enabled = TRUE  AND expire_at IS NOT NULL AND expire_at &gt; NOW()
+                                  AND expire_at &lt;= NOW() + (#{expiringWithinDays} || ' days')::interval)                                                  AS expiring_soon,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND type = 'SELF_OPERATED')                                                                            AS self_operated
+        FROM tenant
+    </select>
+
 </mapper>

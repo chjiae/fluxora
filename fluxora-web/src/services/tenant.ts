@@ -38,6 +38,19 @@ export interface TenantPage {
   size: number
 }
 
+/**
+ * 租户聚合统计。
+ * 字段与后端 TenantStats 对齐；前端「概览」与「租户管理」指标条共用。
+ */
+export interface TenantStats {
+  total: number
+  enabled: number
+  disabled: number
+  expired: number
+  expiringSoon: number
+  selfOperated: number
+}
+
 export async function fetchSelfOperatedStatus(): Promise<SelfOperatedStatus> {
   const res = await http.get('/api/tenant/self-operated/status')
   return res.data.data
@@ -102,4 +115,13 @@ export async function setTenantExpire(id: number, expireAt: string | null): Prom
 
 export async function deleteTenant(id: number): Promise<void> {
   await http.delete(`/api/tenant/${id}`)
+}
+
+/**
+ * 拉取租户聚合统计，供「概览」与「租户管理」顶部指标条使用。
+ * expiringWithinDays 控制「即将到期」窗口，默认 30 天。
+ */
+export async function fetchTenantStats(expiringWithinDays = 30): Promise<TenantStats> {
+  const res = await http.get('/api/tenant/stats', { params: { expiringWithinDays } })
+  return res.data.data
 }

@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AsyncState: typeof import('./src/components/AsyncState.vue')['default']
     ConsoleShell: typeof import('./src/components/ConsoleShell.vue')['default']
+    MetricStrip: typeof import('./src/components/MetricStrip.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
     NButton: typeof import('naive-ui')['NButton']
     NCard: typeof import('naive-ui')['NCard']

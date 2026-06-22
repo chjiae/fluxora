@@ -59,4 +59,11 @@ public interface TenantMapper {
 
     /** 逻辑删除租户（写入 deleted_at = NOW()），软删除遵循 AGENT.md 软删除规范 */
     void softDelete(@Param("id") Long id);
+
+    /**
+     * 租户聚合统计：一次 SQL 返回所有计数，避免前端为指标条多次往返。
+     * 计数包含：总数、启用、停用、已过期、即将到期（默认 30 天）。
+     * 已软删租户不计入任何指标。
+     */
+    TenantStats stats(@Param("expiringWithinDays") int expiringWithinDays);
 }

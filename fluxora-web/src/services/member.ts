@@ -38,6 +38,15 @@ export interface RoleOption {
   name: string
 }
 
+/** 成员聚合统计，与后端 MemberStats 对齐 */
+export interface MemberStats {
+  total: number
+  enabled: number
+  disabled: number
+  tenantAdmins: number
+  tenantMembers: number
+}
+
 export interface MemberQuery {
   keyword?: string
   status?: '' | 'ENABLED' | 'DISABLED'
@@ -111,5 +120,17 @@ export async function resetMemberPassword(id: number, newPassword: string): Prom
 
 export async function fetchAssignableRoles(): Promise<RoleOption[]> {
   const res = await http.get('/api/members/assignable-roles')
+  return res.data.data
+}
+
+/** 平台管理员视角：指定租户的成员聚合统计 */
+export async function fetchMemberStatsByTenant(tenantId: number): Promise<MemberStats> {
+  const res = await http.get(`/api/tenant/${tenantId}/members/stats`)
+  return res.data.data
+}
+
+/** 租户管理员视角：本租户成员聚合统计 */
+export async function fetchMemberStatsInCurrentTenant(): Promise<MemberStats> {
+  const res = await http.get('/api/members/stats')
   return res.data.data
 }

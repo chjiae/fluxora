@@ -168,6 +168,20 @@ public class TenantController {
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 
+    /**
+     * 租户聚合统计：单次 SQL 返回 6 个计数，专供「概览」与「租户管理」顶部指标条。
+     * 不暴露任何敏感字段；过期阈值默认 30 天，前端可通过参数调整。
+     * 需要权限：PERM_TENANT_READ
+     */
+    @GetMapping("/stats")
+    @PreAuthorize("hasAuthority('PERM_TENANT_READ')")
+    public ResponseEntity<ApiResponse<TenantStats>> stats(
+            @RequestParam(name = "expiringWithinDays", defaultValue = "30") int expiringWithinDays) {
+        // 上限保护，避免传入过大窗口对查询计划产生影响
+        int days = Math.max(1, Math.min(expiringWithinDays, 365));
+        return ResponseEntity.ok(ApiResponse.success(tenantMapper.stats(days)));
+    }
+
     public record TenantCreateRequest(String tenantCode, String name, String description,
                                        String type, Boolean enabled) {}
     /** 编辑租户请求：仅 name、description，启用/停用/过期使用专用接口 */

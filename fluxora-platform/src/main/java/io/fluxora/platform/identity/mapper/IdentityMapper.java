@@ -96,4 +96,10 @@ public interface IdentityMapper {
      */
     long countActiveTenantAdmins(@Param("tenantId") Long tenantId,
                                  @Param("excludeUserId") Long excludeUserId);
+
+    /**
+     * 成员聚合统计：一次 SQL 返回某租户的成员计数（总数、启用、停用、租户管理员、普通成员）。
+     * 已软删成员不计入；用于成员管理页的指标条，避免前端为统计多次往返。
+     */
+    MemberStats memberStats(@Param("tenantId") Long tenantId);
 }

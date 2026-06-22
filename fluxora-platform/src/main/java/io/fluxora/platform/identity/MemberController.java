@@ -172,4 +172,23 @@ public class MemberController {
             @AuthenticationPrincipal UserAccount currentUser) {
         return ResponseEntity.ok(ApiResponse.success(memberService.listAssignableRoles(currentUser)));
     }
+
+    // ============================================================
+    // 聚合统计：指标条用，分别给平台 / 租户管理员两个入口
+    // ============================================================
+
+    @GetMapping("/api/tenant/{tenantId}/members/stats")
+    @PreAuthorize("hasAuthority('PERM_MEMBER_READ')")
+    public ResponseEntity<ApiResponse<io.fluxora.platform.identity.mapper.MemberStats>> statsByTenant(
+            @PathVariable Long tenantId,
+            @AuthenticationPrincipal UserAccount currentUser) {
+        return ResponseEntity.ok(ApiResponse.success(memberService.getStats(currentUser, tenantId)));
+    }
+
+    @GetMapping("/api/members/stats")
+    @PreAuthorize("hasAuthority('PERM_MEMBER_READ')")
+    public ResponseEntity<ApiResponse<io.fluxora.platform.identity.mapper.MemberStats>> statsCurrentTenant(
+            @AuthenticationPrincipal UserAccount currentUser) {
+        return ResponseEntity.ok(ApiResponse.success(memberService.getStats(currentUser, null)));
+    }
 }

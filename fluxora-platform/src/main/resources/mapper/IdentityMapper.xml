@@ -233,4 +233,24 @@
         </if>
     </select>
 
+    <!--
+        成员聚合统计：一次 SQL 返回所有计数，给指标条用。
+        所有计数限定 scope_type='TENANT' AND deleted_at IS NULL；
+        角色计数通过外连接 user_role/role 后用 FILTER 区分。
+    -->
+    <select id="memberStats" resultType="io.fluxora.platform.identity.mapper.MemberStats">
+        SELECT
+            COUNT(DISTINCT u.id)                                                                       AS total,
+            COUNT(DISTINCT u.id) FILTER (WHERE u.enabled = TRUE)                                       AS enabled,
+            COUNT(DISTINCT u.id) FILTER (WHERE u.enabled = FALSE)                                      AS disabled,
+            COUNT(DISTINCT u.id) FILTER (WHERE r.code = 'TENANT_ADMIN')                                AS tenant_admins,
+            COUNT(DISTINCT u.id) FILTER (WHERE r.code = 'TENANT_MEMBER')                               AS tenant_members
+        FROM user_account u
+        LEFT JOIN user_role ur ON ur.user_id = u.id
+        LEFT JOIN role r ON r.id = ur.role_id
+        WHERE u.scope_type = 'TENANT'
+          AND u.deleted_at IS NULL
+          AND u.tenant_id = #{tenantId}
+    </select>
+
 </mapper>

@@ -32,12 +32,15 @@ import {
   X,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
+import MetricStrip from '@/components/MetricStrip.vue'
 import {
   createMember,
   deleteMember,
   disableMember,
   enableMember,
   fetchAssignableRoles,
+  fetchMemberStatsByTenant,
+  fetchMemberStatsInCurrentTenant,
   listMembersByTenant,
   listMembersInCurrentTenant,
   resetMemberPassword,
@@ -45,6 +48,7 @@ import {
   updateMemberRole,
   type Member,
   type MemberPage,
+  type MemberStats,
   type RoleOption,
 } from '@/services/member'
 import { getTenant, type Tenant } from '@/services/tenant'
@@ -69,6 +73,29 @@ const keyword = ref('')
 const statusFilter = ref<'' | 'ENABLED' | 'DISABLED'>('')
 const roleFilter = ref<'' | 'TENANT_ADMIN' | 'TENANT_MEMBER'>('')
 const loading = ref(false)
+
+// ---------- 顶部指标条：聚合 SQL，单次拉取 ----------
+const stats = ref<MemberStats | null>(null)
+const statsLoading = ref(false)
+async function loadStats() {
+  statsLoading.value = true
+  try {
+    stats.value = isPlatformView.value
+      ? await fetchMemberStatsByTenant(props.tenantId!)
+      : await fetchMemberStatsInCurrentTenant()
+  } catch {
+    stats.value = null
+  } finally {
+    statsLoading.value = false
+  }
+}
+const metricItems = computed(() => [
+  { label: '成员总数', value: stats.value?.total ?? null },
+  { label: '启用中', value: stats.value?.enabled ?? null },
+  { label: '已停用', value: stats.value?.disabled ?? null, tone: 'warn' as const },
+  { label: '租户管理员', value: stats.value?.tenantAdmins ?? null },
+  { label: '普通成员', value: stats.value?.tenantMembers ?? null },
+])
 
 // ---------- Modal 状态 ----------
 type ModalMode = 'hidden' | 'detail' | 'edit' | 'create'
@@ -258,8 +285,16 @@ watch(() => props.tenantId, () => {
 })
 onMounted(async () => {
   await Promise.all([loadScopedTenant(), loadAssignableRoles()])
-  await loadMembers()
+  await Promise.all([loadMembers(), loadStats()])
 })
+
+/**
+ * 写操作后的刷新：列表 + 指标条并行重拉。
+ * 指标条静默失败，不打扰用户的成功反馈。
+ */
+async function refreshAfterWrite() {
+  await Promise.all([loadMembers(), loadStats()])
+}
 
 // ---------- Modal ----------
 function openDetail(m: Member) {
@@ -325,7 +360,7 @@ async function handleCreate() {
     })
     closeModal()
     message.success('成员已创建')
-    await loadMembers()
+    await refreshAfterWrite()
   } catch (e: any) {
     message.error(e?.userMessage || '创建成员失败，请稍后重试')
   } finally {
@@ -346,7 +381,7 @@ async function saveProfile() {
     })
     selectedMember.value = updated
     message.success('成员资料已保存')
-    await loadMembers()
+    await refreshAfterWrite()
   } catch (e: any) {
     message.error(e?.userMessage || '保存成员资料失败，请稍后重试')
   } finally {
@@ -365,7 +400,7 @@ async function saveRole() {
     const updated = await updateMemberRole(selectedMember.value.id, roleSelection.value)
     selectedMember.value = updated
     message.success('成员角色已调整')
-    await loadMembers()
+    await refreshAfterWrite()
   } catch (e: any) {
     message.error(e?.userMessage || '调整角色失败，请稍后重试')
   } finally {
@@ -380,7 +415,7 @@ async function doEnable() {
     const updated = await enableMember(selectedMember.value.id)
     selectedMember.value = updated
     message.success('成员已启用')
-    await loadMembers()
+    await refreshAfterWrite()
   } catch (e: any) {
     message.error(e?.userMessage || '启用成员失败，请稍后重试')
   } finally {
@@ -395,7 +430,7 @@ async function doDisable() {
     const updated = await disableMember(selectedMember.value.id)
     selectedMember.value = updated
     message.success('成员已停用')
-    await loadMembers()
+    await refreshAfterWrite()
   } catch (e: any) {
     message.error(e?.userMessage || '停用成员失败，请稍后重试')
   } finally {
@@ -410,7 +445,7 @@ async function doDelete() {
     await deleteMember(id)
     closeModal()
     message.success('成员已删除')
-    await loadMembers()
+    await refreshAfterWrite()
   } catch (e: any) {
     message.error(e?.userMessage || '删除成员失败，请稍后重试')
   }
@@ -638,7 +673,10 @@ function backToTenants() {
       </n-button>
     </header>
 
-    <!-- 行 2：工具栏 -->
+    <!-- 行 2：指标条。聚合 SQL 一次返回总数 / 启停 / 角色分布 -->
+    <MetricStrip :items="metricItems" :loading="statsLoading" />
+
+    <!-- 行 3：工具栏 -->
     <div class="toolbar">
       <label class="search">
         <n-icon class="search-icon" :size="16"><Search /></n-icon>
@@ -1003,8 +1041,9 @@ function backToTenants() {
 .member-page {
   height: 100%;
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
-  gap: 16px;
+  /* 行：页头 / 指标条 / 工具栏 / 表格(1fr) / 分页 */
+  grid-template-rows: auto auto auto 1fr auto;
+  gap: 20px;
   min-height: 0;
 }
 
