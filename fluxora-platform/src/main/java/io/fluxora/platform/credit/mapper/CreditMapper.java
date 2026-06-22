@@ -81,4 +81,12 @@ public interface CreditMapper {
 
     /** 聚合统计 */
     CreditStats stats(@Param("tenantId") Long tenantId, @Param("userId") Long userId);
+
+    /**
+     * 插入卡密充值流水：与 insertTransaction 同模式，额外写入 source='CARD_REDEEM' 与 card_id。
+     * 与 mapper.adjustBalance 在同一事务中调用；DB 层 uk_credit_txn_card 部分唯一索引
+     * 保证同一张卡密最多一条 CARD_REDEEM 流水（防重复入账）。
+     */
+    void insertCardRedemptionTransaction(@Param("txn") CreditTransaction txn,
+                                         @Param("cardId") Long cardId);
 }

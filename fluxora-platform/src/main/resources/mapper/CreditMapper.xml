@@ -152,6 +152,18 @@
         LIMIT #{limit}
     </select>
 
+    <!-- 卡密充值流水：与 insertTransaction 同模式，额外写入 source + card_id -->
+    <insert id="insertCardRedemptionTransaction" useGeneratedKeys="true" keyProperty="txn.id">
+        INSERT INTO credit_transaction
+            (tenant_id, user_id, direction, delta, balance_before, balance_after,
+             reason, source, card_id, operator_id, operator_name, created_at)
+        VALUES
+            (#{txn.tenantId}, #{txn.userId}, #{txn.direction}, #{txn.delta},
+             #{txn.balanceBefore}, #{txn.balanceAfter},
+             #{txn.reason}, 'CARD_REDEEM', #{cardId},
+             #{txn.operatorId}, #{txn.operatorName}, NOW())
+    </insert>
+
     <select id="stats" resultType="io.fluxora.platform.credit.dto.CreditStats">
         SELECT
             (SELECT COUNT(*) FROM user_credit_account a
