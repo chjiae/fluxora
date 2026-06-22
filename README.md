@@ -79,6 +79,19 @@ npm run dev
 | DELETE | `/api/members/{id}` | 软删除成员 | `MEMBER_DELETE` |
 | PUT | `/api/members/{id}/password` | 重置成员密码 | `MEMBER_PASSWORD_RESET` |
 | GET | `/api/members/assignable-roles` | 当前操作者可分配的角色 | `MEMBER_READ` |
+| GET | `/api/api-keys` | 当前用户 API Key 分页 | `API_KEY_SELF_MANAGE` |
+| POST | `/api/api-keys` | 创建 API Key（完整 Key 仅本响应返回一次） | `API_KEY_SELF_MANAGE` |
+| GET | `/api/api-keys/{id}` | Key 详情（脱敏） | `API_KEY_SELF_MANAGE` 或更高 |
+| PUT | `/api/api-keys/{id}` | 编辑 Key 名称/过期时间 | 同上 |
+| PUT | `/api/api-keys/{id}/enable` | 启用 Key | 同上 |
+| PUT | `/api/api-keys/{id}/disable` | 停用 Key | 同上 |
+| DELETE | `/api/api-keys/{id}` | 软删除 Key | 同上 |
+| GET | `/api/tenant/{tenantId}/api-keys` | 指定租户 Key 分页 | `API_KEY_TENANT_MANAGE` |
+| GET | `/api/admin/api-keys` | 跨租户 Key 分页 | `API_KEY_CROSS_TENANT_MANAGE` |
+| GET | `/api/credit/me` | 当前用户额度账户 | `CREDIT_SELF_READ` |
+| GET | `/api/credit/me/transactions` | 当前用户额度流水分页 | `CREDIT_SELF_READ` |
+| POST | `/api/tenant/{tenantId}/credit/adjust` | 调整用户额度（原子 + 流水） | `CREDIT_TENANT_ADJUST` |
+| GET | `/api/credit/adjustable-users` | 可调整额度用户列表 | `CREDIT_TENANT_ADJUST` |
 
 ## 自营租户保护规则
 
@@ -88,6 +101,73 @@ npm run dev
 - **不可停用**：返回"自营租户受保护，无法停用"
 - **租户码不可变更**：创建后不允许修改租户码
 - **类型不可变更**：不允许改为 `THIRD_PARTY`
+
+## API Key 管理
+
+### 归属与权限
+
+API Key 归属链：`租户 → 租户用户 → API Key`。仅 `TENANT` 作用域用户可拥有 Key；平台用户不持有 Key 但被授权跨租户管理。
+
+| 角色 | 自己 Key | 本租户 Key | 跨租户 Key |
+|---|---|---|---|
+| `PLATFORM_ADMIN` | — | — | ✅ |
+| `TENANT_ADMIN` | ✅ | ✅ | — |
+| `TENANT_MEMBER` | ✅ | — | — |
+
+### 安全机制
+
+1. **格式**：`flx_<8 字符可见前缀>_<32 字符密钥段>`，总 45 字符，URL-safe Base64 字符集。
+2. **DB 中不保存明文**：仅存 `key_prefix` 与 `key_hash = HMAC-SHA256(secret_part, server_pepper)` 的 hex。
+3. **Pepper 来源**：`fluxora.security.apikey.pepper`，由环境变量 `APIKEY_PEPPER` 覆盖；生产部署必须改为至少 32 字符随机字符串。Pepper 绝不进入日志、堆栈、响应或前端。
+4. **一次性返回**：完整 plaintext 仅在 `POST /api/api-keys` 的响应中返回一次。后续列表、详情、刷新、重新登录均不再返回。前端 `ApiKeyRevealPanel` 强制非 closable 弹窗展示，关闭后立刻 nuke 内存 ref；不写入 localStorage / sessionStorage / URL。
+5. **状态四态**：`ENABLED` / `DISABLED` / `EXPIRED` / `DELETED`，由 `enabled` + `expire_at` + `deleted_at` 派生。
+6. **网关校验路径**（本轮预留）：按 `key_prefix` 索引查找 → 计算输入 secret 的 HMAC → 与 `key_hash` 常量时间比较。
+
+## 用户额度
+
+### 设计
+
+- 每个 `TENANT` 用户对应一个 `user_credit_account`，由 `MemberService.createMember` 同事务创建；V5 迁移为已有用户幂等回填。
+- `balance` 使用 `DECIMAL(20,4)`（16 整数位 + 4 小数位），`CHECK (balance >= 0)` 保证非负。
+- 每次调整生成不可篡改的 `credit_transaction` 流水：仅 INSERT，无 update / delete 接口，无 `updated_at` 列。
+- `direction ∈ {CREDIT, DEBIT}`、`delta > 0`、`reason` 必填（≤256 字符）。
+
+### 并发与原子性
+
+余额调整通过单语句 SQL 在 Postgres 中原子完成：
+
+```sql
+UPDATE user_credit_account
+SET balance = balance + :delta, updated_at = NOW()
+WHERE user_id = :userId AND balance + :delta >= 0
+RETURNING balance - :delta AS balance_before,
+          balance          AS balance_after;
+```
+
+- `WHERE balance + :delta >= 0` 同时表达「余额非负不变量」与「不变量失败 → 不更新（影响 0 行）」语义；service 收到 `null` 抛 `CREDIT_INSUFFICIENT`。
+- 单 SQL 隐式持有行锁，并发 N 次 DEBIT 同时打到不足以全部扣减的余额，只会成功 `floor(balance / amount)` 次（集成测试已验证 10 线程并发扣减只有 7 次成功）。
+- `RETURNING` 直接给出 `balance_before` / `balance_after`，与流水写入在同事务内完成；任一失败回滚。
+- MyBatis 中用 `<select affectData="true">` 表达 UPDATE…RETURNING（3.5.12+ 支持），让 Spring 事务把它视为写。
+
+### 角色权限
+
+| 角色 | 自己额度 | 本租户额度（读 / 写） | 跨租户额度 |
+|---|---|---|---|
+| `PLATFORM_ADMIN` | — | — | ✅ 跨租户读 + 写 |
+| `TENANT_ADMIN` | ✅ 读 | ✅ 读 + 写 | — |
+| `TENANT_MEMBER` | ✅ 读 | — | — |
+
+普通用户不能调整自己额度；任何角色调整必须填写原因；扣减额度时前端做二次确认（`dialog.warning`）。
+
+### 浏览器手工验收（API Key + 额度）
+
+1. 以 `admin / Admin@2026!` 登录 → 进入「租户管理」→ 任意租户「管理成员」→ 新建一个 `TENANT_MEMBER`（例如 `e2euser / Pwd2026Strong`）。
+2. 退出，以新用户登录 → 侧栏出现「我的 API Key」「我的额度」。
+3. 进入「我的 API Key」→ 新建 Key → **一次性弹窗**展示完整 Key + 复制按钮；关闭后页面列表只显示 `flx_XXXXXXXX...` 前缀。
+4. 刷新页面 → 完整 Key 不可恢复（任何接口都不会再返回）。
+5. 进入「我的额度」→ 看到余额 `0` 与空流水列表。
+6. 切换到 `TENANT_ADMIN`（或自营管理员）→ 进入「额度管理」→ 为该用户增加 `100` 额度，原因「e2e 测试初始化」→ 流水出现 1 条；尝试扣减 `200` → 看到中文「当前可用额度不足，无法完成扣减」，无任何技术细节。
+7. 切回 `PLATFORM_ADMIN` → 通过 `/api/admin/api-keys` 与 `/api/admin/credit/transactions` 跨租户查询任意租户数据均可访问。
 
 ## 成员管理
 
@@ -187,12 +267,16 @@ npx playwright test
 - 租户 CRUD 管理界面
 - **成员管理闭环**：分页/详情/创建/编辑/角色调整/启停/软删/重置密码（含跨租户保护、角色升级保护、最后管理员保护、密码强度校验）
 - **成员管理前端**：嵌套 `/console/tenants/:tenantId/members`（平台管理员）与 `/console/members`（租户管理员），双视图共用同一组件
+- **API Key 管理**：`api_key` 表，HMAC-SHA256 + pepper 安全哈希，完整 plaintext 仅创建响应一次性返回，四态状态派生，双入口路由，跨租户权限隔离
+- **用户额度**：`user_credit_account`（DECIMAL 精确存储） + `credit_transaction`（不可篡改流水），`UPDATE…WHERE balance + delta >= 0 RETURNING` 原子调整，并发安全
+- **前端页面**：`/console/api-keys`（我的 API Key）、`/console/credit`（我的额度）、`/console/credit/manage`（额度管理），含一次性 Key 展示组件 `ApiKeyRevealPanel`
 
 ### 刻意未实现（本轮范围外）
-- Provider、模型、API Key 管理
-- 计费、订单、账单
-- Redis 缓存、Pub/Sub/Stream、消息队列
-- 网关鉴权与 API 中继
+- 模型定价、Token 计费、流式实时扣费
+- 网关 API Key 鉴权、Redis Pub/Sub/Stream、网关本地缓存
+- 支付、充值订单、退款、发票
+- Provider、Model、ModelRoute 等管理
 - 完整用户/角色/权限后台管理界面
 - 短信 / 邮件 / 自助找回密码
+- 每个 API Key 独立余额
 - 日志审计
