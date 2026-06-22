@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Building2, LayoutDashboard, Menu, UserRound, Users } from 'lucide-vue-next'
+import { Building2, KeyRound, LayoutDashboard, Menu, UserRound, Users, Wallet } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
@@ -18,10 +18,25 @@ const menuOptions = computed(() => [
   ...(auth.canReadMembers && !auth.canReadTenants
     ? [{ label: '成员管理', key: '/console/members', icon: () => h(Users, { size: 18 }) }]
     : []),
+  // 我的 API Key：只要拥有 API_KEY_SELF_MANAGE 权限（含平台管理员被分配该权限的情况）就显示
+  ...(auth.canManageOwnApiKeys
+    ? [{ label: '我的 API Key', key: '/console/api-keys', icon: () => h(KeyRound, { size: 18 }) }]
+    : []),
+  // 我的额度：拥有 CREDIT_SELF_READ 权限的租户用户
+  ...(auth.canReadOwnCredit
+    ? [{ label: '我的额度', key: '/console/credit', icon: () => h(Wallet, { size: 18 }) }]
+    : []),
+  // 额度管理：租户管理员或平台管理员
+  ...(auth.canAdjustTenantCredit || auth.canAdjustCrossTenantCredit
+    ? [{ label: '额度管理', key: '/console/credit/manage', icon: () => h(Wallet, { size: 18 }) }]
+    : []),
 ])
 const title = computed(() => {
   // 嵌套的「指定租户成员管理」路径在菜单中无对应条目，单独命名以保留面包屑可读性
   if (/^\/console\/tenants\/[^/]+\/members$/.test(route.path)) return '成员管理'
+  if (/^\/console\/tenants\/[^/]+\/api-keys$/.test(route.path)) return 'API Key'
+  if (/^\/console\/tenants\/[^/]+\/credit\/manage$/.test(route.path)) return '额度管理'
+  if (route.path === '/console/credit/manage') return '额度管理'
   return menuOptions.value.find(item => item.key === route.path)?.label || '概览'
 })
 

@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    ApiKeyRevealPanel: typeof import('./src/components/ApiKeyRevealPanel.vue')['default']
     AsyncState: typeof import('./src/components/AsyncState.vue')['default']
     ConsoleShell: typeof import('./src/components/ConsoleShell.vue')['default']
     MetricStrip: typeof import('./src/components/MetricStrip.vue')['default']
@@ -27,6 +28,7 @@ declare module 'vue' {
     NEmpty: typeof import('naive-ui')['NEmpty']
     NForm: typeof import('naive-ui')['NForm']
     NFormItem: typeof import('naive-ui')['NFormItem']
+    NIcon: typeof import('naive-ui')['NIcon']
     NInput: typeof import('naive-ui')['NInput']
     NLoadingBarProvider: typeof import('naive-ui')['NLoadingBarProvider']
     NMenu: typeof import('naive-ui')['NMenu']
@@ -34,6 +36,8 @@ declare module 'vue' {
     NModal: typeof import('naive-ui')['NModal']
     NNotificationProvider: typeof import('naive-ui')['NNotificationProvider']
     NPagination: typeof import('naive-ui')['NPagination']
+    NRadioButton: typeof import('naive-ui')['NRadioButton']
+    NRadioGroup: typeof import('naive-ui')['NRadioGroup']
     NSelect: typeof import('naive-ui')['NSelect']
     NStep: typeof import('naive-ui')['NStep']
     NSteps: typeof import('naive-ui')['NSteps']

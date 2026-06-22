@@ -6,6 +6,9 @@ import LoginView from '../views/LoginView.vue'
 import SelfOperatedSetupView from '../views/SelfOperatedSetupView.vue'
 import TenantManagementView from '../views/TenantManagementView.vue'
 import MemberManagementView from '../views/MemberManagementView.vue'
+import MyApiKeysView from '../views/MyApiKeysView.vue'
+import MyCreditView from '../views/MyCreditView.vue'
+import CreditManagementView from '../views/CreditManagementView.vue'
 import ConsoleOverviewView from '../views/ConsoleOverviewView.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -33,6 +36,27 @@ export const router = createRouter({
           // 租户管理员视角：管理自身租户内的成员
           path: 'members',
           component: MemberManagementView,
+        },
+        {
+          // 我的 API Key
+          path: 'api-keys',
+          component: MyApiKeysView,
+        },
+        {
+          // API Key 管理（租户管理员视角路径；如果是嵌套=/console/tenants/:id/api-keys 还未实现使用顶层独立路径）
+          path: 'api-keys/manage',
+          component: MyApiKeysView,
+          props: { isAdminView: true },
+        },
+        {
+          // 我的额度
+          path: 'credit',
+          component: MyCreditView,
+        },
+        {
+          // 额度管理
+          path: 'credit/manage',
+          component: CreditManagementView,
         },
         { path: 'overview', component: ConsoleOverviewView },
       ],
@@ -69,6 +93,19 @@ router.beforeEach(async (to, _from, next) => {
     // 成员管理页面：嵌套租户路径与租户管理员入口均需要 MEMBER_READ
     if ((to.path === '/console/members' || /^\/console\/tenants\/[^/]+\/members$/.test(to.path))
         && !auth.canReadMembers) {
+      return next('/console/overview')
+    }
+
+    // API Key 管理：自身入口需要 API_KEY_SELF_MANAGE
+    if (to.path === '/console/api-keys' && !auth.canManageOwnApiKeys) {
+      return next('/console/overview')
+    }
+    // 额度页面权限
+    if (to.path === '/console/credit' && !auth.canReadOwnCredit) {
+      return next('/console/overview')
+    }
+    if (to.path === '/console/credit/manage'
+        && !(auth.canAdjustTenantCredit || auth.canAdjustCrossTenantCredit)) {
       return next('/console/overview')
     }
 

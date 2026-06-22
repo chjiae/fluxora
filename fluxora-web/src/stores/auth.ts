@@ -28,6 +28,15 @@ export const useAuthStore = defineStore('auth', () => {
   const canDisableMember = computed(() => user.value?.permissions?.includes('MEMBER_DISABLE') ?? false)
   const canDeleteMember = computed(() => user.value?.permissions?.includes('MEMBER_DELETE') ?? false)
   const canResetMemberPassword = computed(() => user.value?.permissions?.includes('MEMBER_PASSWORD_RESET') ?? false)
+  // API Key 权限（V5 引入）
+  const canManageOwnApiKeys = computed(() => user.value?.permissions?.includes('API_KEY_SELF_MANAGE') ?? false)
+  const canManageTenantApiKeys = computed(() => user.value?.permissions?.includes('API_KEY_TENANT_MANAGE') ?? false)
+  const canManageCrossTenantApiKeys = computed(() => user.value?.permissions?.includes('API_KEY_CROSS_TENANT_MANAGE') ?? false)
+  // 额度权限（V5 引入）
+  const canReadOwnCredit = computed(() => user.value?.permissions?.includes('CREDIT_SELF_READ') ?? false)
+  const canReadTenantCredit = computed(() => user.value?.permissions?.includes('CREDIT_TENANT_READ') ?? false)
+  const canAdjustTenantCredit = computed(() => user.value?.permissions?.includes('CREDIT_TENANT_ADJUST') ?? false)
+  const canAdjustCrossTenantCredit = computed(() => user.value?.permissions?.includes('CREDIT_CROSS_TENANT_ADJUST') ?? false)
 
   async function loginAction(username: string, password: string) {
     loading.value = true
@@ -110,6 +119,13 @@ export const useAuthStore = defineStore('auth', () => {
     canDisableMember,
     canDeleteMember,
     canResetMemberPassword,
+    canManageOwnApiKeys,
+    canManageTenantApiKeys,
+    canManageCrossTenantApiKeys,
+    canReadOwnCredit,
+    canReadTenantCredit,
+    canAdjustTenantCredit,
+    canAdjustCrossTenantCredit,
     loginAction,
     checkAuth,
     logoutAction,

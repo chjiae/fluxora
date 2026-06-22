@@ -28,6 +28,17 @@ const USER_MESSAGES: Record<string, string> = {
   MEMBER_NOT_FOUND: '成员不存在或已被删除',
   CROSS_TENANT_ACCESS_DENIED: '当前账号没有此操作权限',
   PASSWORD_WEAK: '密码强度不符合要求，请使用至少 8 位且包含字母与数字',
+  // API Key（V5 引入）
+  API_KEY_NAME_INVALID: '请填写符合要求的 Key 名称',
+  API_KEY_NOT_FOUND: 'API Key 不存在或已被删除',
+  API_KEY_DISABLED_STATE: '该 API Key 已停用，暂时无法使用',
+  API_KEY_EXPIRED: '该 API Key 已过期，请更新过期时间或创建新的 Key',
+  API_KEY_DELETED_STATE: '该 API Key 已删除，无法继续操作',
+  // 额度（V5 引入）
+  CREDIT_INSUFFICIENT: '当前可用额度不足，无法完成扣减',
+  CREDIT_ACCOUNT_NOT_FOUND: '当前账号没有可用的额度账户',
+  CREDIT_AMOUNT_INVALID: '调整金额必须为正数',
+  CREDIT_REASON_REQUIRED: '请填写调整原因',
 }
 
 const FALLBACK_MESSAGE = '服务暂时不可用，请稍后重试'
