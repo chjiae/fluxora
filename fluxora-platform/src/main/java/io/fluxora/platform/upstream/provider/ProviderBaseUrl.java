@@ -1,0 +1,7 @@
+package io.fluxora.platform.upstream.provider;
+import java.time.Instant;
+/** 上游逻辑接入基础地址；同一 Provider 的协议与规范化地址组合唯一。 */
+public class ProviderBaseUrl {
+ private Long id,providerId; private String protocol,originalBaseUrl,normalizedBaseUrl,displayName,remark; private boolean enabled; private Instant deletedAt,createdAt,updatedAt;
+ public Long getId(){return id;} public void setId(Long v){id=v;} public Long getProviderId(){return providerId;} public void setProviderId(Long v){providerId=v;} public String getProtocol(){return protocol;} public void setProtocol(String v){protocol=v;} public String getOriginalBaseUrl(){return originalBaseUrl;} public void setOriginalBaseUrl(String v){originalBaseUrl=v;} public String getNormalizedBaseUrl(){return normalizedBaseUrl;} public void setNormalizedBaseUrl(String v){normalizedBaseUrl=v;} public String getDisplayName(){return displayName;} public void setDisplayName(String v){displayName=v;} public String getRemark(){return remark;} public void setRemark(String v){remark=v;} public boolean isEnabled(){return enabled;} public void setEnabled(boolean v){enabled=v;} public Instant getDeletedAt(){return deletedAt;} public void setDeletedAt(Instant v){deletedAt=v;} public Instant getCreatedAt(){return createdAt;} public void setCreatedAt(Instant v){createdAt=v;} public Instant getUpdatedAt(){return updatedAt;} public void setUpdatedAt(Instant v){updatedAt=v;}
+}

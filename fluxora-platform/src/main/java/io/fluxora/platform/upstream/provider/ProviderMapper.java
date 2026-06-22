@@ -17,4 +17,11 @@ public interface ProviderMapper {
     void setEnabled(@Param("id") Long id, @Param("enabled") boolean enabled);
     void softDelete(@Param("id") Long id);
     boolean hasBaseUrls(@Param("id") Long id);
+    void insertBaseUrl(ProviderBaseUrl baseUrl);
+    Optional<ProviderBaseUrl> findBaseUrlById(@Param("id") Long id);
+    List<ProviderBaseUrl> findBaseUrls(@Param("providerId") Long providerId);
+    void updateBaseUrl(ProviderBaseUrl baseUrl);
+    void setBaseUrlEnabled(@Param("id") Long id, @Param("enabled") boolean enabled);
+    void softDeleteBaseUrl(@Param("id") Long id);
+    boolean hasChannelsByBaseUrl(@Param("id") Long id);
 }

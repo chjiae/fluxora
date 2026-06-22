@@ -35,4 +35,11 @@
     <update id="setEnabled">UPDATE provider SET enabled=#{enabled}, updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
     <update id="softDelete">UPDATE provider SET deleted_at=NOW(), updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
     <select id="hasBaseUrls" resultType="boolean">SELECT EXISTS(SELECT 1 FROM provider_base_url WHERE provider_id=#{id} AND deleted_at IS NULL)</select>
+    <insert id="insertBaseUrl" useGeneratedKeys="true" keyProperty="id">INSERT INTO provider_base_url(provider_id,protocol,original_base_url,normalized_base_url,display_name,remark,enabled,created_at,updated_at) VALUES(#{providerId},#{protocol},#{originalBaseUrl},#{normalizedBaseUrl},#{displayName},#{remark},#{enabled},NOW(),NOW())</insert>
+    <select id="findBaseUrlById" resultType="io.fluxora.platform.upstream.provider.ProviderBaseUrl">SELECT id,provider_id,protocol,original_base_url,normalized_base_url,display_name,remark,enabled,deleted_at,created_at,updated_at FROM provider_base_url WHERE id=#{id} AND deleted_at IS NULL</select>
+    <select id="findBaseUrls" resultType="io.fluxora.platform.upstream.provider.ProviderBaseUrl">SELECT id,provider_id,protocol,original_base_url,normalized_base_url,display_name,remark,enabled,created_at,updated_at FROM provider_base_url WHERE provider_id=#{providerId} AND deleted_at IS NULL ORDER BY created_at DESC,id DESC</select>
+    <update id="updateBaseUrl">UPDATE provider_base_url SET protocol=#{protocol},original_base_url=#{originalBaseUrl},normalized_base_url=#{normalizedBaseUrl},display_name=#{displayName},remark=#{remark},updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
+    <update id="setBaseUrlEnabled">UPDATE provider_base_url SET enabled=#{enabled},updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
+    <update id="softDeleteBaseUrl">UPDATE provider_base_url SET deleted_at=NOW(),updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
+    <select id="hasChannelsByBaseUrl" resultType="boolean">SELECT EXISTS(SELECT 1 FROM provider_channel WHERE provider_base_url_id=#{id} AND deleted_at IS NULL)</select>
 </mapper>
