@@ -63,7 +63,28 @@ public enum BusinessErrorCode {
     /** 调整金额不合法（必须为正数；方向由 direction 表达） */
     CREDIT_AMOUNT_INVALID("调整金额必须为正数"),
     /** 调整原因为空（流水必须有可审计的原因） */
-    CREDIT_REASON_REQUIRED("请填写调整原因");
+    CREDIT_REASON_REQUIRED("请填写调整原因"),
+
+    // ---------------- 卡密相关业务错误码 ----------------
+
+    /** 用户输入的卡密格式不符合规范（长度、字符集、前缀） */
+    CARD_CODE_INVALID("卡密格式不正确，请检查后重新输入"),
+    /** 经规范化与 HMAC 比对后未找到对应卡密 */
+    CARD_NOT_FOUND("卡密无效，请确认后重试"),
+    /** 该卡密已被核销，不可重复使用 */
+    CARD_ALREADY_REDEEMED("该卡密已被核销，无法重复使用"),
+    /** 该卡密已停用 */
+    CARD_DISABLED("该卡密已停用，请联系发卡方"),
+    /** 该卡密已过期 */
+    CARD_EXPIRED("该卡密已过期，请联系发卡方"),
+    /** 卡密所属批次整体已停用，批内所有卡密暂不可用 */
+    CARD_BATCH_DISABLED("该卡密所属批次已停用，暂时无法使用"),
+    /** 卡密属于其他租户：不允许跨租户核销 */
+    CARD_CROSS_TENANT_REDEEM("该卡密无法在当前账号所属租户使用"),
+    /** 卡密批次不存在或已被删除 */
+    CARD_BATCH_NOT_FOUND("卡密批次不存在或已被删除"),
+    /** 批量生成数量超出配置上限 */
+    CARD_BATCH_COUNT_EXCEEDED("本次生成数量超出允许范围，请调整后重试");
 
     private final String defaultUserMessage;
 
