@@ -24,6 +24,17 @@
 - 实体字段命名为 `deletedAt`（`Instant`），三态状态（ENABLED / DISABLED / DELETED）通过 `getStatus()` 在 Java 端派生，不得入库。响应 DTO 不向普通用户返回 `deletedAt`，仅返回派生 `status`。
 - 软删除字段的写入与恢复只能由服务层统一管理；Controller、Job、外部脚本不得直接更新 `deleted_at`。仓库内仍在使用 `is_deleted BOOLEAN` 的历史表必须在最近的 Flyway 迁移中改造为 `deleted_at`，禁止新增任何 `is_deleted BOOLEAN` 字段。
 
+### 控制台页面设计
+
+- 控制台管理类页面统一采用「页头 / 指标条 / 工具栏 / 表格(1fr) / 分页」五行 Grid，`gap: 20px`，仅表格区内部滚动；总览页采用 `flex; gap: 24px` 的更宽节奏。禁止把表格直接顶到页头下方造成「臃肿、无留白」。
+- 每个一级管理页都必须在页头与工具栏之间提供聚合指标条，复用 `fluxora-web/src/components/MetricStrip.vue`，不允许在页面内重新发明指标视觉语言。
+- 指标条数据必须来自后端**单次聚合 SQL**（`COUNT(*) FILTER (WHERE …)`，写在对应 Mapper XML 中，过滤 `deleted_at IS NULL`），禁止前端遍历列表自行计数或并发拉多个计数接口。写操作后用 `Promise.all([loadList(), loadStats()])` 同步刷新。
+- 指标条仅展示标量计数，标签在上、数值在下，等宽数字对齐；只有上下边线 + 列间分隔线，禁止图表、sparkline、图标圈、卡片阴影、渐变背景。语义色调（`warn` / `danger`）仅在数值 > 0 时染色。
+- 总览页必须有真实信息密度：平台管理员看「指标条 + 需关注 + 最近创建」两列；租户管理员看「指标条 + 快速入口」；普通成员保留极简欢迎语。**不得用伪造列表填充空间**。
+- 禁止以下视觉反模式：hero-metric 卡片墙、identical card grid、彩色 side-stripe border、gradient text、大写 + 大间距「眉签」eyebrow、`01/02/03` 装饰性章节编号、霓虹/玻璃拟态/超大圆角、modal 作为第一选择。
+- 颜色统一通过 `styles.css` CSS 变量；状态用 6-7px 圆点 + 文字内联标签，不用彩色 Tag 块；交互 `:focus-visible` 必须使用 `outline: 2px solid var(--accent); outline-offset: 2px;`。
+- 响应式三视口（桌面 / 平板 / 移动）必须实测：横向无溢出、指标条数值（0 / 中等 / >10000）排版稳定、表格在 0/1/≥20 行下空态-单行-分页都正确、写操作后无需刷新即可看到指标同步更新。
+
 ### 安全错误提示与交互
 
 - 普通用户可见页面、弹窗、Toast、表单提示和错误页不得显示 HTTP 状态码、业务错误码、异常类名、堆栈、SQL/数据库错误、字段名、后端原始异常、内部路径、配置、Token、密码或其他敏感信息。
