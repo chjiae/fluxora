@@ -44,6 +44,7 @@ declare module 'vue' {
     NTooltip: typeof import('naive-ui')['NTooltip']
     PageHeader: typeof import('./src/components/PageHeader.vue')['default']
     PublicHeader: typeof import('./src/components/PublicHeader.vue')['default']
+    RechargeCardRevealPanel: typeof import('./src/components/RechargeCardRevealPanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     StatusTag: typeof import('./src/components/StatusTag.vue')['default']

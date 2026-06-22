@@ -37,6 +37,11 @@ export const useAuthStore = defineStore('auth', () => {
   const canReadTenantCredit = computed(() => user.value?.permissions?.includes('CREDIT_TENANT_READ') ?? false)
   const canAdjustTenantCredit = computed(() => user.value?.permissions?.includes('CREDIT_TENANT_ADJUST') ?? false)
   const canAdjustCrossTenantCredit = computed(() => user.value?.permissions?.includes('CREDIT_CROSS_TENANT_ADJUST') ?? false)
+  // 卡密权限（V6 引入）
+  const canRedeemCards = computed(() => user.value?.permissions?.includes('CARD_SELF_REDEEM') ?? false)
+  const canManageCards = computed(() => user.value?.permissions?.includes('CARD_TENANT_MANAGE') ?? false)
+  const canManageCrossTenantCards = computed(() => user.value?.permissions?.includes('CARD_CROSS_TENANT_MANAGE') ?? false)
+  const canReadCardRecords = computed(() => user.value?.permissions?.includes('CARD_RECORD_READ_TENANT') ?? false)
 
   async function loginAction(username: string, password: string) {
     loading.value = true
@@ -126,6 +131,10 @@ export const useAuthStore = defineStore('auth', () => {
     canReadTenantCredit,
     canAdjustTenantCredit,
     canAdjustCrossTenantCredit,
+    canRedeemCards,
+    canManageCards,
+    canManageCrossTenantCards,
+    canReadCardRecords,
     loginAction,
     checkAuth,
     logoutAction,

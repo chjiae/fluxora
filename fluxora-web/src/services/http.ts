@@ -39,6 +39,16 @@ const USER_MESSAGES: Record<string, string> = {
   CREDIT_ACCOUNT_NOT_FOUND: '当前账号没有可用的额度账户',
   CREDIT_AMOUNT_INVALID: '调整金额必须为正数',
   CREDIT_REASON_REQUIRED: '请填写调整原因',
+  // 卡密（V6 引入）
+  CARD_CODE_INVALID: '卡密格式不正确，请检查后重新输入',
+  CARD_NOT_FOUND: '卡密无效，请确认后重试',
+  CARD_ALREADY_REDEEMED: '该卡密已被核销，无法重复使用',
+  CARD_DISABLED: '该卡密已停用，请联系发卡方',
+  CARD_EXPIRED: '该卡密已过期，请联系发卡方',
+  CARD_BATCH_DISABLED: '该卡密所属批次已停用，暂时无法使用',
+  CARD_CROSS_TENANT_REDEEM: '该卡密无法在当前账号所属租户使用',
+  CARD_BATCH_NOT_FOUND: '卡密批次不存在或已被删除',
+  CARD_BATCH_COUNT_EXCEEDED: '本次生成数量超出允许范围，请调整后重试',
 }
 
 const FALLBACK_MESSAGE = '服务暂时不可用，请稍后重试'

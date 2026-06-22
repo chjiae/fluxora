@@ -9,6 +9,8 @@ import MemberManagementView from '../views/MemberManagementView.vue'
 import MyApiKeysView from '../views/MyApiKeysView.vue'
 import MyCreditView from '../views/MyCreditView.vue'
 import CreditManagementView from '../views/CreditManagementView.vue'
+import CardRedeemView from '../views/CardRedeemView.vue'
+import CardBatchManagementView from '../views/CardBatchManagementView.vue'
 import ConsoleOverviewView from '../views/ConsoleOverviewView.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -58,6 +60,22 @@ export const router = createRouter({
           path: 'credit/manage',
           component: CreditManagementView,
         },
+        {
+          // 卡密充值（普通用户 / 租户管理员均可）
+          path: 'cards/redeem',
+          component: CardRedeemView,
+        },
+        {
+          // 卡密批次管理（租户管理员路径）
+          path: 'cards/manage',
+          component: CardBatchManagementView,
+        },
+        {
+          // 平台管理员嵌套：指定租户的卡密管理
+          path: 'tenants/:tenantId/cards/manage',
+          component: CardBatchManagementView,
+          props: route => ({ tenantId: Number(route.params.tenantId) }),
+        },
         { path: 'overview', component: ConsoleOverviewView },
       ],
     },
@@ -106,6 +124,16 @@ router.beforeEach(async (to, _from, next) => {
     }
     if (to.path === '/console/credit/manage'
         && !(auth.canAdjustTenantCredit || auth.canAdjustCrossTenantCredit)) {
+      return next('/console/overview')
+    }
+    // 卡密充值：CARD_SELF_REDEEM
+    if (to.path === '/console/cards/redeem' && !auth.canRedeemCards) {
+      return next('/console/overview')
+    }
+    // 卡密管理：本租户 / 跨租户
+    if ((to.path === '/console/cards/manage'
+          || /^\/console\/tenants\/[^/]+\/cards\/manage$/.test(to.path))
+        && !(auth.canManageCards || auth.canManageCrossTenantCards)) {
       return next('/console/overview')
     }
 

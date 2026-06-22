@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Building2, KeyRound, LayoutDashboard, Menu, UserRound, Users, Wallet } from 'lucide-vue-next'
+import { Building2, CreditCard, KeyRound, LayoutDashboard, Menu, UserRound, Users, Wallet } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
@@ -30,6 +30,14 @@ const menuOptions = computed(() => [
   ...(auth.canAdjustTenantCredit || auth.canAdjustCrossTenantCredit
     ? [{ label: '额度管理', key: '/console/credit/manage', icon: () => h(Wallet, { size: 18 }) }]
     : []),
+  // 卡密充值：拥有 CARD_SELF_REDEEM 权限的租户用户
+  ...(auth.canRedeemCards
+    ? [{ label: '卡密充值', key: '/console/cards/redeem', icon: () => h(CreditCard, { size: 18 }) }]
+    : []),
+  // 卡密管理：租户管理员或平台管理员
+  ...(auth.canManageCards || auth.canManageCrossTenantCards
+    ? [{ label: '卡密管理', key: '/console/cards/manage', icon: () => h(CreditCard, { size: 18 }) }]
+    : []),
 ])
 const title = computed(() => {
   // 嵌套的「指定租户成员管理」路径在菜单中无对应条目，单独命名以保留面包屑可读性
@@ -37,6 +45,9 @@ const title = computed(() => {
   if (/^\/console\/tenants\/[^/]+\/api-keys$/.test(route.path)) return 'API Key'
   if (/^\/console\/tenants\/[^/]+\/credit\/manage$/.test(route.path)) return '额度管理'
   if (route.path === '/console/credit/manage') return '额度管理'
+  if (route.path === '/console/cards/redeem') return '卡密充值'
+  if (route.path === '/console/cards/manage') return '卡密管理'
+  if (/^\/console\/tenants\/[^/]+\/cards\/manage$/.test(route.path)) return '卡密管理'
   return menuOptions.value.find(item => item.key === route.path)?.label || '概览'
 })
 
