@@ -101,6 +101,95 @@ npm run dev
 | PUT | `/api/cards/{cardId}/enable\|disable` | 启用 / 停用单张卡密（终态卡密拒绝） | 同上 |
 | GET | `/api/admin/cards/batches` | 跨租户卡密批次分页 | `CARD_CROSS_TENANT_MANAGE` |
 
+## 上游配置
+
+### 模型关系
+
+```text
+Provider
+├── ProviderBaseUrl
+│   └── ProviderChannel
+│       └── ProviderCredential[]
+```
+
+- Provider（上游厂商）：表示上游服务来源（OpenAI/Anthropic/DeepSeek 等），范围为 `PLATFORM_SHARED`（供全部租户选用）或 `TENANT_PRIVATE`（仅归属租户与平台管理员可见）。
+- ProviderBaseUrl（接入基础地址）：绑定一家厂商与一种协议（`OPENAI`/`ANTHROPIC`），保存原始 URL 与规范化 URL；同一物理 URL 可按不同协议分别创建。
+- ProviderChannel（上游通道）：租户实际可用的路由单元，引用一个 ProviderBaseUrl 并保存优先级/权重/超时等运行参数。
+- ProviderCredential（上游凭证）：归属一个通道，保存 AES-256-GCM 密文、HMAC-SHA-256 去重指纹与脱敏展示；公开 DTO 绝不包含明文/密文/指纹/IV/加密版本。
+
+### 权限边界
+
+| 角色 | 权限 |
+| --- | --- |
+| `PLATFORM_ADMIN` | 管理共享 Provider/BaseUrl；跨租户查看/管理所有私有配置、通道与凭证；可批量导入 |
+| `TENANT_ADMIN` | 管理本租户私有 Provider/BaseUrl；可读平台共享 Provider/BaseUrl 并创建通道；管理本租户通道与凭证；可批量导入 |
+| `TENANT_MEMBER` | 不可访问上游配置页面与接口（无 `UPSTREAM_READ` 权限） |
+
+写操作由服务层强制校验身份：租户管理员传入的客户端 `tenantId` 永不作为授权依据；私有资源归属租户由服务层推导。
+
+### 接入基础地址 URL 规则
+
+- 仅允许 `http://` 或 `https://`；去除末尾多余 `/`；禁止 query 与 fragment；保留 `/v1`、`/anthropic` 等公共路径。
+- 拒绝 `/chat/completions`、`/messages` 等业务接口路径（后续网关负责拼接）。
+- 同一提供商下 `(provider_id, protocol, normalized_base_url)` 唯一；相同物理 URL（如 `https://api.example.com/v1`）可在 `OPENAI` 与 `ANTHROPIC` 两个协议下分别创建。
+- 规范化后的 URL 用于唯一性判断；用户填写的原始值同时保留以供审计。
+
+### 凭证加密存储
+
+- 使用 AES-256-GCM 可逆加密（12 字节随机 IV、128 位认证标签，固定版本 `AES256_GCM_V1`）。
+- HMAC-SHA-256 指纹使用独立密钥，对 trim 后原文计算（大小写敏感），仅用于同租户未删除凭证的重复判断。
+- 开发环境在 `application.yml` 中提供 Base64 编码的 32 字节测试密钥；生产通过 `FLUXORA_CREDENTIAL_MASTER_KEY` 与 `FLUXORA_CREDENTIAL_FINGERPRINT_KEY` 环境变量覆盖。
+- 后端 GlobalExceptionHandler 统一兜底：启动时校验密钥长度与格式，异常消息不拼接配置原文。
+- 公开 DTO 与前端状态绝不记录完整明文、密文、随机向量、去重指纹或加密版本；`deleted_at` 由 getStatus() 派生为 ENABLED/DISABLED 状态字段。
+
+### 批量导入
+
+- 固定导入到当前选定通道；支持多行文本粘贴、TXT 文件、CSV 文件。
+- 逐行清理首尾空白，保留原始大小写；空行跳过。
+- 批内指纹去重（保留首次出现行，后续标记同一批次内重复）；一次 IN 查询同租户未删除指纹；一次 `INSERT ... ON CONFLICT ... RETURNING` 批量写入。
+- 已启用和已停用（但未软删）凭证均视为存在，跳过；已软删除凭证视为不存在，可重新导入。
+- 单次导入数量上限由 `CREDENTIAL_IMPORT_MAX_COUNT` 配置（默认 1000）；超限行标记为限制跳过。
+- 导入响应仅返回行号、脱敏标识、处理结果与安全原因；关闭结果页或刷新后不保留原文。
+- 汇总包含成功、同一批次重复、当前租户已存在、格式无效、超限与并发重复数量。
+
+### 开发密钥配置
+
+`.env` 文件（从 `.env.example` 复制）中添加：
+```env
+# 上游凭证主密钥与去重密钥：使用 Base64 编码的 32 字节随机值
+# 默认通过 application.yml 提供仅本地测试用值，生产必须覆盖
+FLUXORA_CREDENTIAL_MASTER_KEY=
+FLUXORA_CREDENTIAL_FINGERPRINT_KEY=
+CREDENTIAL_IMPORT_MAX_COUNT=1000
+```
+生成测试密钥（PowerShell）：
+```powershell
+$bytes = new-object byte[] 32; (new-object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes); [Convert]::ToBase64String($bytes)
+```
+
+### 浏览器手工验收
+
+按 `## 启动` 节启动 PostgreSQL、Redis、`fluxora-platform`、`fluxora-web` 后，可在浏览器走通以下流程：
+
+1. 以 `admin / Admin@2026!` 登录平台。
+2. 进入「上游厂商」，点击 **新增厂商**，创建一个平台共享 Provider（名称/编码/范围=平台共享）。
+3. 进入「接入地址」，选择刚创建的共享厂商，点击 **新增地址**：
+   - 先创建 `OPENAI + https://api.example.com/v1`；
+   - 再创建 `ANTHROPIC + https://api.example.com/v1` —— 应成功（同 URL 不同协议）。
+   - 再次尝试创建 `OPENAI + https://api.example.com/v1///` —— 应被安全拒绝（不出现 500/SQL/堆栈）。
+4. 使用默认租户管理员 `e2eadmin / chen2983` 登录（或通过自营初始化创建）。
+5. 进入「上游厂商」，可看到共享 Provider（只读）并创建本租户私有 Provider。
+6. 进入「上游通道」，点击 **新增通道**：选择共享厂商 → 选择 OPENAI 接入地址 → 填写名称，创建通道。
+7. 在通道列表点击通道名称，打开详情抽屉的「凭证」区域：
+   - **新增凭证**：输入上游 API Key（密码框），保存后列表只显示脱敏值（`sk-***YZ`），不可查看明文。
+   - **批量导入**：粘贴多行凭证，点击导入，查看汇总与逐行脱敏明细；再次导入相同凭证应全部跳过。
+   - **替换凭证**：输入新凭证并确认，旧密文不再被引用。
+8. 普通成员（无 `UPSTREAM_READ` 权限）看不到「上游配置」菜单，访问路由被守卫拦截。
+9. 上下游配置页面在桌面（1440×900）、平板（768×1024）、移动端（390×844）视口下无横向溢出。
+10. 所有失败 toast / dialog 不出现 HTTP 状态码、业务编码、SQL、堆栈或后端原始 message。
+
+
+
 ## 自营租户保护规则
 
 `default` 自营租户（类型 `SELF_OPERATED`）受后端保护：
@@ -340,13 +429,16 @@ npx playwright test
 - **用户额度**：`user_credit_account`（DECIMAL 精确存储） + `credit_transaction`（不可篡改流水），`UPDATE…WHERE balance + delta >= 0 RETURNING` 原子调整，并发安全
 - **卡密充值**：`recharge_card_batch` + `recharge_card` 两层模型，独立 pepper + HMAC-SHA256 安全哈希，完整明文仅创建响应一次性返回，原子 UPDATE…RETURNING 核销 + 部分唯一索引双层防重复入账；`credit_transaction.source` 扩展为 `MANUAL_ADJUSTMENT` / `CARD_REDEEM`
 - **前端页面**：`/console/api-keys`（我的 API Key）、`/console/credit`（我的额度）、`/console/credit/manage`（额度管理）、`/console/cards/redeem`（卡密充值）、`/console/cards/manage`（卡密管理），含一次性 Key 展示组件 `ApiKeyRevealPanel` 与一次性卡密展示组件 `RechargeCardRevealPanel`（含本地 TXT/CSV 导出）
+- **上游配置控制面**（V7）：`provider`、`provider_base_url`、`provider_channel`、`provider_credential` 四张表；AES-256-GCM 可逆加密 + HMAC-SHA-256 去重指纹；凭证批量导入（批内去重、一次 IN 查询、批量 INSERT…RETURNING）；部分唯一索引并发兜底；平台共享/租户私有隔离；三个管理页（上游厂商/接入地址/上游通道）+ 通道凭证管理与批量导入
+- **上游配置前端**：`/console/providers`、`/console/provider-base-urls`、`/console/provider-channels`；通道详情抽屉内嵌凭证管理面板与批量导入抽屉；StatusDot 脱敏展示；密码输入不回显；MetricStrip 指标条；所有页面复用五行 Grid + Naive UI 骨架
 
 ### 刻意未实现（本轮范围外）
-- 模型定价、Token 计费、流式实时扣费
+- 模型拉取、上游模型发现、模型广场、平台模型、上游模型映射（Model/ModelRoute/RouteTarget — 下一阶段）
+- Token 计费、流式实时扣费、用量统计
 - 网关 API Key 鉴权、Redis Pub/Sub/Stream、网关本地缓存
-- 支付、充值订单、退款、发票（卡密本轮只是发卡，不是支付结算）
-- Provider、Model、ModelRoute 等管理
-- 完整用户/角色/权限后台管理界面
+- 真实上游请求、连接测试、协议转换/Adapter、SSE 流式转发
+- 支付、充值订单、退款、发票
+- 凭证自动轮换、失败切换、请求重试
 - 短信 / 邮件 / 自助找回密码
 - 每个 API Key 独立余额
 - 日志审计
