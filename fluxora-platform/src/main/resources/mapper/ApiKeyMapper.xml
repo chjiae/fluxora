@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    API Key MyBatis 映射。
+    所有业务查询默认追加 AND deleted_at IS NULL；keyHash 仅在 INSERT 写入，
+    不在任何 SELECT 返回；列表/详情字段集严格脱敏（无 key_hash，无 plaintext）。
+-->
+<mapper namespace="io.fluxora.platform.apikey.mapper.ApiKeyMapper">
+
+    <select id="findById" resultType="io.fluxora.platform.apikey.ApiKey">
+        SELECT id, tenant_id, user_id, name, key_prefix, key_hash, enabled,
+               expire_at, last_used_at, deleted_at, created_at, updated_at
+        FROM api_key
+        WHERE id = #{id} AND deleted_at IS NULL
+    </select>
+
+    <select id="findRows" resultType="io.fluxora.platform.apikey.mapper.ApiKeyRow">
+        SELECT
+            k.id AS id,
+            k.tenant_id AS tenantId,
+            t.tenant_code AS tenantCode,
+            t.name AS tenantName,
+            k.user_id AS userId,
+            u.username AS username,
+            u.display_name AS userDisplayName,
+            k.name AS name,
+            k.key_prefix AS keyPrefix,
+            k.enabled AS enabled,
+            k.expire_at AS expireAt,
+            k.last_used_at AS lastUsedAt,
+            k.created_at AS createdAt,
+            k.updated_at AS updatedAt
+        FROM api_key k
+        INNER JOIN user_account u ON u.id = k.user_id
+        INNER JOIN tenant t       ON t.id = k.tenant_id
+        WHERE k.deleted_at IS NULL
+        <if test="tenantId != null">AND k.tenant_id = #{tenantId}</if>
+        <if test="userId != null">AND k.user_id = #{userId}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (k.name ILIKE CONCAT('%', #{keyword}, '%')
+              OR k.key_prefix ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.username ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.display_name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null and status != ''">
+            <choose>
+                <when test="status == 'ENABLED'">
+                    AND k.enabled = TRUE AND (k.expire_at IS NULL OR k.expire_at &gt; NOW())
+                </when>
+                <when test="status == 'DISABLED'">
+                    AND k.enabled = FALSE AND (k.expire_at IS NULL OR k.expire_at &gt; NOW())
+                </when>
+                <when test="status == 'EXPIRED'">
+                    AND k.expire_at IS NOT NULL AND k.expire_at &lt;= NOW()
+                </when>
+            </choose>
+        </if>
+        ORDER BY k.created_at DESC, k.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countRows" resultType="long">
+        SELECT COUNT(*)
+        FROM api_key k
+        INNER JOIN user_account u ON u.id = k.user_id
+        WHERE k.deleted_at IS NULL
+        <if test="tenantId != null">AND k.tenant_id = #{tenantId}</if>
+        <if test="userId != null">AND k.user_id = #{userId}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (k.name ILIKE CONCAT('%', #{keyword}, '%')
+              OR k.key_prefix ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.username ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.display_name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null and status != ''">
+            <choose>
+                <when test="status == 'ENABLED'">
+                    AND k.enabled = TRUE AND (k.expire_at IS NULL OR k.expire_at &gt; NOW())
+                </when>
+                <when test="status == 'DISABLED'">
+                    AND k.enabled = FALSE AND (k.expire_at IS NULL OR k.expire_at &gt; NOW())
+                </when>
+                <when test="status == 'EXPIRED'">
+                    AND k.expire_at IS NOT NULL AND k.expire_at &lt;= NOW()
+                </when>
+            </choose>
+        </if>
+    </select>
+
+    <select id="findRowById" resultType="io.fluxora.platform.apikey.mapper.ApiKeyRow">
+        SELECT
+            k.id AS id,
+            k.tenant_id AS tenantId,
+            t.tenant_code AS tenantCode,
+            t.name AS tenantName,
+            k.user_id AS userId,
+            u.username AS username,
+            u.display_name AS userDisplayName,
+            k.name AS name,
+            k.key_prefix AS keyPrefix,
+            k.enabled AS enabled,
+            k.expire_at AS expireAt,
+            k.last_used_at AS lastUsedAt,
+            k.created_at AS createdAt,
+            k.updated_at AS updatedAt
+        FROM api_key k
+        INNER JOIN user_account u ON u.id = k.user_id
+        INNER JOIN tenant t       ON t.id = k.tenant_id
+        WHERE k.id = #{id} AND k.deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO api_key (tenant_id, user_id, name, key_prefix, key_hash,
+                             enabled, expire_at, created_at, updated_at)
+        VALUES (#{tenantId}, #{userId}, #{name}, #{keyPrefix}, #{keyHash},
+                #{enabled}, #{expireAt}, NOW(), NOW())
+    </insert>
+
+    <!--
+        编辑：name 总是更新；expire_at 行为由 clearExpire 决定：
+          - clearExpire = TRUE  → 写入 NULL
+          - clearExpire = FALSE → 写入入参 expireAt（可能也是 NULL，表示保持原值不变）
+        本 mapper 不提供"保持不变"语义；service 端保证按需调用。
+    -->
+    <update id="updateMeta">
+        UPDATE api_key
+        SET name       = #{name},
+            expire_at  = <choose>
+                            <when test="clearExpire">NULL</when>
+                            <otherwise>#{expireAt}</otherwise>
+                         </choose>,
+            updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="setEnabled">
+        UPDATE api_key SET enabled = #{enabled}, updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        UPDATE api_key SET deleted_at = NOW(), updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <!--
+        聚合统计：COUNT(*) FILTER 一次性返回 5 个计数。
+        过期阈值 expiringWithinDays 与 TenantMapper.stats 同款做法（参数化区间）。
+    -->
+    <select id="stats" resultType="io.fluxora.platform.apikey.dto.ApiKeyStats">
+        SELECT
+            COUNT(*) FILTER (WHERE k.deleted_at IS NULL)                                                                                                AS total,
+            COUNT(*) FILTER (WHERE k.deleted_at IS NULL AND k.enabled = TRUE  AND (k.expire_at IS NULL OR k.expire_at &gt; NOW()))                       AS enabled,
+            COUNT(*) FILTER (WHERE k.deleted_at IS NULL AND k.enabled = FALSE AND (k.expire_at IS NULL OR k.expire_at &gt; NOW()))                       AS disabled,
+            COUNT(*) FILTER (WHERE k.deleted_at IS NULL AND k.expire_at IS NOT NULL AND k.expire_at &lt;= NOW())                                         AS expired,
+            COUNT(*) FILTER (WHERE k.deleted_at IS NULL AND k.enabled = TRUE
+                                  AND k.expire_at IS NOT NULL AND k.expire_at &gt; NOW()
+                                  AND k.expire_at &lt;= NOW() + (#{expiringWithinDays} || ' days')::interval)                                            AS expiring_soon
+        FROM api_key k
+        WHERE 1 = 1
+        <if test="tenantId != null">AND k.tenant_id = #{tenantId}</if>
+        <if test="userId != null">AND k.user_id = #{userId}</if>
+    </select>
+
+</mapper>

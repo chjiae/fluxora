@@ -54,13 +54,16 @@ public class MemberService {
     private final IdentityMapper identityMapper;
     private final TenantMapper tenantMapper;
     private final PasswordEncoder passwordEncoder;
+    private final io.fluxora.platform.credit.mapper.CreditMapper creditMapper;
 
     public MemberService(IdentityMapper identityMapper,
                          TenantMapper tenantMapper,
-                         PasswordEncoder passwordEncoder) {
+                         PasswordEncoder passwordEncoder,
+                         io.fluxora.platform.credit.mapper.CreditMapper creditMapper) {
         this.identityMapper = identityMapper;
         this.tenantMapper = tenantMapper;
         this.passwordEncoder = passwordEncoder;
+        this.creditMapper = creditMapper;
     }
 
     // ============================================================
@@ -156,6 +159,10 @@ public class MemberService {
         user.setPasswordHash(passwordEncoder.encode(req.password()));
         identityMapper.insertUser(user);
         identityMapper.insertUserRole(user.getId(), role.getId());
+
+        // 新建 TENANT 用户立即为其创建额度账户（幂等：如果账户已存在不重复创建）
+        // 与 V5 迁移的数据回填互补——新建用户用服务层逻辑，已有用户靠迁移脚本补齐。
+        creditMapper.ensureAccount(tenantId, user.getId());
 
         log.info("成员已创建：tenantId={}, userId={}, role={}", tenantId, user.getId(), role.getCode());
         return loadSummary(user.getId());
