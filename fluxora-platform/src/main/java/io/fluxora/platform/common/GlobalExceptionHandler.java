@@ -4,6 +4,7 @@ import io.fluxora.common.error.BusinessErrorCode;
 import io.fluxora.common.error.ErrorResponse;
 import io.fluxora.platform.apikey.ApiKeyException;
 import io.fluxora.platform.auth.AuthException;
+import io.fluxora.platform.card.CardException;
 import io.fluxora.platform.credit.CreditException;
 import io.fluxora.platform.identity.MemberException;
 import io.fluxora.platform.tenant.TenantException;
@@ -101,6 +102,20 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (code) {
             case RESOURCE_NOT_FOUND, CREDIT_ACCOUNT_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case CROSS_TENANT_ACCESS_DENIED, ACCESS_DENIED -> HttpStatus.FORBIDDEN;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(ErrorResponse.of(code));
+    }
+
+    /**
+     * 卡密异常映射：NOT_FOUND→404，ACCESS_DENIED→403，其余→400。
+     */
+    @ExceptionHandler(CardException.class)
+    public ResponseEntity<ErrorResponse> handleCardException(CardException ex) {
+        BusinessErrorCode code = ex.getErrorCode();
+        HttpStatus status = switch (code) {
+            case CARD_NOT_FOUND, CARD_BATCH_NOT_FOUND, RESOURCE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case CARD_CROSS_TENANT_REDEEM, CROSS_TENANT_ACCESS_DENIED, ACCESS_DENIED -> HttpStatus.FORBIDDEN;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(ErrorResponse.of(code));

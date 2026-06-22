@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    卡密批次 + 单张卡密 MyBatis 映射。
+
+    安全约束：
+      1. 任何 SELECT 都不返回 card_hash 或 plaintext；plaintext 不入库；
+      2. atomicRedeem 用 <select affectData="true"> 包裹 UPDATE…RETURNING，
+         在单 SQL 内完成「校验状态 + 校验过期 + 写入 REDEEMED + 绑定用户」，
+         返回 denomination；0 行表示并发已被其他请求核销 / 已停用 / 已过期；
+      3. 批次统计通过聚合 SQL 实时计算（COUNT FILTER），避免冗余列状态漂移；
+      4. 核销时严格依据 (status='ENABLED' AND batch.status='ENABLED' AND
+         未过期) 三重条件，缺一不可。
+-->
+<mapper namespace="io.fluxora.platform.card.mapper.CardMapper">
+
+    <!-- ============================== 批次 ============================== -->
+
+    <insert id="insertBatch" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO recharge_card_batch
+            (tenant_id, batch_code, name, denomination, total_count,
+             status, expire_at, created_by_id, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{batchCode}, #{name}, #{denomination}, #{totalCount},
+             #{status}, #{expireAt}, #{createdById}, NOW(), NOW())
+    </insert>
+
+    <select id="findBatchById" resultType="io.fluxora.platform.card.RechargeCardBatch">
+        SELECT id, tenant_id, batch_code, name, denomination, total_count,
+               status, expire_at, created_by_id, created_at, updated_at
+        FROM recharge_card_batch WHERE id = #{id}
+    </select>
+
+    <select id="findBatchByIdIncludeTenant" resultType="io.fluxora.platform.card.RechargeCardBatch">
+        SELECT id, tenant_id, batch_code, name, denomination, total_count,
+               status, expire_at, created_by_id, created_at, updated_at
+        FROM recharge_card_batch
+        WHERE id = #{id}
+        <if test="tenantId != null">AND tenant_id = #{tenantId}</if>
+    </select>
+
+    <!--
+        批次列表 + 实时聚合统计。
+        usedCount / disabledCount / expiredCount / availableCount 通过
+        相关子查询 + COUNT(*) FILTER 一次性计算，避免维护冗余列。
+    -->
+    <select id="findBatchSummaries" resultType="io.fluxora.platform.card.dto.CardBatchSummary">
+        SELECT
+            b.id              AS id,
+            b.tenant_id       AS tenantId,
+            t.tenant_code     AS tenantCode,
+            t.name            AS tenantName,
+            b.batch_code      AS batchCode,
+            b.name            AS name,
+            b.denomination    AS denomination,
+            b.total_count     AS totalCount,
+            (SELECT COUNT(*) FROM recharge_card c WHERE c.batch_id = b.id AND c.status = 'ENABLED'
+                AND (c.expire_at IS NULL OR c.expire_at &gt; NOW()))             AS availableCount,
+            (SELECT COUNT(*) FROM recharge_card c WHERE c.batch_id = b.id AND c.status = 'REDEEMED')   AS usedCount,
+            (SELECT COUNT(*) FROM recharge_card c WHERE c.batch_id = b.id AND c.status = 'DISABLED')   AS disabledCount,
+            (SELECT COUNT(*) FROM recharge_card c WHERE c.batch_id = b.id AND
+                ((c.status = 'EXPIRED') OR
+                 (c.status = 'ENABLED' AND c.expire_at IS NOT NULL AND c.expire_at &lt;= NOW())))      AS expiredCount,
+            b.status          AS status,
+            b.expire_at       AS expireAt,
+            b.created_by_id   AS createdById,
+            u.display_name    AS createdByName,
+            b.created_at      AS createdAt,
+            b.updated_at      AS updatedAt
+        FROM recharge_card_batch b
+        INNER JOIN tenant t        ON t.id = b.tenant_id
+        LEFT JOIN user_account u   ON u.id = b.created_by_id
+        WHERE 1 = 1
+        <if test="tenantId != null">AND b.tenant_id = #{tenantId}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (b.batch_code ILIKE CONCAT('%', #{keyword}, '%')
+              OR b.name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null and status != ''">AND b.status = #{status}</if>
+        <if test="denomination != null">AND b.denomination = #{denomination}</if>
+        ORDER BY b.created_at DESC, b.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countBatches" resultType="long">
+        SELECT COUNT(*) FROM recharge_card_batch b
+        WHERE 1 = 1
+        <if test="tenantId != null">AND b.tenant_id = #{tenantId}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (b.batch_code ILIKE CONCAT('%', #{keyword}, '%')
+              OR b.name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null and status != ''">AND b.status = #{status}</if>
+        <if test="denomination != null">AND b.denomination = #{denomination}</if>
+    </select>
+
+    <update id="setBatchStatus">
+        UPDATE recharge_card_batch SET status = #{status}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- ============================== 单张卡密 ============================== -->
+
+    <insert id="insertCard" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO recharge_card
+            (tenant_id, batch_id, card_prefix, card_hash, denomination,
+             status, expire_at, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{batchId}, #{cardPrefix}, #{cardHash}, #{denomination},
+             #{status}, #{expireAt}, NOW(), NOW())
+    </insert>
+
+    <!-- 按 hash 查找（核销时第一步）：返回完整实体含 tenant_id / batch_id / status -->
+    <select id="findByHash" resultType="io.fluxora.platform.card.RechargeCard">
+        SELECT id, tenant_id, batch_id, card_prefix, card_hash, denomination,
+               status, expire_at, redeemed_user_id, redeemed_at, disabled_reason,
+               created_at, updated_at
+        FROM recharge_card WHERE card_hash = #{cardHash}
+    </select>
+
+    <!-- 单张卡密脱敏视图（详情 / 列表共用） -->
+    <select id="findCardSummary" resultType="io.fluxora.platform.card.dto.CardSummary">
+        SELECT
+            c.id              AS id,
+            c.tenant_id       AS tenantId,
+            c.batch_id        AS batchId,
+            b.batch_code      AS batchCode,
+            c.card_prefix     AS cardPrefix,
+            c.denomination    AS denomination,
+            c.status          AS status,
+            c.expire_at       AS expireAt,
+            c.redeemed_user_id   AS redeemedUserId,
+            u.username        AS redeemedUsername,
+            u.display_name    AS redeemedUserDisplayName,
+            c.redeemed_at     AS redeemedAt,
+            c.created_at      AS createdAt
+        FROM recharge_card c
+        INNER JOIN recharge_card_batch b ON b.id = c.batch_id
+        LEFT JOIN user_account u         ON u.id = c.redeemed_user_id
+        WHERE c.id = #{id}
+        LIMIT 1
+    </select>
+
+    <!--
+        原子核销：在单 SQL 内完成「校验 ENABLED + 校验未过期 + 写入 REDEEMED + 绑定用户」。
+        WHERE 子句中的三个条件构成「核销前置校验」的最终防线：
+          - status = 'ENABLED'（不接受 DISABLED / EXPIRED / REDEEMED）
+          - 过期时间未到（NULL 或 > 入参 now）
+          - 卡密所属批次也必须 ENABLED（通过 EXISTS 子查询）
+        RETURNING denomination 给 service 写流水时使用；
+        0 行表示并发已被其他请求核销 / 卡密被停用 / 卡密过期 / 批次被停用。
+
+        affectData="true" 让 Spring 事务把此语句视为写操作（MyBatis 3.5.12+）。
+    -->
+    <select id="atomicRedeem" resultType="java.math.BigDecimal" affectData="true" flushCache="true">
+        UPDATE recharge_card
+        SET status           = 'REDEEMED',
+            redeemed_user_id = #{userId},
+            redeemed_at      = #{now},
+            updated_at       = #{now}
+        WHERE id = #{id}
+          AND status = 'ENABLED'
+          AND (expire_at IS NULL OR expire_at &gt; #{now})
+          AND EXISTS (
+              SELECT 1 FROM recharge_card_batch b
+              WHERE b.id = recharge_card.batch_id AND b.status = 'ENABLED'
+          )
+        RETURNING denomination
+    </select>
+
+    <select id="findCardSummaries" resultType="io.fluxora.platform.card.dto.CardSummary">
+        SELECT
+            c.id              AS id,
+            c.tenant_id       AS tenantId,
+            c.batch_id        AS batchId,
+            b.batch_code      AS batchCode,
+            c.card_prefix     AS cardPrefix,
+            c.denomination    AS denomination,
+            c.status          AS status,
+            c.expire_at       AS expireAt,
+            c.redeemed_user_id   AS redeemedUserId,
+            u.username        AS redeemedUsername,
+            u.display_name    AS redeemedUserDisplayName,
+            c.redeemed_at     AS redeemedAt,
+            c.created_at      AS createdAt
+        FROM recharge_card c
+        INNER JOIN recharge_card_batch b ON b.id = c.batch_id
+        LEFT JOIN user_account u         ON u.id = c.redeemed_user_id
+        WHERE 1 = 1
+        <if test="batchId != null">AND c.batch_id = #{batchId}</if>
+        <if test="tenantId != null">AND c.tenant_id = #{tenantId}</if>
+        <if test="prefixKeyword != null and prefixKeyword != ''">
+            AND c.card_prefix ILIKE CONCAT('%', #{prefixKeyword}, '%')
+        </if>
+        <if test="status != null and status != ''">AND c.status = #{status}</if>
+        ORDER BY c.created_at DESC, c.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countCards" resultType="long">
+        SELECT COUNT(*) FROM recharge_card c
+        WHERE 1 = 1
+        <if test="batchId != null">AND c.batch_id = #{batchId}</if>
+        <if test="tenantId != null">AND c.tenant_id = #{tenantId}</if>
+        <if test="prefixKeyword != null and prefixKeyword != ''">
+            AND c.card_prefix ILIKE CONCAT('%', #{prefixKeyword}, '%')
+        </if>
+        <if test="status != null and status != ''">AND c.status = #{status}</if>
+    </select>
+
+    <update id="setCardStatus">
+        UPDATE recharge_card
+        SET status = #{status},
+            disabled_reason = #{disabledReason},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+</mapper>
