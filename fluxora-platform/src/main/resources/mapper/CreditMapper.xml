@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    额度账户与流水 MyBatis 映射。
+
+    关键安全约束：
+      1. adjustBalance 是 *唯一* 允许变更 user_credit_account.balance 的入口；
+         其 WHERE balance + delta >= 0 子句既校验余额不变量又作为原子操作
+         在 Postgres 中天然提供并发安全（行锁由 UPDATE 隐式持有），
+         不必额外 SELECT … FOR UPDATE。
+      2. 该语句用 <select affectData="true"> 而非 <update>：MyBatis 中只有
+         <select> 才能映射 UPDATE…RETURNING 的行集；affectData=true 告知
+         Spring 事务管理器这是一次"写"操作（MyBatis 3.5.12+ 支持）。
+      3. 流水仅 INSERT；本 XML 不提供任何 update/delete-on-credit_transaction，
+         即使误调用 mapper 也无法变更已有流水（满足"不可篡改"）。
+      4. ensureAccount 用 INSERT … ON CONFLICT DO NOTHING 保证幂等，
+         可被 MemberService.createMember 与 V5 数据回填脚本共用。
+-->
+<mapper namespace="io.fluxora.platform.credit.mapper.CreditMapper">
+
+    <!-- 幂等创建账户 -->
+    <insert id="ensureAccount">
+        INSERT INTO user_credit_account (tenant_id, user_id, balance)
+        VALUES (#{tenantId}, #{userId}, 0)
+        ON CONFLICT (user_id) DO NOTHING
+    </insert>
+
+    <!-- 单用户账户视图 -->
+    <select id="findAccountByUserId" resultType="io.fluxora.platform.credit.dto.CreditAccountView">
+        SELECT
+            u.id AS userId,
+            u.username AS username,
+            u.display_name AS userDisplayName,
+            a.tenant_id AS tenantId,
+            t.tenant_code AS tenantCode,
+            t.name AS tenantName,
+            a.balance AS balance,
+            a.created_at AS createdAt,
+            a.updated_at AS updatedAt
+        FROM user_credit_account a
+        INNER JOIN user_account u ON u.id = a.user_id
+        INNER JOIN tenant t       ON t.id = a.tenant_id
+        WHERE a.user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <!--
+        原子调整余额并返回 before/after。
+        WHERE balance + delta >= 0 同时表达「余额非负不变量」与
+        「invariant-failed → 不更新（影响 0 行）」语义；service 收到 null 抛
+        CREDIT_INSUFFICIENT。
+
+        affectData="true" 让 Spring 事务把这条语句视为写，与外层 @Transactional
+        正确协作；flushCache="true" 让 MyBatis 一级缓存失效（虽然本调用不依赖缓存）。
+    -->
+    <select id="adjustBalance"
+            resultType="io.fluxora.platform.credit.mapper.BalanceAdjustResult"
+            affectData="true"
+            flushCache="true">
+        UPDATE user_credit_account
+        SET balance    = balance + #{delta},
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND balance + #{delta} &gt;= 0
+        RETURNING balance - #{delta}   AS balance_before,
+                  balance              AS balance_after
+    </select>
+
+    <!-- 插入流水；与 adjustBalance 在同一 service @Transactional 内执行 -->
+    <insert id="insertTransaction" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO credit_transaction
+            (tenant_id, user_id, direction, delta, balance_before, balance_after,
+             reason, operator_id, operator_name, created_at)
+        VALUES
+            (#{tenantId}, #{userId}, #{direction}, #{delta}, #{balanceBefore}, #{balanceAfter},
+             #{reason}, #{operatorId}, #{operatorName}, NOW())
+    </insert>
+
+    <!-- 流水行查询：按 user_id/tenant_id 索引命中；ORDER BY created_at DESC 翻页稳定 -->
+    <select id="findTransactionRows" resultType="io.fluxora.platform.credit.mapper.CreditTransactionRow">
+        SELECT
+            x.id AS id,
+            x.tenant_id AS tenantId,
+            t.tenant_code AS tenantCode,
+            t.name AS tenantName,
+            x.user_id AS userId,
+            u.username AS username,
+            u.display_name AS userDisplayName,
+            x.direction AS direction,
+            x.delta AS delta,
+            x.balance_before AS balanceBefore,
+            x.balance_after AS balanceAfter,
+            x.reason AS reason,
+            x.operator_id AS operatorId,
+            x.operator_name AS operatorName,
+            x.created_at AS createdAt
+        FROM credit_transaction x
+        INNER JOIN user_account u ON u.id = x.user_id
+        INNER JOIN tenant t       ON t.id = x.tenant_id
+        WHERE 1 = 1
+        <if test="tenantId != null">AND x.tenant_id = #{tenantId}</if>
+        <if test="userId != null">AND x.user_id = #{userId}</if>
+        <if test="direction != null and direction != ''">AND x.direction = #{direction}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (u.username ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.display_name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="from != null">AND x.created_at &gt;= #{from}</if>
+        <if test="to != null">AND x.created_at &lt;= #{to}</if>
+        ORDER BY x.created_at DESC, x.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countTransactions" resultType="long">
+        SELECT COUNT(*)
+        FROM credit_transaction x
+        INNER JOIN user_account u ON u.id = x.user_id
+        WHERE 1 = 1
+        <if test="tenantId != null">AND x.tenant_id = #{tenantId}</if>
+        <if test="userId != null">AND x.user_id = #{userId}</if>
+        <if test="direction != null and direction != ''">AND x.direction = #{direction}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (u.username ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.display_name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="from != null">AND x.created_at &gt;= #{from}</if>
+        <if test="to != null">AND x.created_at &lt;= #{to}</if>
+    </select>
+
+    <!-- 可调整额度用户选项；仅包含未软删的 TENANT 作用域用户 -->
+    <select id="findAdjustableUsers" resultType="io.fluxora.platform.credit.dto.AdjustableUserOption">
+        SELECT
+            u.id AS userId,
+            u.username AS username,
+            u.display_name AS userDisplayName,
+            u.tenant_id AS tenantId,
+            t.tenant_code AS tenantCode,
+            t.name AS tenantName,
+            a.balance AS balance
+        FROM user_account u
+        INNER JOIN tenant t              ON t.id = u.tenant_id
+        INNER JOIN user_credit_account a ON a.user_id = u.id
+        WHERE u.scope_type = 'TENANT'
+          AND u.deleted_at IS NULL
+          AND u.enabled = TRUE
+        <if test="tenantId != null">AND u.tenant_id = #{tenantId}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (u.username ILIKE CONCAT('%', #{keyword}, '%')
+              OR u.display_name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY u.created_at DESC, u.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="stats" resultType="io.fluxora.platform.credit.dto.CreditStats">
+        SELECT
+            (SELECT COUNT(*) FROM user_credit_account a
+                WHERE 1 = 1
+                <if test="tenantId != null">AND a.tenant_id = #{tenantId}</if>
+                <if test="userId != null">AND a.user_id = #{userId}</if>
+            )                                                                                    AS total_accounts,
+            COALESCE((SELECT SUM(a.balance) FROM user_credit_account a
+                WHERE 1 = 1
+                <if test="tenantId != null">AND a.tenant_id = #{tenantId}</if>
+                <if test="userId != null">AND a.user_id = #{userId}</if>
+            ), 0)                                                                                AS total_balance,
+            COALESCE((SELECT SUM(x.delta) FROM credit_transaction x WHERE x.direction = 'CREDIT'
+                <if test="tenantId != null">AND x.tenant_id = #{tenantId}</if>
+                <if test="userId != null">AND x.user_id = #{userId}</if>
+            ), 0)                                                                                AS total_credits,
+            COALESCE((SELECT SUM(x.delta) FROM credit_transaction x WHERE x.direction = 'DEBIT'
+                <if test="tenantId != null">AND x.tenant_id = #{tenantId}</if>
+                <if test="userId != null">AND x.user_id = #{userId}</if>
+            ), 0)                                                                                AS total_debits,
+            (SELECT COUNT(*) FROM credit_transaction x WHERE 1 = 1
+                <if test="tenantId != null">AND x.tenant_id = #{tenantId}</if>
+                <if test="userId != null">AND x.user_id = #{userId}</if>
+            )                                                                                    AS transaction_count
+    </select>
+
+</mapper>
