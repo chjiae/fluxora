@@ -42,6 +42,13 @@ fluxora:
       pepper: ${CARD_PEPPER:fluxora-card-pepper-for-local-development-only-please-override}
       # 单次批量生成卡密上限：防止单请求 OOM 与超长响应；可通过 CARD_BATCH_MAX_COUNT 调整
       batch-max-count: ${CARD_BATCH_MAX_COUNT:1000}
+    credential:
+      # 仅本地开发默认值：两项均为 Base64 编码的 32 字节测试密钥。
+      # 生产环境必须通过 FLUXORA_CREDENTIAL_MASTER_KEY 与
+      # FLUXORA_CREDENTIAL_FINGERPRINT_KEY 覆盖，绝不写入真实密钥。
+      master-key: ${FLUXORA_CREDENTIAL_MASTER_KEY:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      fingerprint-key: ${FLUXORA_CREDENTIAL_FINGERPRINT_KEY:ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=}
+      import-max-count: ${CREDENTIAL_IMPORT_MAX_COUNT:1000}
   init:
     admin:
       username: ${INIT_ADMIN_USERNAME:admin}

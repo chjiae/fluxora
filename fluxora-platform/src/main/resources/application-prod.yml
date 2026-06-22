@@ -1,0 +1,6 @@
+# 生产环境禁止回退到开发测试密钥；缺失时由配置绑定校验安全拒绝启动。
+fluxora:
+  security:
+    credential:
+      master-key: ${FLUXORA_CREDENTIAL_MASTER_KEY}
+      fingerprint-key: ${FLUXORA_CREDENTIAL_FINGERPRINT_KEY}
