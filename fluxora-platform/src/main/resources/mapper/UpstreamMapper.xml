@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 上游配置 SQL：公开查询不选择凭证密文、随机向量或去重指纹。 -->
+<mapper namespace="io.fluxora.platform.upstream.provider.ProviderMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO provider (name, code, scope_type, tenant_id, description, enabled, created_at, updated_at)
+        VALUES (#{name}, #{code}, #{scopeType}, #{tenantId}, #{description}, #{enabled}, NOW(), NOW())
+    </insert>
+    <select id="findById" resultType="io.fluxora.platform.upstream.provider.Provider">
+        SELECT id, name, code, scope_type, tenant_id, description, enabled, deleted_at, created_at, updated_at
+        FROM provider WHERE id = #{id} AND deleted_at IS NULL
+    </select>
+    <select id="findVisibleById" resultType="io.fluxora.platform.upstream.provider.Provider">
+        SELECT id, name, code, scope_type, tenant_id, description, enabled, deleted_at, created_at, updated_at
+        FROM provider WHERE id = #{id} AND deleted_at IS NULL
+        AND (#{platformAdmin} = TRUE OR scope_type = 'PLATFORM_SHARED' OR tenant_id = #{tenantId})
+    </select>
+    <select id="findPage" resultType="io.fluxora.platform.upstream.provider.Provider">
+        SELECT id, name, code, scope_type, tenant_id, description, enabled, created_at, updated_at
+        FROM provider WHERE deleted_at IS NULL
+        AND (#{platformAdmin} = TRUE OR scope_type = 'PLATFORM_SHARED' OR tenant_id = #{tenantId})
+        <if test="keyword != null and keyword != ''">AND (name ILIKE CONCAT('%',#{keyword},'%') OR code ILIKE CONCAT('%',#{keyword},'%'))</if>
+        <if test="scopeType != null and scopeType != ''">AND scope_type = #{scopeType}</if>
+        <if test="enabled != null">AND enabled = #{enabled}</if>
+        ORDER BY created_at DESC, id DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="countPage" resultType="long">
+        SELECT COUNT(*) FROM provider WHERE deleted_at IS NULL
+        AND (#{platformAdmin} = TRUE OR scope_type = 'PLATFORM_SHARED' OR tenant_id = #{tenantId})
+        <if test="keyword != null and keyword != ''">AND (name ILIKE CONCAT('%',#{keyword},'%') OR code ILIKE CONCAT('%',#{keyword},'%'))</if>
+        <if test="scopeType != null and scopeType != ''">AND scope_type = #{scopeType}</if>
+        <if test="enabled != null">AND enabled = #{enabled}</if>
+    </select>
+    <update id="update">UPDATE provider SET name=#{name}, description=#{description}, updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
+    <update id="setEnabled">UPDATE provider SET enabled=#{enabled}, updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
+    <update id="softDelete">UPDATE provider SET deleted_at=NOW(), updated_at=NOW() WHERE id=#{id} AND deleted_at IS NULL</update>
+    <select id="hasBaseUrls" resultType="boolean">SELECT EXISTS(SELECT 1 FROM provider_base_url WHERE provider_id=#{id} AND deleted_at IS NULL)</select>
+</mapper>
