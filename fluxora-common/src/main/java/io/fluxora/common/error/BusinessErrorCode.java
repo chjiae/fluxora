@@ -39,7 +39,31 @@ public enum BusinessErrorCode {
     /** 租户管理员尝试访问/操作其他租户的成员；与 ACCESS_DENIED 文案一致，独立编码便于日志区分 */
     CROSS_TENANT_ACCESS_DENIED("当前账号没有此操作权限"),
     /** 密码强度不符合要求（长度、字母+数字组合） */
-    PASSWORD_WEAK("密码强度不符合要求，请使用至少 8 位且包含字母与数字");
+    PASSWORD_WEAK("密码强度不符合要求，请使用至少 8 位且包含字母与数字"),
+
+    // ---------------- API Key 相关业务错误码 ----------------
+
+    /** Key 名称不合法（长度或字符不符合） */
+    API_KEY_NAME_INVALID("请填写符合要求的 Key 名称"),
+    /** API Key 不存在或已被删除（含跨权限场景的隐式不存在响应） */
+    API_KEY_NOT_FOUND("API Key 不存在或已被删除"),
+    /** API Key 已停用，应在调用方主动恢复 enabled=TRUE 前拒绝使用 */
+    API_KEY_DISABLED_STATE("该 API Key 已停用，暂时无法使用"),
+    /** API Key 已过期，需通过更新 expire_at 或创建新的 Key 解决 */
+    API_KEY_EXPIRED("该 API Key 已过期，请更新过期时间或创建新的 Key"),
+    /** API Key 已被软删除，所有后续操作拒绝 */
+    API_KEY_DELETED_STATE("该 API Key 已删除，无法继续操作"),
+
+    // ---------------- 额度账户与流水相关业务错误码 ----------------
+
+    /** 扣减额度时余额不足；在原子 UPDATE…WHERE balance+delta>=0 返回 0 行时抛出 */
+    CREDIT_INSUFFICIENT("当前可用额度不足，无法完成扣减"),
+    /** 目标用户没有额度账户（PLATFORM 作用域用户不创建账户） */
+    CREDIT_ACCOUNT_NOT_FOUND("当前账号没有可用的额度账户"),
+    /** 调整金额不合法（必须为正数；方向由 direction 表达） */
+    CREDIT_AMOUNT_INVALID("调整金额必须为正数"),
+    /** 调整原因为空（流水必须有可审计的原因） */
+    CREDIT_REASON_REQUIRED("请填写调整原因");
 
     private final String defaultUserMessage;
 

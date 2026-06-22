@@ -30,6 +30,11 @@ fluxora:
     jwt:
       secret: ${JWT_SECRET:fluxora-jwt-secret-key-for-local-development-only}
       expiration-ms: ${JWT_EXPIRATION:86400000}
+    apikey:
+      # API Key HMAC Pepper：服务器端密钥，参与所有 API Key 哈希计算
+      # 生产环境必须通过 APIKEY_PEPPER 环境变量覆盖；建议至少 32 字符随机字符串
+      # 该值绝不可写入日志、堆栈、响应或前端；仅用于后端校验
+      pepper: ${APIKEY_PEPPER:fluxora-apikey-pepper-for-local-development-only-please-override}
   init:
     admin:
       username: ${INIT_ADMIN_USERNAME:admin}
