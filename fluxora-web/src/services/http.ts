@@ -49,6 +49,21 @@ const USER_MESSAGES: Record<string, string> = {
   CARD_CROSS_TENANT_REDEEM: '该卡密无法在当前账号所属租户使用',
   CARD_BATCH_NOT_FOUND: '卡密批次不存在或已被删除',
   CARD_BATCH_COUNT_EXCEEDED: '本次生成数量超出允许范围，请调整后重试',
+  // 上游配置（V7 引入）
+  UPSTREAM_PROVIDER_CODE_DUPLICATE: '该上游厂商编码已被使用，请更换后重试',
+  UPSTREAM_PROVIDER_IN_USE: '该上游厂商仍有关联配置，无法删除',
+  UPSTREAM_BASE_URL_INVALID: '请输入有效的 HTTP 或 HTTPS 接入基础地址',
+  UPSTREAM_BASE_URL_DUPLICATE: '当前厂商下已存在相同协议和接入地址',
+  UPSTREAM_BASE_URL_IN_USE: '该接入地址仍被通道使用，无法删除',
+  UPSTREAM_CHANNEL_IN_USE: '该上游通道仍有关联凭证，无法删除',
+  UPSTREAM_SHARED_READONLY: '当前账号无权修改平台共享上游配置',
+  UPSTREAM_CHANNEL_PARAM_INVALID: '请检查优先级、权重或超时时间后重试',
+  UPSTREAM_TENANT_UNAVAILABLE: '所属租户当前不可用，无法操作上游配置',
+  CREDENTIAL_REQUIRED: '请输入上游访问凭证',
+  CREDENTIAL_REPLACE_FAILED: '凭证更新失败，请检查输入后重试',
+  CREDENTIAL_DUPLICATE: '该凭证已存在于当前租户，未重复添加',
+  CREDENTIAL_ALL_DUPLICATE: '未导入任何凭证：提交的凭证均已存在或重复',
+  CREDENTIAL_LIMIT_EXCEEDED: '本次导入数量超出允许范围，请拆分后重试',
 }
 
 const FALLBACK_MESSAGE = '服务暂时不可用，请稍后重试'

@@ -42,6 +42,13 @@ export const useAuthStore = defineStore('auth', () => {
   const canManageCards = computed(() => user.value?.permissions?.includes('CARD_TENANT_MANAGE') ?? false)
   const canManageCrossTenantCards = computed(() => user.value?.permissions?.includes('CARD_CROSS_TENANT_MANAGE') ?? false)
   const canReadCardRecords = computed(() => user.value?.permissions?.includes('CARD_RECORD_READ_TENANT') ?? false)
+  // 上游配置权限：页面可见性仅用于体验，服务端仍是最终鉴权边界。
+  const canReadUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_READ') ?? false)
+  const canCreateUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_CREATE') ?? false)
+  const canUpdateUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_UPDATE') ?? false)
+  const canEnableUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_ENABLE') ?? false)
+  const canDisableUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_DISABLE') ?? false)
+  const canDeleteUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_DELETE') ?? false)
 
   async function loginAction(username: string, password: string) {
     loading.value = true
@@ -135,6 +142,12 @@ export const useAuthStore = defineStore('auth', () => {
     canManageCards,
     canManageCrossTenantCards,
     canReadCardRecords,
+    canReadUpstream,
+    canCreateUpstream,
+    canUpdateUpstream,
+    canEnableUpstream,
+    canDisableUpstream,
+    canDeleteUpstream,
     loginAction,
     checkAuth,
     logoutAction,

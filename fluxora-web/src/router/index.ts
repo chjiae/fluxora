@@ -12,6 +12,9 @@ import CreditManagementView from '../views/CreditManagementView.vue'
 import CardRedeemView from '../views/CardRedeemView.vue'
 import CardBatchManagementView from '../views/CardBatchManagementView.vue'
 import ConsoleOverviewView from '../views/ConsoleOverviewView.vue'
+import ProviderManagementView from '../views/ProviderManagementView.vue'
+import ProviderBaseUrlManagementView from '../views/ProviderBaseUrlManagementView.vue'
+import ProviderChannelManagementView from '../views/ProviderChannelManagementView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 export const router = createRouter({
@@ -77,6 +80,9 @@ export const router = createRouter({
           props: route => ({ tenantId: Number(route.params.tenantId) }),
         },
         { path: 'overview', component: ConsoleOverviewView },
+        { path: 'providers', component: ProviderManagementView },
+        { path: 'provider-base-urls', component: ProviderBaseUrlManagementView },
+        { path: 'provider-channels', component: ProviderChannelManagementView },
       ],
     },
   ],
@@ -139,6 +145,12 @@ router.beforeEach(async (to, _from, next) => {
 
     // 自营初始化仅平台管理员可访问，租户管理员重定向到概览
     if (to.path === '/console/setup' && !auth.isPlatformAdmin) {
+      return next('/console/overview')
+    }
+
+    // 上游配置页面需要 UPSTREAM_READ 权限，普通成员重定向到概览
+    if ((to.path === '/console/providers' || to.path === '/console/provider-base-urls' || to.path === '/console/provider-channels')
+        && !auth.canReadUpstream) {
       return next('/console/overview')
     }
 

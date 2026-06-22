@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Building2, CreditCard, KeyRound, LayoutDashboard, Menu, UserRound, Users, Wallet } from 'lucide-vue-next'
+import { Building2, CreditCard, KeyRound, LayoutDashboard, Menu, Network, Plug, UserRound, Users, Wallet } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
@@ -38,6 +38,14 @@ const menuOptions = computed(() => [
   ...(auth.canManageCards || auth.canManageCrossTenantCards
     ? [{ label: '卡密管理', key: '/console/cards/manage', icon: () => h(CreditCard, { size: 18 }) }]
     : []),
+  // 上游配置：平台管理员与租户管理员可见；普通成员无 UPSTREAM_READ 权限不显示
+  ...(auth.canReadUpstream
+    ? [
+        { label: '上游厂商', key: '/console/providers', icon: () => h(Network, { size: 18 }) },
+        { label: '接入地址', key: '/console/provider-base-urls', icon: () => h(Plug, { size: 18 }) },
+        { label: '上游通道', key: '/console/provider-channels', icon: () => h(Network, { size: 18 }) },
+      ]
+    : []),
 ])
 const title = computed(() => {
   // 嵌套的「指定租户成员管理」路径在菜单中无对应条目，单独命名以保留面包屑可读性
@@ -48,6 +56,9 @@ const title = computed(() => {
   if (route.path === '/console/cards/redeem') return '卡密充值'
   if (route.path === '/console/cards/manage') return '卡密管理'
   if (/^\/console\/tenants\/[^/]+\/cards\/manage$/.test(route.path)) return '卡密管理'
+  if (route.path === '/console/providers') return '上游厂商'
+  if (route.path === '/console/provider-base-urls') return '接入地址'
+  if (route.path === '/console/provider-channels') return '上游通道'
   return menuOptions.value.find(item => item.key === route.path)?.label || '概览'
 })
 
