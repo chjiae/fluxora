@@ -15,6 +15,9 @@ import ConsoleOverviewView from '../views/ConsoleOverviewView.vue'
 import ProviderManagementView from '../views/ProviderManagementView.vue'
 import ProviderBaseUrlManagementView from '../views/ProviderBaseUrlManagementView.vue'
 import ProviderChannelManagementView from '../views/ProviderChannelManagementView.vue'
+import PlatformModelManagementView from '../views/PlatformModelManagementView.vue'
+import TenantModelManagementView from '../views/TenantModelManagementView.vue'
+import PublicModelCatalogView from '../views/PublicModelCatalogView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 export const router = createRouter({
@@ -22,6 +25,7 @@ export const router = createRouter({
   routes: [
     { path: '/', component: HomeView },
     { path: '/docs', component: DocsView },
+    { path: '/models', component: PublicModelCatalogView, meta: { requiresAuth: true } },
     { path: '/login', component: LoginView, meta: { guest: true } },
     { path: '/console/setup', component: SelfOperatedSetupView, meta: { requiresAuth: true } },
     {
@@ -83,6 +87,8 @@ export const router = createRouter({
         { path: 'providers', component: ProviderManagementView },
         { path: 'provider-base-urls', component: ProviderBaseUrlManagementView },
         { path: 'provider-channels', component: ProviderChannelManagementView },
+        { path: 'platform-models', component: PlatformModelManagementView },
+        { path: 'tenant-models', component: TenantModelManagementView },
       ],
     },
   ],
@@ -153,6 +159,8 @@ router.beforeEach(async (to, _from, next) => {
         && !auth.canReadUpstream) {
       return next('/console/overview')
     }
+    if (to.path === '/console/platform-models' && !auth.canManagePlatformModels) return next('/console/overview')
+    if (to.path === '/console/tenant-models' && !auth.canManageTenantModels) return next('/console/overview')
 
     // 平台管理员且自营未初始化时，跳转初始化向导（setup页面除外）
     if (auth.isPlatformAdmin && to.path !== '/console/setup') {

@@ -67,7 +67,8 @@ export interface AdjustableUserOption {
 
 export interface AdjustCreditRequest {
   direction: 'CREDIT' | 'DEBIT'
-  amount: string | number
+  /** 金额输入只接受十进制字符串，禁止 Number 与科学计数法。 */
+  amount: string
   reason: string
 }
 

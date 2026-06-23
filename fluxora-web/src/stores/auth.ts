@@ -49,6 +49,9 @@ export const useAuthStore = defineStore('auth', () => {
   const canEnableUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_ENABLE') ?? false)
   const canDisableUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_DISABLE') ?? false)
   const canDeleteUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_DELETE') ?? false)
+  const canReadModelCatalog = computed(() => user.value?.permissions?.includes('MODEL_CATALOG_READ') ?? false)
+  const canManagePlatformModels = computed(() => user.value?.permissions?.includes('MODEL_PLATFORM_MANAGE') ?? false)
+  const canManageTenantModels = computed(() => user.value?.permissions?.includes('MODEL_CATALOG_MANAGE') ?? false)
 
   async function loginAction(username: string, password: string) {
     loading.value = true
@@ -148,6 +151,9 @@ export const useAuthStore = defineStore('auth', () => {
     canEnableUpstream,
     canDisableUpstream,
     canDeleteUpstream,
+    canReadModelCatalog,
+    canManagePlatformModels,
+    canManageTenantModels,
     loginAction,
     checkAuth,
     logoutAction,
