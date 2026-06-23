@@ -24,13 +24,14 @@ describe('tenant model management', () => {
     expect(m.enableTenantModel).toBeTypeOf('function')
     expect(m.disableTenantModel).toBeTypeOf('function')
     expect(m.deleteTenantModel).toBeTypeOf('function')
-    // 候选 CRUD
+    // 候选 CRUD + 同步
     expect(m.listChannelCandidates).toBeTypeOf('function')
     expect(m.createChannelCandidate).toBeTypeOf('function')
     expect(m.updateChannelCandidate).toBeTypeOf('function')
     expect(m.enableChannelCandidate).toBeTypeOf('function')
     expect(m.disableChannelCandidate).toBeTypeOf('function')
     expect(m.deleteChannelCandidate).toBeTypeOf('function')
+    expect(m.syncChannelCandidates).toBeTypeOf('function')
     // 候选映射
     expect(m.listMappings).toBeTypeOf('function')
     expect(m.createMapping).toBeTypeOf('function')
@@ -83,9 +84,11 @@ describe('tenant model management', () => {
     expect(source).not.toContain('platformModel')
     expect(source).not.toContain('PLATFORM_MODEL')
     expect(source).not.toContain('platform-models')
-    // 应该使用新的候选服务函数
+    // 应该使用新的候选服务函数（含同步）
     expect(source).toContain('createChannelCandidate')
     expect(source).toContain('deleteChannelCandidate')
+    expect(source).toContain('syncChannelCandidates')
+    expect(source).toContain('async function runSync')
   })
 
   it('auth store exposes V10 TENANT_MODEL_* permission flags', async () => {

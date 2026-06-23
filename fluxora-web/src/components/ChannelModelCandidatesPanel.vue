@@ -13,13 +13,13 @@
  */
 import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 import { NButton, NDropdown, NIcon, useDialog, useMessage } from 'naive-ui'
-import { MoreHorizontal, Plus } from 'lucide-vue-next'
+import { MoreHorizontal, Plus, RefreshCw } from 'lucide-vue-next'
 import StatusDot from '@/components/StatusDot.vue'
 import {
   createChannelCandidate, deleteChannelCandidate,
   disableChannelCandidate, enableChannelCandidate,
-  listChannelCandidates, updateChannelCandidate,
-  type CandidatePayload, type ProviderChannelModelSummary,
+  listChannelCandidates, syncChannelCandidates, updateChannelCandidate,
+  type CandidatePayload, type ProviderChannelModelSummary, type SyncResult,
 } from '@/services/tenantModel'
 
 const props = defineProps<{
@@ -37,6 +37,10 @@ const loading = ref(false)
 const editorOpen = ref(false)
 const editing = ref<ProviderChannelModelSummary | null>(null)
 const saving = ref(false)
+// 同步：操作进行中状态 + 结果展示
+const syncing = ref(false)
+const syncResultOpen = ref(false)
+const syncResult = ref<SyncResult | null>(null)
 
 const form = reactive<Required<Omit<CandidatePayload, 'upstreamDisplayName'>> & { upstreamDisplayName: string }>({
   upstreamModelId: '',
@@ -165,6 +169,30 @@ function handleRowMenu(key: string, r: ProviderChannelModelSummary) {
   else if (key === 'delete') confirmDelete(r)
 }
 
+/**
+ * 触发上游模型同步：
+ * - 后端按通道协议自动选择发现实现；
+ * - 凭证在服务端短暂解密，前端不展示明文；
+ * - 失败不会删除已有候选；
+ * - 完成后弹出结果摘要（新增 / 更新 / 未返回 / 失败），并刷新列表。
+ */
+async function runSync() {
+  if (!props.canManage || syncing.value) return
+  syncing.value = true
+  try {
+    const result = await syncChannelCandidates(props.channelId)
+    syncResult.value = result
+    syncResultOpen.value = true
+    message.success('同步完成')
+    await load()
+  } catch (e: any) {
+    // 错误一律走 e.userMessage；不暴露 HTTP 状态码 / 异常 / SQL
+    message.error(e.userMessage || '同步失败，请稍后重试')
+  } finally {
+    syncing.value = false
+  }
+}
+
 const columns = computed<any>(() => [
   {
     title: '上游标识', key: 'upstreamModelId', minWidth: 180,
@@ -207,9 +235,14 @@ const columns = computed<any>(() => [
   <section class="cand-panel">
     <div class="cand-hdr">
       <span class="cand-title">{{ rows.length }} 个上游模型候选</span>
-      <n-button v-if="canManage" size="small" type="primary" @click="openEditor()">
-        <template #icon><n-icon><Plus /></n-icon></template>新增候选
-      </n-button>
+      <div class="cand-actions">
+        <n-button v-if="canManage" size="small" :loading="syncing" @click="runSync">
+          <template #icon><n-icon><RefreshCw /></n-icon></template>同步上游模型
+        </n-button>
+        <n-button v-if="canManage" size="small" type="primary" @click="openEditor()">
+          <template #icon><n-icon><Plus /></n-icon></template>新增候选
+        </n-button>
+      </div>
     </div>
 
     <n-data-table
@@ -254,12 +287,43 @@ const columns = computed<any>(() => [
         <n-button type="primary" :loading="saving" @click="save">保存</n-button>
       </template>
     </n-modal>
-  </section>
+  <!-- 同步结果 Modal：展示计数与逐项原因；不含上游原始响应或凭证 -->
+    <n-modal v-model:show="syncResultOpen" preset="card" title="上游模型同步结果" :closable="true" style="max-width: 520px">
+      <div v-if="syncResult" class="sync-result">
+        <div class="sync-overview">
+          <div><strong>{{ syncResult.added }}</strong> 新增</div>
+          <div><strong>{{ syncResult.updated }}</strong> 更新</div>
+          <div><strong>{{ syncResult.missing }}</strong> 本次未返回</div>
+          <div v-if="syncResult.failed > 0" class="sync-fail"><strong>{{ syncResult.failed }}</strong> 失败</div>
+        </div>
+        <div v-if="syncResult.failures.length" class="sync-detail">
+          <div v-for="f in syncResult.failures" :key="f.upstreamModelId || 'fallback'" class="sync-item">
+            <span class="sync-model">{{ f.upstreamModelId || '—' }}</span>
+            <span class="sync-reason">{{ f.reason }}</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <n-button @click="syncResultOpen = false">关闭</n-button>
+      </template>
+    </n-modal>
+
+    </section>
 </template>
 
 <style scoped>
 .cand-panel { display: flex; flex-direction: column; gap: 10px; }
 .cand-hdr { display: flex; justify-content: space-between; align-items: center; }
+.cand-actions { display: inline-flex; gap: 8px; }
+/* 同步结果 */
+.sync-result { display: flex; flex-direction: column; gap: 12px; }
+.sync-overview { display: flex; flex-wrap: wrap; gap: 16px 24px; font-size: 13px; color: var(--text-muted); }
+.sync-overview strong { font-size: 16px; color: var(--text); margin-right: 4px; font-variant-numeric: tabular-nums; }
+.sync-overview .sync-fail strong { color: var(--danger); }
+.sync-detail { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; padding-top: 4px; border-top: 1px solid var(--border); }
+.sync-item { display: flex; align-items: baseline; gap: 12px; font-size: 12.5px; }
+.sync-item .sync-model { font-family: 'JetBrains Mono', 'Cascadia Code', monospace; min-width: 140px; color: var(--text); }
+.sync-item .sync-reason { color: var(--text-muted); }
 .cand-title { font-size: 13px; color: var(--text-muted); }
 .cand-empty { padding: 16px 0; }
 .cell-duo { display: flex; flex-direction: column; gap: 2px; }

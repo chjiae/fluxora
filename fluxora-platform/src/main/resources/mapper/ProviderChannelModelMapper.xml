@@ -66,6 +66,36 @@
         WHERE id = #{id} AND deleted_at IS NULL
     </update>
 
+    <update id="updateLastSyncedAt">
+        UPDATE provider_channel_model
+        SET last_synced_at = NOW(), last_sync_summary = NULL, updated_at = NOW()
+        WHERE provider_channel_id = #{channelId}
+          AND upstream_model_id = #{upstreamModelId}
+          AND deleted_at IS NULL
+    </update>
+
+    <!--
+      标记本次同步未返回的候选；不物理删除，保留映射与路由。
+      upstreamIds 为本次同步返回的全部上游标识集合；空集合时跳过更新（避免 IN () 语法错误）。
+    -->
+    <update id="markMissing">
+        UPDATE provider_channel_model
+        SET last_sync_summary = #{summary},
+            updated_by = #{updatedBy},
+            updated_at = NOW()
+        WHERE provider_channel_id = #{channelId}
+          AND deleted_at IS NULL
+          <choose>
+              <when test="upstreamIds == null or upstreamIds.isEmpty()">
+                  AND 1 = 1
+              </when>
+              <otherwise>
+                  AND upstream_model_id NOT IN
+                  <foreach collection="upstreamIds" item="u" open="(" close=")" separator=",">#{u}</foreach>
+              </otherwise>
+          </choose>
+    </update>
+
     <select id="countActiveMappings" resultType="long">
         SELECT COUNT(*) FROM tenant_model_candidate_mapping
         WHERE provider_channel_model_id = #{channelModelId} AND deleted_at IS NULL

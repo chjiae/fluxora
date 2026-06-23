@@ -104,6 +104,29 @@ export interface CandidatePayload {
   enabled?: boolean
 }
 
+/** 单条同步结果项；只携带安全原因，绝不含上游原始响应或凭证。 */
+export interface SyncItemResult {
+  upstreamModelId: string | null
+  result: string
+  reason: string
+}
+
+/** 同步操作整体结果。 */
+export interface SyncResult {
+  existingBeforeSync: number
+  added: number
+  updated: number
+  /** 本次未返回的候选数量；保留映射 / 路由不变 */
+  missing: number
+  failed: number
+  failures: SyncItemResult[]
+}
+
+export interface SyncPayload {
+  /** 可选：指定使用的凭证 ID；未传时后端按固定规则选第一个启用凭证 */
+  credentialId?: number | null
+}
+
 export interface MappingPayload {
   providerChannelModelId: number
   remark?: string
@@ -284,6 +307,15 @@ export async function disableChannelCandidate(channelId: number, id: number): Pr
 }
 export async function deleteChannelCandidate(channelId: number, id: number): Promise<void> {
   await http.delete(`/api/provider-channels/${channelId}/models/${id}`)
+}
+
+/**
+ * 触发该通道下的上游模型同步。
+ * 后端按通道协议自动选择实现（OPENAI / ANTHROPIC）；凭证明文在服务端短暂解密，
+ * 前端不接收任何明文或密文；同步失败不删除已有候选 / 映射 / 路由 / 价格。
+ */
+export async function syncChannelCandidates(channelId: number, payload?: SyncPayload): Promise<SyncResult> {
+  return (await http.post(`/api/provider-channels/${channelId}/models/sync`, payload ?? {})).data.data
 }
 
 // ---------------- 价格 ----------------

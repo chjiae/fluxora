@@ -2,6 +2,8 @@ package io.fluxora.platform.model;
 
 import io.fluxora.common.response.ApiResponse;
 import io.fluxora.platform.identity.entity.UserAccount;
+import io.fluxora.platform.model.discovery.ChannelModelSyncService;
+import io.fluxora.platform.model.discovery.SyncResult;
 import io.fluxora.platform.model.dto.ProviderChannelModelSummary;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -27,9 +29,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProviderChannelModelController {
 
     private final ProviderChannelModelService service;
+    private final ChannelModelSyncService syncService;
 
-    public ProviderChannelModelController(ProviderChannelModelService service) {
+    public ProviderChannelModelController(ProviderChannelModelService service,
+                                          ChannelModelSyncService syncService) {
         this.service = service;
+        this.syncService = syncService;
     }
 
     @GetMapping
@@ -82,6 +87,28 @@ public class ProviderChannelModelController {
             @AuthenticationPrincipal UserAccount user, Authentication auth) {
         service.delete(id, user, auth);
         return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    /**
+     * 触发该通道下的上游模型同步。
+     *
+     * - 通道与凭证 tenant 一致性由服务层保证；
+     * - 凭证明文仅在服务端短暂解密，不写入响应；
+     * - 不支持自动发现的协议（如 ANTHROPIC）返回空候选 + 0 计数，前端引导手工新增；
+     * - 同步失败不会删除现有候选 / 映射 / 路由 / 价格；
+     * - 响应只含计数与逐项安全原因，不含上游原始内容、HTTP 状态码或异常文本。
+     */
+    @PostMapping("/sync")
+    @PreAuthorize("hasAuthority('PERM_TENANT_MODEL_MANAGE')")
+    public ResponseEntity<ApiResponse<SyncResult>> sync(
+            @PathVariable Long channelId,
+            @RequestBody(required = false) SyncRequest req,
+            @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        Long credId = req == null ? null : req.credentialId();
+        return ResponseEntity.ok(ApiResponse.success(syncService.sync(channelId, credId, user, auth)));
+    }
+
+    public record SyncRequest(Long credentialId) {
     }
 
     private ProviderChannelModel toEntity(CandidateRequest r) {
