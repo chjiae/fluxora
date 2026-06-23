@@ -117,7 +117,14 @@ public class CreditService {
      */
     @Transactional
     public CreditTransactionView adjust(UserAccount currentUser, Long targetUserId, AdjustCreditRequest req) {
-        if (req == null || req.amount() == null || req.amount().compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal amount;
+        try {
+            // 额度请求统一从字符串转换，拒绝科学计数法并固定为八位原子精度。
+            amount = io.fluxora.platform.billing.CnyPrecisionPolicy.toDecimal(req == null ? null : req.amount());
+        } catch (Exception ex) {
+            throw new CreditException(BusinessErrorCode.CREDIT_AMOUNT_INVALID, "调整金额必须为正数");
+        }
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new CreditException(BusinessErrorCode.CREDIT_AMOUNT_INVALID);
         }
         if (req.direction() == null
@@ -141,7 +148,7 @@ public class CreditService {
         creditMapper.findAccountByUserId(targetUserId)
                 .orElseThrow(() -> new CreditException(BusinessErrorCode.CREDIT_ACCOUNT_NOT_FOUND));
 
-        BigDecimal delta = "CREDIT".equals(req.direction()) ? req.amount() : req.amount().negate();
+        BigDecimal delta = "CREDIT".equals(req.direction()) ? amount : amount.negate();
         BalanceAdjustResult r = creditMapper.adjustBalance(targetUserId, delta);
         if (r == null) {
             throw new CreditException(BusinessErrorCode.CREDIT_INSUFFICIENT);
@@ -151,7 +158,7 @@ public class CreditService {
         txn.setTenantId(target.getTenantId());
         txn.setUserId(targetUserId);
         txn.setDirection(req.direction());
-        txn.setDelta(req.amount());
+        txn.setDelta(amount);
         txn.setBalanceBefore(r.balanceBefore());
         txn.setBalanceAfter(r.balanceAfter());
         txn.setReason(req.reason().trim());
@@ -161,7 +168,7 @@ public class CreditService {
         creditMapper.insertTransaction(txn);
 
         log.info("额度已调整：userId={}, direction={}, amount={}, balanceBefore={}, balanceAfter={}, operatorId={}",
-                targetUserId, req.direction(), req.amount(),
+                targetUserId, req.direction(), amount,
                 r.balanceBefore(), r.balanceAfter(), currentUser.getId());
 
         // 回查刚插入的流水（按时间倒序第一条 = 当前事务写入的那条）

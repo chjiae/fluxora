@@ -3,7 +3,6 @@ package io.fluxora.platform.card;
 import io.fluxora.common.response.ApiResponse;
 import io.fluxora.platform.card.dto.*;
 import io.fluxora.platform.identity.entity.UserAccount;
-import java.math.BigDecimal;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -59,7 +58,7 @@ public class CardController {
             @AuthenticationPrincipal UserAccount currentUser,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) BigDecimal denomination,
+            @RequestParam(required = false) String denomination,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
         BatchQuery q = new BatchQuery(keyword, status, denomination, tenantId, page, size);
@@ -130,7 +129,7 @@ public class CardController {
             @AuthenticationPrincipal UserAccount currentUser,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) BigDecimal denomination,
+            @RequestParam(required = false) String denomination,
             @RequestParam(required = false) Long tenantId,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {

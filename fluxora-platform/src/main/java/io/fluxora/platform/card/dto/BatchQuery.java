@@ -1,12 +1,10 @@
 package io.fluxora.platform.card.dto;
 
-import java.math.BigDecimal;
-
 /** 卡密批次列表查询条件 */
 public record BatchQuery(
         String keyword,
         String status,
-        BigDecimal denomination,
+        String denomination,
         Long tenantId,
         Integer page,
         Integer size

@@ -29,6 +29,8 @@ public interface ProviderCredentialMapper {
 
     /** 内部投影：含密文与指纹，仅供替换与内部解密路径使用，禁止从 Controller 调用。 */
     Optional<ProviderCredential> findInternalById(@Param("id") Long id);
+    /** 仅模型同步内部路径读取一个已启用凭证；严禁 Controller 或响应 DTO 调用。 */
+    Optional<ProviderCredential> findFirstEnabledInternalByChannel(@Param("channelId") Long channelId);
 
     List<ProviderCredential> findPage(@Param("channelId") Long channelId, @Param("keyword") String keyword,
             @Param("maskedValue") String maskedValue, @Param("enabled") Boolean enabled, @Param("offset") int offset, @Param("limit") int limit);

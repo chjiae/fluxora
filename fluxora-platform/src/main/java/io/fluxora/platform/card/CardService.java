@@ -99,7 +99,14 @@ public class CardService {
         List<String> plaintexts = new ArrayList<>();
 
         for (DenominationGroup g : req.groups()) {
-            if (g.denomination() == null || g.denomination().compareTo(BigDecimal.ZERO) <= 0) {
+            BigDecimal denomination;
+            try {
+                // 卡密面额来自 JSON 字符串，禁止 Number 精度截断和科学计数法表达。
+                denomination = io.fluxora.platform.billing.CnyPrecisionPolicy.toDecimal(g.denomination());
+            } catch (Exception ex) {
+                throw new CardException(BusinessErrorCode.VALIDATION_ERROR, "卡密面额必须为正数");
+            }
+            if (denomination.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new CardException(BusinessErrorCode.CREDIT_AMOUNT_INVALID);
             }
             if (g.count() == null || g.count() <= 0) {
@@ -117,7 +124,7 @@ public class CardService {
             batch.setTenantId(tenantId);
             batch.setBatchCode(generateBatchCode());
             batch.setName(blankToNull(g.name()));
-            batch.setDenomination(g.denomination());
+            batch.setDenomination(denomination);
             batch.setTotalCount(g.count());
             batch.setStatus("ENABLED");
             batch.setExpireAt(g.expireAt());
@@ -132,7 +139,7 @@ public class CardService {
                 card.setBatchId(batch.getId());
                 card.setCardPrefix(gen.prefix());
                 card.setCardHash(hashingService.hash(gen.plaintext()));
-                card.setDenomination(g.denomination());
+                card.setDenomination(denomination);
                 card.setStatus("ENABLED");
                 card.setExpireAt(g.expireAt());
                 try {
@@ -150,7 +157,7 @@ public class CardService {
 
             createdBatches.add(loadBatchSummary(batch.getId(), tenantId));
             log.info("卡密批次已创建：tenantId={}, batchId={}, batchCode={}, denomination={}, count={}",
-                    tenantId, batch.getId(), batch.getBatchCode(), g.denomination(), g.count());
+                    tenantId, batch.getId(), batch.getBatchCode(), denomination, g.count());
         }
 
         return new CreatedBatchResponse(createdBatches, plaintexts);
@@ -166,9 +173,9 @@ public class CardService {
         int page = q.pageOrDefault(), size = q.sizeOrDefault();
         int offset = (page - 1) * size;
         List<CardBatchSummary> items = cardMapper.findBatchSummaries(
-                tenantId, blankToNull(q.keyword()), blankToNull(q.status()), q.denomination(), offset, size);
+                tenantId, blankToNull(q.keyword()), blankToNull(q.status()), optionalDenomination(q.denomination()), offset, size);
         long total = cardMapper.countBatches(tenantId, blankToNull(q.keyword()),
-                blankToNull(q.status()), q.denomination());
+                blankToNull(q.status()), optionalDenomination(q.denomination()));
         return new BatchPageResponse(items, total, page, size);
     }
 
@@ -440,4 +447,12 @@ public class CardService {
     }
 
     private static String blankToNull(String s) { return s == null || s.isBlank() ? null : s.trim(); }
+    private static BigDecimal optionalDenomination(String text) {
+        if (text == null || text.isBlank()) return null;
+        try {
+            return io.fluxora.platform.billing.CnyPrecisionPolicy.toDecimal(text.trim());
+        } catch (IllegalArgumentException ex) {
+            throw new CardException(BusinessErrorCode.VALIDATION_ERROR, "请输入有效的卡密面额");
+        }
+    }
 }

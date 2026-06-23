@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 
 /**
  * 全局异常映射。
@@ -127,6 +128,14 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
         log.warn("参数校验失败", ex);
         // 不返回 ex.getMessage()，其可能包含日期解析异常等原始技术文本
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(BusinessErrorCode.VALIDATION_ERROR));
+    }
+
+    /** JSON 类型、格式或结构不符合请求 DTO 时返回安全的参数错误，不暴露反序列化器内部信息。 */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableRequest(HttpMessageNotReadableException ex) {
+        log.warn("请求体格式不正确");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(BusinessErrorCode.VALIDATION_ERROR));
     }

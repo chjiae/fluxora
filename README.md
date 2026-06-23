@@ -387,6 +387,16 @@ RETURNING balance - :delta AS balance_before,
 
 ## 验证
 
+### 模型目录、路由与定价验收
+
+1. 启动 PostgreSQL、Redis、平台服务和前端后，平台管理员进入「平台模型库」创建模型；可编辑能力并启停。
+2. 在模型行选择「价格」，以 CNY 十进制字符串发布价格；最多 8 位小数，`1e-3`、JSON Number 与超过 8 位小数会被安全拒绝。
+3. 在「租户模型」选择目标租户，将平台模型发布为草稿；配置继承平台价或自定义价、协议路由与路由目标后才可启用。
+4. 在「上游通道」详情的「上游模型候选」区域，可手工新增、编辑、启停、删除候选；平台管理员可显式映射到平台模型。相同名称不会自动合并。
+5. OpenAI 通道可使用「自动同步」。本地演示可设置 `MODEL_DISCOVERY_MOCK_ENABLED=true`，不读取凭证也不发网络请求，但仍保留 SSRF 地址校验；同步结果会展示新增、更新、跳过、失败及逐项安全原因。
+6. 使用租户成员访问 `/models`，只会看到已启用租户模型的展示名称、能力、实际价格和币种；不会返回通道、上游模型、凭证、候选映射或路由信息。
+7. 执行 `mvn -pl fluxora-platform test`、`cd fluxora-web; npm run test -- --run; npm run build`。真实浏览器验收执行 `npx playwright test e2e/model-catalog.spec.ts`。
+
 ### 后端
 ```powershell
 # 运行全部后端测试
@@ -428,12 +438,14 @@ npx playwright test
 - **API Key 管理**：`api_key` 表，HMAC-SHA256 + pepper 安全哈希，完整 plaintext 仅创建响应一次性返回，四态状态派生，双入口路由，跨租户权限隔离
 - **用户额度**：`user_credit_account`（DECIMAL 精确存储） + `credit_transaction`（不可篡改流水），`UPDATE…WHERE balance + delta >= 0 RETURNING` 原子调整，并发安全
 - **卡密充值**：`recharge_card_batch` + `recharge_card` 两层模型，独立 pepper + HMAC-SHA256 安全哈希，完整明文仅创建响应一次性返回，原子 UPDATE…RETURNING 核销 + 部分唯一索引双层防重复入账；`credit_transaction.source` 扩展为 `MANUAL_ADJUSTMENT` / `CARD_REDEEM`
+- **人民币精度规则（V9）**：余额、流水、卡密和模型价格固定使用 `NUMERIC(24,8)`；唯一精度策略 `CnyPrecisionPolicy` 定义 `1 CNY = 100,000,000` 原子单位。接口以字符串传输，禁止 float/double/JavaScript Number。未来单次计费先以 `BigInteger` 汇总四项 `Token × 每百万 Token 单价` 分子，除以 `1,000,000` 后仅一次按“向上取整到余额原子单位”扣减；禁止分项提前舍入。
+- **模型控制面（V8/V9）**：每个通道独立维护 `ProviderChannelModel` 候选，支持手工新增、编辑、启停、软删，以及受 SSRF 防护的 OpenAI `/models` 同步；平台模型库维护稳定的公开编码与能力；租户模型以草稿发布，通过 `ModelRoute → RouteTarget` 配置协议、通道和候选映射，再设置继承或自定义 CNY 价格后启用。公开目录 `/api/models` 仅返回当前租户可用模型与实际价格，绝不返回通道、凭证、上游模型、映射或路由信息。
 - **前端页面**：`/console/api-keys`（我的 API Key）、`/console/credit`（我的额度）、`/console/credit/manage`（额度管理）、`/console/cards/redeem`（卡密充值）、`/console/cards/manage`（卡密管理），含一次性 Key 展示组件 `ApiKeyRevealPanel` 与一次性卡密展示组件 `RechargeCardRevealPanel`（含本地 TXT/CSV 导出）
 - **上游配置控制面**（V7）：`provider`、`provider_base_url`、`provider_channel`、`provider_credential` 四张表；AES-256-GCM 可逆加密 + HMAC-SHA-256 去重指纹；凭证批量导入（批内去重、一次 IN 查询、批量 INSERT…RETURNING）；部分唯一索引并发兜底；平台共享/租户私有隔离；三个管理页（上游厂商/接入地址/上游通道）+ 通道凭证管理与批量导入
 - **上游配置前端**：`/console/providers`、`/console/provider-base-urls`、`/console/provider-channels`；通道详情抽屉内嵌凭证管理面板与批量导入抽屉；StatusDot 脱敏展示；密码输入不回显；MetricStrip 指标条；所有页面复用五行 Grid + Naive UI 骨架
 
 ### 刻意未实现（本轮范围外）
-- 模型拉取、上游模型发现、模型广场、平台模型、上游模型映射（Model/ModelRoute/RouteTarget — 下一阶段）
+- 平台模型与租户模型的真实网关转发、协议转换、健康检查、自动失败切换
 - Token 计费、流式实时扣费、用量统计
 - 网关 API Key 鉴权、Redis Pub/Sub/Stream、网关本地缓存
 - 真实上游请求、连接测试、协议转换/Adapter、SSE 流式转发

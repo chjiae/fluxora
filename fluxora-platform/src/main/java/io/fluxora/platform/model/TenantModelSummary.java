@@ -1,0 +1,9 @@
+package io.fluxora.platform.model;
+
+import java.time.Instant;
+
+/** 租户模型安全投影：管理端可见发布状态，公共目录另用更小的对外投影。 */
+public class TenantModelSummary {
+ private Long id,tenantId,platformModelId; private String platformCode,displayName,description,publishStatus,priceMode; private boolean supportsStreaming,supportsTools,supportsVision,supportsCache; private Instant createdAt,updatedAt;
+ public Long getId(){return id;} public void setId(Long v){id=v;} public Long getTenantId(){return tenantId;} public void setTenantId(Long v){tenantId=v;} public Long getPlatformModelId(){return platformModelId;} public void setPlatformModelId(Long v){platformModelId=v;} public String getPlatformCode(){return platformCode;} public void setPlatformCode(String v){platformCode=v;} public String getDisplayName(){return displayName;} public void setDisplayName(String v){displayName=v;} public String getDescription(){return description;} public void setDescription(String v){description=v;} public String getPublishStatus(){return publishStatus;} public void setPublishStatus(String v){publishStatus=v;} public String getPriceMode(){return priceMode;} public void setPriceMode(String v){priceMode=v;} public boolean isSupportsStreaming(){return supportsStreaming;} public void setSupportsStreaming(boolean v){supportsStreaming=v;} public boolean isSupportsTools(){return supportsTools;} public void setSupportsTools(boolean v){supportsTools=v;} public boolean isSupportsVision(){return supportsVision;} public void setSupportsVision(boolean v){supportsVision=v;} public boolean isSupportsCache(){return supportsCache;} public void setSupportsCache(boolean v){supportsCache=v;} public Instant getCreatedAt(){return createdAt;} public void setCreatedAt(Instant v){createdAt=v;} public Instant getUpdatedAt(){return updatedAt;} public void setUpdatedAt(Instant v){updatedAt=v;}
+}

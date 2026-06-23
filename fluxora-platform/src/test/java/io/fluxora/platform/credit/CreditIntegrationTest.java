@@ -326,4 +326,23 @@ class CreditIntegrationTest {
                 HttpMethod.POST, new HttpEntity<>(j, user), String.class);
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
+
+    @Test
+    void amountRequestRejectsJsonNumberAndScientificNotation() throws Exception {
+        HttpHeaders ah = adminAuth();
+        ensureSelfOperated(ah);
+        long userId = createMemberReturnId(ah, 1L)[0];
+
+        ResponseEntity<String> numeric = restTemplate.exchange(
+                baseUrl + "/api/tenant/1/credit/adjust?userId=" + userId,
+                HttpMethod.POST, new HttpEntity<>("{\"direction\":\"CREDIT\",\"amount\":0.1,\"reason\":\"numeric\"}", ah), String.class);
+        assertThat(numeric.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        String scientificBody = objectMapper.writeValueAsString(Map.of(
+                "direction", "CREDIT", "amount", "1e-3", "reason", "scientific"));
+        ResponseEntity<String> scientific = restTemplate.exchange(
+                baseUrl + "/api/tenant/1/credit/adjust?userId=" + userId,
+                HttpMethod.POST, new HttpEntity<>(scientificBody, ah), String.class);
+        assertThat(scientific.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
 }
