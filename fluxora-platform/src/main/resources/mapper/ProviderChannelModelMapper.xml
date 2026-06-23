@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  上游候选 SQL：所有查询追加 deleted_at IS NULL；
+  status 由 enabled 派生；候选与通道租户一致性由服务层兜底。
+-->
+<mapper namespace="io.fluxora.platform.model.mapper.ProviderChannelModelMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO provider_channel_model(tenant_id, provider_channel_id, upstream_model_id, upstream_display_name,
+            source_type, supports_streaming, supports_tool_calling, supports_vision, supports_cache,
+            enabled, last_synced_at, last_sync_summary, created_by, updated_by, created_at, updated_at)
+        VALUES(#{tenantId}, #{providerChannelId}, #{upstreamModelId}, #{upstreamDisplayName},
+            #{sourceType}, #{supportsStreaming}, #{supportsToolCalling}, #{supportsVision}, #{supportsCache},
+            #{enabled}, #{lastSyncedAt}, #{lastSyncSummary}, #{createdBy}, #{updatedBy}, NOW(), NOW())
+    </insert>
+
+    <select id="findById" resultType="io.fluxora.platform.model.ProviderChannelModel">
+        SELECT id, tenant_id, provider_channel_id, upstream_model_id, upstream_display_name, source_type,
+            supports_streaming, supports_tool_calling, supports_vision, supports_cache,
+            enabled, last_synced_at, last_sync_summary, deleted_at, created_by, updated_by, created_at, updated_at
+        FROM provider_channel_model WHERE id = #{id} AND deleted_at IS NULL
+    </select>
+
+    <select id="findByChannel" resultType="io.fluxora.platform.model.dto.ProviderChannelModelSummary">
+        SELECT cm.id, cm.tenant_id, cm.provider_channel_id, c.name AS channel_name,
+            cm.upstream_model_id, cm.upstream_display_name, cm.source_type,
+            cm.supports_streaming, cm.supports_tool_calling, cm.supports_vision, cm.supports_cache,
+            CASE WHEN cm.enabled = TRUE THEN 'ENABLED' ELSE 'DISABLED' END AS status,
+            cm.last_synced_at, cm.last_sync_summary, cm.created_at, cm.updated_at
+        FROM provider_channel_model cm
+        JOIN provider_channel c ON c.id = cm.provider_channel_id
+        WHERE cm.provider_channel_id = #{channelId} AND cm.deleted_at IS NULL
+        ORDER BY cm.created_at DESC, cm.id DESC
+    </select>
+
+    <select id="existsActiveByUpstreamId" resultType="int">
+        SELECT COUNT(*) FROM provider_channel_model
+        WHERE provider_channel_id = #{channelId} AND upstream_model_id = #{upstreamModelId}
+          AND deleted_at IS NULL
+        <if test="excludeId != null">AND id &lt;&gt; #{excludeId}</if>
+    </select>
+
+    <update id="updateBasics">
+        UPDATE provider_channel_model
+        SET upstream_model_id = #{upstreamModelId},
+            upstream_display_name = #{upstreamDisplayName},
+            supports_streaming = #{supportsStreaming},
+            supports_tool_calling = #{supportsToolCalling},
+            supports_vision = #{supportsVision},
+            supports_cache = #{supportsCache},
+            updated_by = #{updatedBy},
+            updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="setEnabled">
+        UPDATE provider_channel_model
+        SET enabled = #{enabled}, updated_by = #{updatedBy}, updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        UPDATE provider_channel_model
+        SET deleted_at = NOW(), updated_by = #{updatedBy}, updated_at = NOW(), enabled = FALSE
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <select id="countActiveMappings" resultType="long">
+        SELECT COUNT(*) FROM tenant_model_candidate_mapping
+        WHERE provider_channel_model_id = #{channelModelId} AND deleted_at IS NULL
+    </select>
+</mapper>

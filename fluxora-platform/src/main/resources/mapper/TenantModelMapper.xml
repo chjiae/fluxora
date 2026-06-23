@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  租户模型 SQL：所有查询追加 deleted_at IS NULL；
+  指标条由单次聚合 SQL 计算 total/enabled/disabled/draft/missingPrice/missingRoute；
+  status 字段由 publish_status + enabled 组合派生；
+  列表的 mappingCount / hasActivePrice / routeCount 通过子查询一次取回，避免前端 N+1。
+-->
+<mapper namespace="io.fluxora.platform.model.mapper.TenantModelMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO tenant_model(tenant_id, model_code, display_name, description,
+            supports_streaming, supports_tool_calling, supports_vision, supports_cache,
+            publish_status, enabled, created_by, updated_by, created_at, updated_at)
+        VALUES(#{tenantId}, #{modelCode}, #{displayName}, #{description},
+            #{supportsStreaming}, #{supportsToolCalling}, #{supportsVision}, #{supportsCache},
+            #{publishStatus}, #{enabled}, #{createdBy}, #{updatedBy}, NOW(), NOW())
+    </insert>
+
+    <select id="findById" resultType="io.fluxora.platform.model.TenantModel">
+        SELECT id, tenant_id, model_code, display_name, description,
+            supports_streaming, supports_tool_calling, supports_vision, supports_cache,
+            publish_status, enabled, deleted_at, created_by, updated_by, created_at, updated_at
+        FROM tenant_model WHERE id=#{id} AND deleted_at IS NULL
+    </select>
+
+    <sql id="summaryColumns">
+        m.id, m.tenant_id, t.name AS tenant_name, m.model_code, m.display_name, m.description,
+        m.supports_streaming, m.supports_tool_calling, m.supports_vision, m.supports_cache,
+        CASE
+            WHEN m.deleted_at IS NOT NULL THEN 'DELETED'
+            WHEN m.publish_status = 'ENABLED' THEN 'ENABLED'
+            WHEN m.publish_status = 'DISABLED' THEN 'DISABLED'
+            ELSE 'DRAFT'
+        END AS status,
+        (SELECT COUNT(*) FROM tenant_model_candidate_mapping x
+            WHERE x.tenant_model_id = m.id AND x.deleted_at IS NULL) AS mapping_count,
+        EXISTS(SELECT 1 FROM tenant_model_price p
+            WHERE p.tenant_model_id = m.id AND p.expired_at IS NULL) AS has_active_price,
+        (SELECT COUNT(*) FROM model_route r
+            WHERE r.tenant_model_id = m.id AND r.deleted_at IS NULL) AS route_count,
+        m.created_at, m.updated_at
+    </sql>
+    <sql id="summaryJoins">FROM tenant_model m LEFT JOIN tenant t ON t.id = m.tenant_id</sql>
+    <sql id="summaryFilters">WHERE m.deleted_at IS NULL
+        AND (#{platform} = TRUE OR m.tenant_id = #{tenantId})
+        <if test="tenantId != null">AND m.tenant_id = #{tenantId}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (m.model_code ILIKE CONCAT('%', #{keyword}, '%')
+                 OR m.display_name ILIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null and status != ''">AND m.publish_status = #{status}</if>
+    </sql>
+
+    <select id="findPage" resultType="io.fluxora.platform.model.dto.TenantModelSummary">
+        SELECT <include refid="summaryColumns"/> <include refid="summaryJoins"/> <include refid="summaryFilters"/>
+        ORDER BY m.created_at DESC, m.id DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="countPage" resultType="long">
+        SELECT COUNT(*) <include refid="summaryJoins"/> <include refid="summaryFilters"/>
+    </select>
+
+    <select id="findSummaryById" resultType="io.fluxora.platform.model.dto.TenantModelSummary">
+        SELECT <include refid="summaryColumns"/> <include refid="summaryJoins"/>
+        WHERE m.id = #{id} AND m.deleted_at IS NULL
+    </select>
+
+    <select id="existsActiveByCode" resultType="int">
+        SELECT COUNT(*) FROM tenant_model
+        WHERE tenant_id = #{tenantId} AND model_code = #{modelCode} AND deleted_at IS NULL
+        <if test="excludeId != null">AND id &lt;&gt; #{excludeId}</if>
+    </select>
+
+    <!--
+      指标条聚合：单次 SQL；missingPrice / missingRoute 通过 NOT EXISTS 子查询计算；
+      tenant_id IS NULL 表示平台管理员未指定目标租户时返回全量统计。
+    -->
+    <select id="stats" resultType="io.fluxora.platform.model.dto.TenantModelStats">
+        SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE publish_status = 'ENABLED') AS enabled,
+            COUNT(*) FILTER (WHERE publish_status = 'DISABLED') AS disabled,
+            COUNT(*) FILTER (WHERE publish_status = 'DRAFT') AS draft,
+            COUNT(*) FILTER (WHERE NOT EXISTS(
+                SELECT 1 FROM tenant_model_price p
+                WHERE p.tenant_model_id = m.id AND p.expired_at IS NULL)) AS missing_price,
+            COUNT(*) FILTER (WHERE NOT EXISTS(
+                SELECT 1 FROM model_route r
+                WHERE r.tenant_model_id = m.id AND r.deleted_at IS NULL)) AS missing_route
+        FROM tenant_model m
+        WHERE m.deleted_at IS NULL
+          AND (#{platform} = TRUE OR m.tenant_id = #{tenantId})
+          <if test="tenantId != null">AND m.tenant_id = #{tenantId}</if>
+    </select>
+
+    <update id="updateBasics">
+        UPDATE tenant_model
+        SET model_code = #{modelCode},
+            display_name = #{displayName},
+            description = #{description},
+            supports_streaming = #{supportsStreaming},
+            supports_tool_calling = #{supportsToolCalling},
+            supports_vision = #{supportsVision},
+            supports_cache = #{supportsCache},
+            updated_by = #{updatedBy},
+            updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="setPublishStatus">
+        UPDATE tenant_model
+        SET publish_status = #{publishStatus},
+            enabled = #{enabled},
+            updated_by = #{updatedBy},
+            updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        UPDATE tenant_model
+        SET deleted_at = NOW(),
+            updated_by = #{updatedBy},
+            updated_at = NOW(),
+            enabled = FALSE
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+</mapper>

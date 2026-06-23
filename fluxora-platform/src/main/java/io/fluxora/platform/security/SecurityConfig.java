@@ -61,6 +61,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/provider-base-urls/**").authenticated()
                 .requestMatchers("/api/provider-channels/**").authenticated()
                 .requestMatchers("/api/provider-credentials/**").authenticated()
+                .requestMatchers("/api/provider-channels/*/models/**").authenticated()
                 .requestMatchers("/api/tenant-models/**").authenticated()
                 .requestMatchers("/api/models/**").authenticated()
                 .requestMatchers("/api/admin/api-keys/**").authenticated()

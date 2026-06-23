@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  候选映射 SQL：所有查询追加 deleted_at IS NULL；
+  写入前服务层强制三方租户一致性；删除前服务层校验未被 ENABLED RouteTarget 引用。
+  列表投影一次性带出候选与通道关键信息，避免前端 N+1。
+-->
+<mapper namespace="io.fluxora.platform.model.mapper.TenantModelCandidateMappingMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO tenant_model_candidate_mapping(tenant_id, tenant_model_id, provider_channel_model_id,
+            enabled, remark, created_by, updated_by, created_at, updated_at)
+        VALUES(#{tenantId}, #{tenantModelId}, #{providerChannelModelId},
+            #{enabled}, #{remark}, #{createdBy}, #{updatedBy}, NOW(), NOW())
+    </insert>
+
+    <select id="findById" resultType="io.fluxora.platform.model.TenantModelCandidateMapping">
+        SELECT id, tenant_id, tenant_model_id, provider_channel_model_id, enabled, remark,
+            deleted_at, created_by, updated_by, created_at, updated_at
+        FROM tenant_model_candidate_mapping
+        WHERE id = #{id} AND deleted_at IS NULL
+    </select>
+
+    <select id="findByTenantModel" resultType="io.fluxora.platform.model.dto.TenantModelCandidateMappingSummary">
+        SELECT m.id, m.tenant_id, m.tenant_model_id, m.provider_channel_model_id,
+            cm.provider_channel_id, c.name AS channel_name,
+            cm.upstream_model_id, cm.upstream_display_name,
+            cm.supports_streaming, cm.supports_tool_calling, cm.supports_vision, cm.supports_cache,
+            m.enabled,
+            (cm.enabled = TRUE AND cm.deleted_at IS NULL AND c.enabled = TRUE AND c.deleted_at IS NULL) AS candidate_available,
+            m.remark, m.created_at, m.updated_at
+        FROM tenant_model_candidate_mapping m
+        JOIN provider_channel_model cm ON cm.id = m.provider_channel_model_id
+        JOIN provider_channel c ON c.id = cm.provider_channel_id
+        WHERE m.tenant_model_id = #{tenantModelId} AND m.deleted_at IS NULL
+        ORDER BY m.created_at DESC, m.id DESC
+    </select>
+
+    <select id="existsActivePair" resultType="int">
+        SELECT COUNT(*) FROM tenant_model_candidate_mapping
+        WHERE tenant_model_id = #{tenantModelId}
+          AND provider_channel_model_id = #{providerChannelModelId}
+          AND deleted_at IS NULL
+    </select>
+
+    <update id="setEnabled">
+        UPDATE tenant_model_candidate_mapping
+        SET enabled = #{enabled}, updated_by = #{updatedBy}, updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="updateRemark">
+        UPDATE tenant_model_candidate_mapping
+        SET remark = #{remark}, updated_by = #{updatedBy}, updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        UPDATE tenant_model_candidate_mapping
+        SET deleted_at = NOW(), updated_by = #{updatedBy}, updated_at = NOW(), enabled = FALSE
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <select id="countActiveByTenantModel" resultType="long">
+        SELECT COUNT(*) FROM tenant_model_candidate_mapping
+        WHERE tenant_model_id = #{tenantModelId} AND deleted_at IS NULL
+    </select>
+
+    <!--
+      启用前能力支撑判定：三方均启用、均未删除；只取必要的能力列。
+    -->
+    <select id="findActiveSupportingCandidates" resultType="io.fluxora.platform.model.ProviderChannelModel">
+        SELECT cm.id, cm.tenant_id, cm.provider_channel_id, cm.upstream_model_id, cm.upstream_display_name,
+            cm.source_type, cm.supports_streaming, cm.supports_tool_calling, cm.supports_vision, cm.supports_cache,
+            cm.enabled, cm.deleted_at, cm.created_at, cm.updated_at
+        FROM tenant_model_candidate_mapping m
+        JOIN provider_channel_model cm ON cm.id = m.provider_channel_model_id
+        JOIN provider_channel c ON c.id = cm.provider_channel_id
+        WHERE m.tenant_model_id = #{tenantModelId}
+          AND m.enabled = TRUE AND m.deleted_at IS NULL
+          AND cm.enabled = TRUE AND cm.deleted_at IS NULL
+          AND c.enabled = TRUE AND c.deleted_at IS NULL
+    </select>
+</mapper>

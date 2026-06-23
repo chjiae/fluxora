@@ -7,6 +7,7 @@ import io.fluxora.platform.auth.AuthException;
 import io.fluxora.platform.card.CardException;
 import io.fluxora.platform.credit.CreditException;
 import io.fluxora.platform.identity.MemberException;
+import io.fluxora.platform.model.ModelException;
 import io.fluxora.platform.tenant.TenantException;
 import io.fluxora.platform.tenant.TenantService;
 import io.fluxora.platform.upstream.provider.ProviderException;
@@ -151,6 +152,25 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (code) {
             case RESOURCE_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case ACCESS_DENIED, CROSS_TENANT_ACCESS_DENIED, UPSTREAM_SHARED_READONLY ->
+                    HttpStatus.FORBIDDEN;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(ErrorResponse.of(code));
+    }
+
+    /**
+     * 模型领域异常映射。
+     * NOT_FOUND 类 → 404；ACCESS_DENIED / CROSS_TENANT → 403；其余业务校验 → 400。
+     * 始终返回错误码默认安全文案，不暴露 ex.getMessage() 的动态构造内容。
+     */
+    @ExceptionHandler(ModelException.class)
+    public ResponseEntity<ErrorResponse> handleModelException(ModelException ex) {
+        BusinessErrorCode code = ex.getErrorCode();
+        HttpStatus status = switch (code) {
+            case RESOURCE_NOT_FOUND, TENANT_MODEL_NOT_FOUND, CHANNEL_MODEL_NOT_FOUND,
+                    TENANT_MODEL_MAPPING_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case ACCESS_DENIED, CROSS_TENANT_ACCESS_DENIED,
+                    CHANNEL_MODEL_CROSS_TENANT, TENANT_MODEL_MAPPING_TENANT_MISMATCH ->
                     HttpStatus.FORBIDDEN;
             default -> HttpStatus.BAD_REQUEST;
         };

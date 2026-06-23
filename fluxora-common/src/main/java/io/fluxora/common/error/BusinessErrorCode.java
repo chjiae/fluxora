@@ -115,7 +115,34 @@ public enum BusinessErrorCode {
     /** 批量导入提交的凭证全部已存在或重复，未导入任何凭证 */
     CREDENTIAL_ALL_DUPLICATE("未导入任何凭证：提交的凭证均已存在或重复"),
     /** 批量导入数量超出配置上限 */
-    CREDENTIAL_LIMIT_EXCEEDED("本次导入数量超出允许范围，请拆分后重试");
+    CREDENTIAL_LIMIT_EXCEEDED("本次导入数量超出允许范围，请拆分后重试"),
+
+    // ---------------- 租户模型领域业务错误码（V10 重建：移除全局模型） ----------------
+
+    /** 同租户内 model_code 重复 */
+    TENANT_MODEL_CODE_DUPLICATE("当前租户已存在相同模型编码，请更换后重试"),
+    /** 租户模型不存在、已被删除或属于其他租户 */
+    TENANT_MODEL_NOT_FOUND("租户模型不存在或已被删除"),
+    /** 模型基础信息（编码、展示名、能力）不合法 */
+    TENANT_MODEL_INVALID("请检查模型编码、名称或能力配置后重试"),
+    /** 模型启用前置条件未满足：缺少有效价格、有效路由或路由目标 */
+    TENANT_MODEL_NOT_ENABLEABLE("模型尚未满足启用条件，请补充价格与路由配置后重试"),
+    /** 模型声明能力未被任一有效候选支撑 */
+    TENANT_MODEL_CAPABILITY_UNSUPPORTED("当前上游能力无法支撑该模型声明，请调整模型能力或路由配置"),
+    /** 上游候选不存在或不可访问 */
+    CHANNEL_MODEL_NOT_FOUND("所选上游候选不可用，请刷新后重试"),
+    /** 同通道下相同 upstream_model_id 重复 */
+    CHANNEL_MODEL_DUPLICATE("当前通道下已存在相同上游模型标识，请更换后重试"),
+    /** 候选与通道租户归属不一致 */
+    CHANNEL_MODEL_CROSS_TENANT("所选上游候选与目标租户不一致，请刷新后重试"),
+    /** 租户模型与候选的映射不存在 */
+    TENANT_MODEL_MAPPING_NOT_FOUND("候选映射不存在或已被删除"),
+    /** 映射重复：同一模型与同一候选已存在未删除映射 */
+    TENANT_MODEL_MAPPING_DUPLICATE("该上游候选已映射到当前模型，无需重复添加"),
+    /** 三方租户不一致：tenant_model.tenant_id 与 candidate.tenant_id 不一致，或与当前操作租户不一致 */
+    TENANT_MODEL_MAPPING_TENANT_MISMATCH("所选模型或上游候选不可用，请刷新后重试"),
+    /** 映射仍被启用的路由目标引用，不能直接删除 */
+    TENANT_MODEL_MAPPING_IN_USE("当前映射仍被路由使用，请先处理关联路由");
 
     private final String defaultUserMessage;
 

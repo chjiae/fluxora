@@ -64,6 +64,19 @@ const USER_MESSAGES: Record<string, string> = {
   CREDENTIAL_DUPLICATE: '该凭证已存在于当前租户，未重复添加',
   CREDENTIAL_ALL_DUPLICATE: '未导入任何凭证：提交的凭证均已存在或重复',
   CREDENTIAL_LIMIT_EXCEEDED: '本次导入数量超出允许范围，请拆分后重试',
+  // 租户模型领域（V10 重建）
+  TENANT_MODEL_CODE_DUPLICATE: '当前租户已存在相同模型编码，请更换后重试',
+  TENANT_MODEL_NOT_FOUND: '租户模型不存在或已被删除',
+  TENANT_MODEL_INVALID: '请检查模型编码、名称或能力配置后重试',
+  TENANT_MODEL_NOT_ENABLEABLE: '模型尚未满足启用条件，请补充价格与路由配置后重试',
+  TENANT_MODEL_CAPABILITY_UNSUPPORTED: '当前上游能力无法支撑该模型声明，请调整模型能力或路由配置',
+  CHANNEL_MODEL_NOT_FOUND: '所选上游候选不可用，请刷新后重试',
+  CHANNEL_MODEL_DUPLICATE: '当前通道下已存在相同上游模型标识，请更换后重试',
+  CHANNEL_MODEL_CROSS_TENANT: '所选上游候选与目标租户不一致，请刷新后重试',
+  TENANT_MODEL_MAPPING_NOT_FOUND: '候选映射不存在或已被删除',
+  TENANT_MODEL_MAPPING_DUPLICATE: '该上游候选已映射到当前模型，无需重复添加',
+  TENANT_MODEL_MAPPING_TENANT_MISMATCH: '所选模型或上游候选不可用，请刷新后重试',
+  TENANT_MODEL_MAPPING_IN_USE: '当前映射仍被路由使用，请先处理关联路由',
 }
 
 const FALLBACK_MESSAGE = '服务暂时不可用，请稍后重试'
