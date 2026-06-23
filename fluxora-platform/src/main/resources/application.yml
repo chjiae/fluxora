@@ -26,10 +26,6 @@ mybatis:
 
 # 平台安全配置
 fluxora:
-  model-discovery:
-    # 仅用于本地/Playwright 验收；默认关闭，生产不得启用。
-    mock-enabled: ${MODEL_DISCOVERY_MOCK_ENABLED:false}
-    mock-models: ${MODEL_DISCOVERY_MOCK_MODELS:gpt-4o,gpt-4o-mini,text-embedding-3-small}
   security:
     jwt:
       secret: ${JWT_SECRET:fluxora-jwt-secret-key-for-local-development-only}

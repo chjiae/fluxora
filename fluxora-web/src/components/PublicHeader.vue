@@ -20,7 +20,6 @@ function closeMobileMenu() {
     <nav class="desktop-navigation" aria-label="公开页面导航">
       <a href="/#product">产品介绍</a>
       <a href="/#advantages">产品优势</a>
-      <RouterLink to="/models">模型目录</RouterLink>
       <RouterLink to="/docs">文档</RouterLink>
       <a href="/#faq">FAQ</a>
       <RouterLink class="console-entry" to="/console">进入控制台</RouterLink>
@@ -45,7 +44,6 @@ function closeMobileMenu() {
         <nav id="public-navigation" class="mobile-navigation" aria-label="公开页面导航">
           <a href="/#product" @click="closeMobileMenu">产品介绍</a>
           <a href="/#advantages" @click="closeMobileMenu">产品优势</a>
-          <RouterLink to="/models" @click="closeMobileMenu">模型目录</RouterLink>
           <RouterLink to="/docs" @click="closeMobileMenu">文档</RouterLink>
           <a href="/#faq" @click="closeMobileMenu">FAQ</a>
           <RouterLink class="console-entry" to="/console" @click="closeMobileMenu">进入控制台</RouterLink>

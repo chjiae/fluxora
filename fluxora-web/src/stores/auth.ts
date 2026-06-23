@@ -49,9 +49,11 @@ export const useAuthStore = defineStore('auth', () => {
   const canEnableUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_ENABLE') ?? false)
   const canDisableUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_DISABLE') ?? false)
   const canDeleteUpstream = computed(() => user.value?.permissions?.includes('UPSTREAM_DELETE') ?? false)
-  const canReadModelCatalog = computed(() => user.value?.permissions?.includes('MODEL_CATALOG_READ') ?? false)
-  const canManagePlatformModels = computed(() => user.value?.permissions?.includes('MODEL_PLATFORM_MANAGE') ?? false)
-  const canManageTenantModels = computed(() => user.value?.permissions?.includes('MODEL_CATALOG_MANAGE') ?? false)
+  // 租户模型权限（V10 重建：移除全局模型，所有模型按租户隔离）
+  const canReadTenantModels = computed(() => user.value?.permissions?.includes('TENANT_MODEL_READ') ?? false)
+  const canManageTenantModels = computed(() => user.value?.permissions?.includes('TENANT_MODEL_MANAGE') ?? false)
+  const canCrossTenantManageModels = computed(() => user.value?.permissions?.includes('TENANT_MODEL_CROSS_TENANT_MANAGE') ?? false)
+  const canReadPublicModelCatalog = computed(() => user.value?.permissions?.includes('TENANT_MODEL_PUBLIC_READ') ?? false)
 
   async function loginAction(username: string, password: string) {
     loading.value = true
@@ -151,9 +153,10 @@ export const useAuthStore = defineStore('auth', () => {
     canEnableUpstream,
     canDisableUpstream,
     canDeleteUpstream,
-    canReadModelCatalog,
-    canManagePlatformModels,
+    canReadTenantModels,
     canManageTenantModels,
+    canCrossTenantManageModels,
+    canReadPublicModelCatalog,
     loginAction,
     checkAuth,
     logoutAction,
