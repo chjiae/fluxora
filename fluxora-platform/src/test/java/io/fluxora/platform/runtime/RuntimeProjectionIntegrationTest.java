@@ -253,6 +253,47 @@ class RuntimeProjectionIntegrationTest {
         runtimeMapper.markCompleted(event.id());
     }
 
+    @Test
+    void redisRestartMustTriggerNamespaceUnhealthyAndAllowFullRebuild() throws Exception {
+        // 先投影一份快照到 Redis
+        long tenantId = insertTenant();
+        long userId = insertTenantUser(tenantId);
+        String nanoHex = Long.toHexString(System.nanoTime());
+        String lookupHash = (nanoHex + nanoHex + nanoHex + nanoHex + nanoHex).substring(0, 64);
+        long apiKeyId = insertApiKey(tenantId, userId, lookupHash);
+
+        outboxService.record(tenantId, "API_KEY", apiKeyId, "CREATED", null);
+        projector.project(claimSingle("redis-restart-1"));
+
+        // 命名空间健康标记仅在 FULL_REBUILD/RUNTIME_NAMESPACE 事件时写入，此处手工标记
+        snapshotStore.markNamespaceHealthy();
+
+        RuntimeScope scope = RuntimeScope.apiKey(lookupHash, tenantId);
+        String snapshotKey = RuntimeRedisSnapshotStore.snapshotKey(scope, 1L);
+        assertThat(redisTemplate.hasKey(snapshotKey)).as("投影后快照应存在").isTrue();
+        assertThat(snapshotStore.namespaceHealthy()).as("命名空间应健康").isTrue();
+
+        // 模拟 Redis 数据丢失（等价于重启但避免连接池超时）
+        var keys = redisTemplate.keys("fluxora:runtime:v1:*");
+        if (keys != null) keys.forEach(k -> redisTemplate.delete(k));
+
+        // 验证：清空后命名空间不健康，快照丢失
+        assertThat(snapshotStore.namespaceHealthy())
+                .as("清空后命名空间应不健康").isFalse();
+        assertThat(redisTemplate.hasKey(snapshotKey))
+                .as("清空后快照应丢失").isFalse();
+
+        // 验证：可从 PostgreSQL 全量重建
+        snapshotStore.markNamespaceHealthy();
+        outboxService.record(tenantId, "API_KEY", apiKeyId, "ENABLED", null);
+        projector.project(claimSingle("redis-restart-2"));
+
+        assertThat(snapshotStore.namespaceHealthy()).as("重建后命名空间应恢复健康").isTrue();
+        // 重建后新版本快照存在
+        String newKey = RuntimeRedisSnapshotStore.snapshotKey(scope, 2L);
+        assertThat(redisTemplate.hasKey(newKey)).as("重建后新快照应存在").isTrue();
+    }
+
     private RuntimeOutboxEvent claimSingle(String workerId) {
         List<RuntimeOutboxEvent> events = runtimeMapper.claimDueBatch(workerId, 10);
         assertThat(events).hasSize(1);

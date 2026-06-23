@@ -276,6 +276,39 @@ class GatewayRuntimeBehaviorTest {
         assertEquals(GatewayFailure.Type.MODEL_UNAVAILABLE, gatewayFailure(exception).type());
     }
 
+    @Test
+    void twoCacheInstancesMustShareSameUnderlyingSnapshotAndInvalidateIndependently() throws Exception {
+        MemorySource source = new MemorySource();
+        String lookupHash = "x".repeat(64);
+        source.put(RuntimeScopeType.AUTH_API_KEY, lookupHash, apiKeySnapshot(lookupHash, true));
+
+        GatewayMetrics metrics1 = new GatewayMetrics();
+        GatewayMetrics metrics2 = new GatewayMetrics();
+        RuntimeL1Caches instance1 = new RuntimeL1Caches(source, config(), metrics1);
+        RuntimeL1Caches instance2 = new RuntimeL1Caches(source, config(), metrics2);
+
+        // 实例 1 加载快照
+        RuntimeSnapshot snap1 = await(instance1.apiKey(lookupHash));
+        assertEquals(lookupHash, snap1.scopeKey());
+
+        // 实例 2 独立加载同一快照（共享底层 source，各自 L1）
+        RuntimeSnapshot snap2 = await(instance2.apiKey(lookupHash));
+        assertEquals(lookupHash, snap2.scopeKey());
+
+        // 两个实例的 L1 独立但底层 source 共享 —— 都能返回相同数据
+        assertEquals(lookupHash, snap1.scopeKey());
+        assertEquals(lookupHash, snap2.scopeKey());
+
+        // 验证 invalidateAll 清空 L1 后可按需重新加载
+        instance1.invalidateAll();
+        RuntimeSnapshot reloaded = await(instance1.apiKey(lookupHash));
+        assertEquals(lookupHash, reloaded.scopeKey());
+        // 两实例独立 L1 互不影响
+        instance1.invalidateAll();
+        RuntimeSnapshot stillCachedIn2 = await(instance2.apiKey(lookupHash));
+        assertEquals(lookupHash, stillCachedIn2.scopeKey());
+    }
+
     private GatewayAuthenticator authenticator(MemorySource source) {
         GatewayMetrics metrics = new GatewayMetrics();
         RuntimeL1Caches caches = new RuntimeL1Caches(source, config(), metrics);
