@@ -110,13 +110,13 @@ public class ProviderCredentialService {
         applySecret(credential, cryptoService.mask(plaintext), fingerprint, encrypted);
 
         // 预检当前租户未删除指纹，避免依赖唯一索引报错返回 500；并发冲突由 catch 兜底。
-        if (fingerprintExists(channel.getTenantId(), fingerprint)) {
+        if (fingerprintExists(channel.getTenantId(), channel.getId(), fingerprint, null)) {
             throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "凭证已存在");
         }
         try {
             mapper.insert(credential);
         } catch (DataIntegrityViolationException ex) {
-            // 并发写入同一指纹命中部分唯一索引
+            // 并发写入同一指纹命中部分唯一索引（tenant + channel + fingerprint）
             throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "凭证已存在");
         }
         log.info("上游凭证已创建：channelId={}, credentialId={}", channel.getId(), credential.getId());
@@ -150,7 +150,7 @@ public class ProviderCredentialService {
         // 新明文若与当前指纹相同，直接更新密文即可（同值重新加密，不触发唯一冲突）。
         // 若与当前租户其他未删除凭证重复，拒绝替换。
         if (!newFingerprint.equals(credential.getCredentialFingerprint())
-                && fingerprintExists(channel.getTenantId(), newFingerprint)) {
+                && fingerprintExists(channel.getTenantId(), channel.getId(), newFingerprint, credential.getId())) {
             throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "新凭证已存在");
         }
         applySecret(credential, cryptoService.mask(newPlaintext), newFingerprint, encrypted);
@@ -235,7 +235,7 @@ public class ProviderCredentialService {
         // 一次 IN 查询当前租户已存在且未软删除的指纹。
         Set<String> existing = uniqueCandidates.isEmpty()
                 ? Set.of()
-                : new HashSet<>(mapper.findActiveFingerprints(channel.getTenantId(), uniqueCandidates.keySet()));
+                : new HashSet<>(mapper.findActiveFingerprints(channel.getTenantId(), channel.getId(), uniqueCandidates.keySet(), null));
 
         List<ProviderCredential> toInsert = new ArrayList<>();
         for (Candidate c : uniqueCandidates.values()) {
@@ -306,8 +306,8 @@ public class ProviderCredentialService {
         return n;
     }
 
-    private boolean fingerprintExists(Long tenantId, String fingerprint) {
-        return !mapper.findActiveFingerprints(tenantId, List.of(fingerprint)).isEmpty();
+    private boolean fingerprintExists(Long tenantId, Long channelId, String fingerprint, Long excludeId) {
+        return !mapper.findActiveFingerprints(tenantId, channelId, List.of(fingerprint), excludeId).isEmpty();
     }
 
     private ProviderCredential loadMetadataOrThrow(Long id) {

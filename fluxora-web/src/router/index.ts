@@ -87,6 +87,7 @@ export const router = createRouter({
         { path: 'provider-base-urls', component: ProviderBaseUrlManagementView },
         { path: 'provider-channels', component: ProviderChannelManagementView },
         { path: 'tenant-models', component: TenantModelManagementView },
+        { path: 'models', component: PublicModelCatalogView },
       ],
     },
   ],

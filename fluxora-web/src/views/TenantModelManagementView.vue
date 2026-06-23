@@ -292,26 +292,39 @@ const candidatePool = ref<Array<ProviderChannelModelSummary & { channelName: str
 const candidatePoolLoading = ref(false)
 const newMappingCandidateId = ref<number | null>(null)
 const newMappingRemark = ref('')
+/** 因能力不匹配被过滤的候选数（用于提示用户） */
+const capabilityMismatchCount = ref(0)
 
 async function openAddMapping() {
   newMappingCandidateId.value = null
   newMappingRemark.value = ''
+  capabilityMismatchCount.value = 0
   candidatePoolLoading.value = true
   candidatePool.value = []
   try {
     // 当前租户所有通道；后端会按当前用户租户过滤
     // 平台管理员代管时按目标租户过滤；为了把当前租户的全部候选汇成一张可选清单，
-    // 先列出通道，再并发列出每个通道的候选，最后排除已映射候选
+    // 先列出通道，再并发列出每个通道的候选，最后排除已映射候选与能力不匹配候选
     const channels = await listProviderChannels({
       tenantId: auth.isPlatformAdmin ? targetTenantId.value ?? undefined : undefined,
       page: 1, size: 200,
     })
     const usedIds = new Set(mappings.value.map(m => m.providerChannelModelId))
+    const model = detail.value
     const batches = await Promise.all(channels.items.map(async (ch: ProviderChannelSummary) => {
       try {
         const list = await listChannelCandidates(ch.id)
         return list
-          .filter(c => c.status === 'ENABLED' && !usedIds.has(c.id))
+          .filter(c => {
+            if (c.status !== 'ENABLED' || usedIds.has(c.id)) return false
+            // 能力匹配：租户模型声明的能力必须被候选支撑，避免用户配置后启用时报错
+            // 采用 AND 关系：模型声明了 N 项能力，候选必须全部满足
+            if (model?.supportsStreaming && !c.supportsStreaming) { capabilityMismatchCount.value++; return false }
+            if (model?.supportsToolCalling && !c.supportsToolCalling) { capabilityMismatchCount.value++; return false }
+            if (model?.supportsVision && !c.supportsVision) { capabilityMismatchCount.value++; return false }
+            if (model?.supportsCache && !c.supportsCache) { capabilityMismatchCount.value++; return false }
+            return true
+          })
           .map(c => ({ ...c, channelName: ch.name }))
       } catch {
         return []
@@ -550,9 +563,11 @@ function availableMappingsForRoute(routeId: number): TenantModelCandidateMapping
   const used = new Set((targetsByRoute.value.get(routeId) || [])
     .filter(t => true)
     .map(t => t.tenantModelCandidateMappingId))
-  // 协议兼容性在后端做权威校验；前端尽量给出全集，由后端友好错误兜底，
-  // 因为映射本身没有协议字段，需要后端拿 channel.protocol。
-  return mappings.value.filter(m => m.enabled && m.candidateAvailable && !used.has(m.id))
+  // 前端按路由协议过滤：OPENAI 路由只展示 OPENAI 通道的映射；ANTHROPIC 同理
+  return mappings.value.filter(m =>
+    m.enabled && m.candidateAvailable
+    && m.channelProtocol === route.inboundProtocol
+    && !used.has(m.id))
 }
 
 async function saveTarget() {
@@ -906,11 +921,17 @@ function fmtPrice(v: string | null | undefined): string {
           <n-select
             v-model:value="newMappingCandidateId"
             :loading="candidatePoolLoading"
-            placeholder="仅展示本租户启用通道下未映射的候选"
+            :placeholder="candidatePool.length === 0 && !candidatePoolLoading ? '当前没有符合条件的候选' : '仅展示已启用、未映射且能力匹配的候选'"
             :options="candidatePool.map(c => ({ label: `${c.channelName} · ${c.upstreamDisplayName || c.upstreamModelId}`, value: c.id }))"
             :consistent-menu-width="false"
           />
-          <template #feedback>映射不可跨租户；候选必须属于当前租户的启用通道</template>
+          <template #feedback>
+            <span>候选必须属于当前租户的启用通道；已排除已映射和能力不匹配的候选。</span>
+            <span v-if="capabilityMismatchCount > 0" style="color: var(--warning); display: block; margin-top: 4px">
+              {{ capabilityMismatchCount }} 个候选因不支持该模型声明的能力（流式/工具调用/视觉/缓存）已被过滤，
+              请在上游通道中补充具备对应能力的候选后再添加映射。
+            </span>
+          </template>
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="newMappingRemark" placeholder="可选" />

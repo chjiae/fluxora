@@ -69,12 +69,14 @@ describe('tenant model management', () => {
 
   it('public catalog view never references provider/credential/route internals', async () => {
     const source = await readFile(resolve(process.cwd(), 'src/views/PublicModelCatalogView.vue'), 'utf8')
-    // C 端目录不得直接调用任何上游或路由接口
+    // C 端目录不得直接调用任何上游或路由模型接口
     expect(source).not.toContain('upstream')
     expect(source).not.toContain('provider')
     expect(source).not.toContain('credential')
     expect(source).not.toContain('candidate')
-    expect(source).not.toContain('route')
+    expect(source).not.toContain('listRoutes')
+    expect(source).not.toContain('listRouteTargets')
+    expect(source).not.toContain('inboundProtocol')
     // 只通过 listPublicModels 拿数据
     expect(source).toContain("import { listPublicModels")
   })

@@ -65,16 +65,17 @@
     </update>
 
     <select id="countActiveByMapping" resultType="long">
-        SELECT COUNT(*) FROM route_target
-        WHERE tenant_model_candidate_mapping_id = #{mappingId}
-          AND enabled = TRUE AND deleted_at IS NULL
+        SELECT COUNT(*) FROM route_target t
+        JOIN model_route r ON r.id = t.model_route_id
+        WHERE t.tenant_model_candidate_mapping_id = #{mappingId}
+          AND t.enabled = TRUE AND t.deleted_at IS NULL AND r.deleted_at IS NULL
     </select>
 
     <!--
       解析候选映射的事实快照：用于服务层在写入 RouteTarget 前做四方租户一致 + 协议兼容校验，
       一次 JOIN 取得映射、候选、通道、协议；任一资源已删除则返回空。
     -->
-    <select id="resolveMapping" resultType="io.fluxora.platform.model.mapper.RouteTargetMapper$MappingResolution">
+    <select id="resolveMapping" resultType="io.fluxora.platform.model.mapper.MappingResolution">
         SELECT mp.id AS mapping_id,
                mp.tenant_id AS mapping_tenant_id,
                mp.provider_channel_model_id,

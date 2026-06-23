@@ -5,10 +5,15 @@
  * 严禁展示：通道、上游模型、候选、映射、路由、权重、优先级、凭证、内部价格版本、deletedAt。
  * 金额一律以字符串呈现，保留尾随零的去除以提升可读性。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import PublicHeader from '@/components/PublicHeader.vue'
 import { listPublicModels, type PublicTenantModel } from '@/services/tenantModel'
+
+const route = useRoute()
+/** 在控制台布局内渲染时隐藏 PublicHeader，避免双 header */
+const insideConsole = computed(() => route.path.startsWith('/console'))
 
 const message = useMessage()
 const items = ref<PublicTenantModel[]>([])
@@ -49,8 +54,8 @@ function capabilityChips(m: PublicTenantModel): string[] {
 </script>
 
 <template>
-  <div class="public-page">
-    <PublicHeader />
+  <div class="public-page" :class="{ embedded: insideConsole }">
+    <PublicHeader v-if="!insideConsole" />
     <main class="container">
       <header class="hero">
         <h1>模型目录</h1>
@@ -83,6 +88,7 @@ function capabilityChips(m: PublicTenantModel): string[] {
 
 <style scoped>
 .public-page { min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
+.public-page.embedded { min-height: auto; display: block; background: transparent; }
 .container { flex: 1; max-width: 1120px; width: 100%; margin: 0 auto; padding: 32px clamp(20px, 4vw, 48px) 64px; }
 .hero h1 { margin: 0 0 6px; font-size: 28px; font-weight: 650; letter-spacing: -0.02em; }
 .hero p { margin: 0; color: var(--text-muted); font-size: 14px; max-width: 560px; }

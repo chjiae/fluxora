@@ -3,6 +3,7 @@ package io.fluxora.platform.model;
 import io.fluxora.common.error.BusinessErrorCode;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.model.dto.RouteTargetSummary;
+import io.fluxora.platform.model.mapper.MappingResolution;
 import io.fluxora.platform.model.mapper.RouteTargetMapper;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
 import java.util.List;
@@ -48,7 +49,7 @@ public class RouteTargetService {
         tenantGuard.assertWritable(route.getTenantId());
 
         // 一次 JOIN 拿回事实快照（映射、候选、通道、协议）；任一资源缺失返回空 Optional
-        RouteTargetMapper.MappingResolution resolved = targetMapper.resolveMapping(mappingId)
+        MappingResolution resolved = targetMapper.resolveMapping(mappingId)
                 .orElseThrow(() -> new ModelException(BusinessErrorCode.TENANT_MODEL_MAPPING_NOT_FOUND,
                         "候选映射不存在或已被删除"));
 

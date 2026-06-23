@@ -165,7 +165,9 @@ public class TenantModelService {
     public void delete(Long id, UserAccount user, Authentication auth) {
         TenantModel current = requireVisible(id, user, auth);
         tenantGuard.assertWritable(current.getTenantId());
-        tenantModelMapper.softDelete(id, user.getId());
+        // 级联软删：路由目标 → 路由 → 模型 + 候选映射
+        tenantModelMapper.cascadeSoftDelete(id, user.getId());
+        tenantModelMapper.cascadeSoftDeleteMappings(id, user.getId());
     }
 
     // ========== 内部校验 ==========

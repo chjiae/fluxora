@@ -97,7 +97,9 @@
     </update>
 
     <select id="countActiveMappings" resultType="long">
-        SELECT COUNT(*) FROM tenant_model_candidate_mapping
-        WHERE provider_channel_model_id = #{channelModelId} AND deleted_at IS NULL
+        SELECT COUNT(*) FROM tenant_model_candidate_mapping mp
+        JOIN tenant_model tm ON tm.id = mp.tenant_model_id
+        WHERE mp.provider_channel_model_id = #{channelModelId}
+          AND mp.deleted_at IS NULL AND tm.deleted_at IS NULL
     </select>
 </mapper>

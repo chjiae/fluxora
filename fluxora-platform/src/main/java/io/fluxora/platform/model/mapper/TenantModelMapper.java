@@ -54,4 +54,10 @@ public interface TenantModelMapper {
                          @Param("updatedBy") Long updatedBy);
 
     void softDelete(@Param("id") Long id, @Param("updatedBy") Long updatedBy);
+
+    /** 级联软删：模型 + 路由 + 路由目标（同事务完成，公共 CTE） */
+    void cascadeSoftDelete(@Param("id") Long id, @Param("updatedBy") Long updatedBy);
+
+    /** 级联软删候选映射 */
+    void cascadeSoftDeleteMappings(@Param("id") Long id, @Param("updatedBy") Long updatedBy);
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Building2, CreditCard, KeyRound, LayoutDashboard, Menu, Network, Plug, UserRound, Users, Wallet, Boxes } from 'lucide-vue-next'
+import { Building2, CreditCard, KeyRound, LayoutDashboard, Menu, Network, Plug, Sparkles, UserRound, Users, Wallet, Boxes } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
@@ -46,7 +46,12 @@ const menuOptions = computed(() => [
         { label: '上游通道', key: '/console/provider-channels', icon: () => h(Network, { size: 18 }) },
       ]
     : []),
-  // 租户模型：仅 TENANT_MODEL_READ 权限可见（PLATFORM_ADMIN / TENANT_ADMIN）
+  // 模型目录：所有拥有 TENANT_MODEL_PUBLIC_READ 的用户可见（含租户成员）
+  // 与下方管理页分离：目录是 C 端浏览视图，不暴露路由/映射/价格版本等内部细节
+  ...(auth.canReadPublicModelCatalog
+    ? [{ label: '模型目录', key: '/console/models', icon: () => h(Sparkles, { size: 18 }) }]
+    : []),
+  // 租户模型管理：仅 TENANT_MODEL_READ 权限可见（PLATFORM_ADMIN / TENANT_ADMIN）
   ...(auth.canReadTenantModels
     ? [{ label: '租户模型', key: '/console/tenant-models', icon: () => h(Boxes, { size: 18 }) }]
     : []),
@@ -64,6 +69,7 @@ const title = computed(() => {
   if (route.path === '/console/provider-base-urls') return '接入地址'
   if (route.path === '/console/provider-channels') return '上游通道'
   if (route.path === '/console/tenant-models') return '租户模型'
+  if (route.path === '/console/models') return '模型目录'
   return menuOptions.value.find(item => item.key === route.path)?.label || '概览'
 })
 

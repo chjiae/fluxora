@@ -124,4 +124,31 @@
             enabled = FALSE
         WHERE id = #{id} AND deleted_at IS NULL
     </update>
+
+    <!-- 级联软删：模型删除时同步清理路由、路由目标、候选映射 -->
+    <update id="cascadeSoftDelete">
+        WITH deleted_model AS (
+            UPDATE tenant_model SET deleted_at = NOW(), enabled = FALSE,
+                updated_by = #{updatedBy}, updated_at = NOW()
+            WHERE id = #{id} AND deleted_at IS NULL
+            RETURNING id
+        ),
+        deleted_routes AS (
+            UPDATE model_route SET deleted_at = NOW(), enabled = FALSE,
+                updated_by = #{updatedBy}, updated_at = NOW()
+            WHERE tenant_model_id = #{id} AND deleted_at IS NULL
+            RETURNING id
+        )
+        UPDATE route_target SET deleted_at = NOW(), enabled = FALSE,
+            updated_by = #{updatedBy}, updated_at = NOW()
+        WHERE model_route_id IN (SELECT id FROM model_route WHERE tenant_model_id = #{id} AND deleted_at IS NULL)
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="cascadeSoftDeleteMappings">
+        UPDATE tenant_model_candidate_mapping
+        SET deleted_at = NOW(), enabled = FALSE,
+            updated_by = #{updatedBy}, updated_at = NOW()
+        WHERE tenant_model_id = #{id} AND deleted_at IS NULL
+    </update>
 </mapper>

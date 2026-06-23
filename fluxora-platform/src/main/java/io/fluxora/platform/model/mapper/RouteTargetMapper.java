@@ -46,21 +46,4 @@ public interface RouteTargetMapper {
      * 仅返回当前未删除、可用资源的协议；任一资源已删除 → 返回空 Optional 由调用方拒绝。
      */
     Optional<MappingResolution> resolveMapping(@Param("mappingId") Long mappingId);
-
-    /**
-     * 路由目标写入所需的事实快照：候选 tenant_id、所属通道 ID、协议、上游标识。
-     * 用于服务层一次性获得四方校验材料，避免逐条 SQL（N+1）。
-     */
-    record MappingResolution(
-            Long mappingId,
-            Long mappingTenantId,
-            Long providerChannelModelId,
-            Long providerChannelId,
-            Long channelTenantId,
-            String protocol,
-            String upstreamModelId,
-            boolean mappingEnabled,
-            boolean candidateEnabled,
-            boolean channelEnabled
-    ) {}
 }

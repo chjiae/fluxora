@@ -13,6 +13,8 @@ public record TenantModelCandidateMappingSummary(
         Long providerChannelModelId,
         Long providerChannelId,
         String channelName,
+        /** 通道所属协议（OPENAI / ANTHROPIC）；用于前端按路由协议过滤可选候选 */
+        String channelProtocol,
         String upstreamModelId,
         String upstreamDisplayName,
         boolean supportsStreaming,

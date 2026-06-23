@@ -38,8 +38,14 @@ public interface ProviderCredentialMapper {
     long countPage(@Param("channelId") Long channelId, @Param("keyword") String keyword,
             @Param("maskedValue") String maskedValue, @Param("enabled") Boolean enabled);
 
-    /** 一次 IN 查询当前租户已存在且未软删除的指纹，避免逐条查询（N+1）。 */
-    List<String> findActiveFingerprints(@Param("tenantId") Long tenantId, @Param("fingerprints") Collection<String> fingerprints);
+    /**
+     * 一次 IN 查询当前租户当前通道已存在且未软删除的指纹，避免逐条查询（N+1）。
+     * excludeId 可选：替换场景下排除自身避免误判重复。
+     */
+    List<String> findActiveFingerprints(@Param("tenantId") Long tenantId,
+                                        @Param("channelId") Long channelId,
+                                        @Param("fingerprints") Collection<String> fingerprints,
+                                        @Param("excludeId") Long excludeId);
 
     void updateMetadata(ProviderCredential credential);
     void replaceSecret(ProviderCredential credential);

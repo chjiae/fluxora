@@ -61,6 +61,8 @@ export interface TenantModelCandidateMappingSummary {
   providerChannelModelId: number
   providerChannelId: number
   channelName: string
+  /** 通道所属协议（OPENAI / ANTHROPIC）；用于前端按路由协议过滤可选候选 */
+  channelProtocol: InboundProtocol
   upstreamModelId: string
   upstreamDisplayName: string
   supportsStreaming: boolean

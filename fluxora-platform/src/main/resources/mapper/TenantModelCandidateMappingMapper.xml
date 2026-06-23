@@ -24,6 +24,7 @@
     <select id="findByTenantModel" resultType="io.fluxora.platform.model.dto.TenantModelCandidateMappingSummary">
         SELECT m.id, m.tenant_id, m.tenant_model_id, m.provider_channel_model_id,
             cm.provider_channel_id, c.name AS channel_name,
+            b.protocol AS channel_protocol,
             cm.upstream_model_id, cm.upstream_display_name,
             cm.supports_streaming, cm.supports_tool_calling, cm.supports_vision, cm.supports_cache,
             m.enabled,
@@ -32,6 +33,7 @@
         FROM tenant_model_candidate_mapping m
         JOIN provider_channel_model cm ON cm.id = m.provider_channel_model_id
         JOIN provider_channel c ON c.id = cm.provider_channel_id
+        JOIN provider_base_url b ON b.id = c.provider_base_url_id
         WHERE m.tenant_model_id = #{tenantModelId} AND m.deleted_at IS NULL
         ORDER BY m.created_at DESC, m.id DESC
     </select>
