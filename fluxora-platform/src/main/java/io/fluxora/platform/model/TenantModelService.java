@@ -4,6 +4,7 @@ import io.fluxora.common.error.BusinessErrorCode;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.model.dto.TenantModelStats;
 import io.fluxora.platform.model.dto.TenantModelSummary;
+import io.fluxora.platform.model.mapper.ModelRouteMapper;
 import io.fluxora.platform.model.mapper.ProviderChannelModelMapper;
 import io.fluxora.platform.model.mapper.TenantModelCandidateMappingMapper;
 import io.fluxora.platform.model.mapper.TenantModelMapper;
@@ -28,17 +29,20 @@ public class TenantModelService {
     private final TenantModelCandidateMappingMapper mappingMapper;
     private final ProviderChannelModelMapper channelModelMapper;
     private final TenantModelPriceMapper priceMapper;
+    private final ModelRouteMapper routeMapper;
     private final UpstreamTenantGuard tenantGuard;
 
     public TenantModelService(TenantModelMapper tenantModelMapper,
                               TenantModelCandidateMappingMapper mappingMapper,
                               ProviderChannelModelMapper channelModelMapper,
                               TenantModelPriceMapper priceMapper,
+                              ModelRouteMapper routeMapper,
                               UpstreamTenantGuard tenantGuard) {
         this.tenantModelMapper = tenantModelMapper;
         this.mappingMapper = mappingMapper;
         this.channelModelMapper = channelModelMapper;
         this.priceMapper = priceMapper;
+        this.routeMapper = routeMapper;
         this.tenantGuard = tenantGuard;
     }
 
@@ -211,6 +215,17 @@ public class TenantModelService {
         if (priceMapper.findCurrent(id).isEmpty()) {
             throw new ModelException(BusinessErrorCode.TENANT_MODEL_NOT_ENABLEABLE,
                     "请先配置有效价格后再发布模型");
+        }
+        // 条件 3：至少存在一条未删除路由
+        if (routeMapper.countActiveByTenantModel(id) == 0) {
+            throw new ModelException(BusinessErrorCode.TENANT_MODEL_NOT_ENABLEABLE,
+                    "请至少配置一个可用上游路由后再发布模型");
+        }
+        // 条件 3b：至少存在一个未删除 RouteTarget；
+        // 路由不带 RouteTarget 意味着请求无可用上游候选，与「无映射」语义等价
+        if (routeMapper.countActiveTargetsByTenantModel(id) == 0) {
+            throw new ModelException(BusinessErrorCode.TENANT_MODEL_NOT_ENABLEABLE,
+                    "请至少配置一个有效路由目标后再发布模型");
         }
         // 条件 4：能力支撑校验——从有效候选集合中逐一比对
         List<ProviderChannelModel> candidates = mappingMapper.findActiveSupportingCandidates(id);

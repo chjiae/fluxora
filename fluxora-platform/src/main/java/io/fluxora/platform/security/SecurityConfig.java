@@ -63,6 +63,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/provider-credentials/**").authenticated()
                 .requestMatchers("/api/provider-channels/*/models/**").authenticated()
                 .requestMatchers("/api/tenant-models/**").authenticated()
+                .requestMatchers("/api/routes/**").authenticated()
                 .requestMatchers("/api/models/**").authenticated()
                 .requestMatchers("/api/admin/api-keys/**").authenticated()
                 .requestMatchers("/api/admin/credit/**").authenticated()

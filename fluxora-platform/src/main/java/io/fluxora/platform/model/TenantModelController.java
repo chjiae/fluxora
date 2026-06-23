@@ -3,6 +3,7 @@ package io.fluxora.platform.model;
 import io.fluxora.common.response.ApiResponse;
 import io.fluxora.platform.billing.DecimalStringDeserializer;
 import io.fluxora.platform.identity.entity.UserAccount;
+import io.fluxora.platform.model.dto.ModelRouteSummary;
 import io.fluxora.platform.model.dto.TenantModelCandidateMappingSummary;
 import io.fluxora.platform.model.dto.TenantModelPriceView;
 import io.fluxora.platform.model.dto.TenantModelStats;
@@ -36,13 +37,16 @@ public class TenantModelController {
     private final TenantModelService tenantModelService;
     private final TenantModelCandidateMappingService mappingService;
     private final TenantModelPriceService priceService;
+    private final ModelRouteService routeService;
 
     public TenantModelController(TenantModelService tenantModelService,
                                  TenantModelCandidateMappingService mappingService,
-                                 TenantModelPriceService priceService) {
+                                 TenantModelPriceService priceService,
+                                 ModelRouteService routeService) {
         this.tenantModelService = tenantModelService;
         this.mappingService = mappingService;
         this.priceService = priceService;
+        this.routeService = routeService;
     }
 
     // ========== 列表 / 详情 / 指标 ==========
@@ -254,5 +258,29 @@ public class TenantModelController {
             @JsonDeserialize(using = DecimalStringDeserializer.class) String cacheWritePricePerMillion,
             @JsonDeserialize(using = DecimalStringDeserializer.class) String cacheReadPricePerMillion
     ) {
+    }
+
+    // ========== 路由子资源（列表 / 创建） ==========
+
+    @GetMapping("/{tenantModelId}/routes")
+    @PreAuthorize("hasAuthority('PERM_TENANT_MODEL_READ')")
+    public ResponseEntity<ApiResponse<List<ModelRouteSummary>>> listRoutes(
+            @PathVariable Long tenantModelId,
+            @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        return ResponseEntity.ok(ApiResponse.success(
+                routeService.listRoutes(tenantModelId, user, auth)));
+    }
+
+    @PostMapping("/{tenantModelId}/routes")
+    @PreAuthorize("hasAuthority('PERM_TENANT_MODEL_MANAGE')")
+    public ResponseEntity<ApiResponse<ModelRouteSummary>> createRoute(
+            @PathVariable Long tenantModelId,
+            @RequestBody RouteCreateRequest req,
+            @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        return ResponseEntity.ok(ApiResponse.success(
+                routeService.createRoute(tenantModelId, req.inboundProtocol(), req.remark(), user, auth)));
+    }
+
+    public record RouteCreateRequest(String inboundProtocol, String remark) {
     }
 }

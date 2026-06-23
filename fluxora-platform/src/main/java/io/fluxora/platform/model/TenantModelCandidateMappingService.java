@@ -4,6 +4,7 @@ import io.fluxora.common.error.BusinessErrorCode;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.model.dto.TenantModelCandidateMappingSummary;
 import io.fluxora.platform.model.mapper.ProviderChannelModelMapper;
+import io.fluxora.platform.model.mapper.RouteTargetMapper;
 import io.fluxora.platform.model.mapper.TenantModelCandidateMappingMapper;
 import io.fluxora.platform.model.mapper.TenantModelMapper;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
@@ -25,15 +26,18 @@ public class TenantModelCandidateMappingService {
     private final TenantModelCandidateMappingMapper mappingMapper;
     private final TenantModelMapper tenantModelMapper;
     private final ProviderChannelModelMapper channelModelMapper;
+    private final RouteTargetMapper routeTargetMapper;
     private final UpstreamTenantGuard tenantGuard;
 
     public TenantModelCandidateMappingService(TenantModelCandidateMappingMapper mappingMapper,
                                               TenantModelMapper tenantModelMapper,
                                               ProviderChannelModelMapper channelModelMapper,
+                                              RouteTargetMapper routeTargetMapper,
                                               UpstreamTenantGuard tenantGuard) {
         this.mappingMapper = mappingMapper;
         this.tenantModelMapper = tenantModelMapper;
         this.channelModelMapper = channelModelMapper;
+        this.routeTargetMapper = routeTargetMapper;
         this.tenantGuard = tenantGuard;
     }
 
@@ -104,7 +108,11 @@ public class TenantModelCandidateMappingService {
     public void delete(Long id, UserAccount user, Authentication auth) {
         TenantModelCandidateMapping mapping = requireMapping(id, user, auth);
         tenantGuard.assertWritable(mapping.getTenantId());
-        // 被启用的 RouteTarget 引用的映射不得删除（提交 4 后生效路由目标表后再加校验）
+        // 提交 4 起：被启用 RouteTarget 引用的映射不得直接删除，必须先停用或删除路由目标。
+        if (routeTargetMapper.countActiveByMapping(id) > 0) {
+            throw new ModelException(BusinessErrorCode.TENANT_MODEL_MAPPING_IN_USE,
+                    "当前映射仍被启用的路由目标引用，请先处理关联路由目标");
+        }
         mappingMapper.softDelete(id, user.getId());
     }
 

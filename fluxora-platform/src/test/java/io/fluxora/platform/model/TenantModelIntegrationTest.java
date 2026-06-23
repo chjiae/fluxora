@@ -2,6 +2,7 @@ package io.fluxora.platform.model;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.sql.DataSource;
 
@@ -389,14 +390,17 @@ class TenantModelIntegrationTest {
         long cand = createCandidate(ah, ch, "gpt-no-stream", false);
         // 模型声明支持流式
         long m = createTenantModel(ah, tA, "m-cap-" + System.nanoTime(), "能力测试", true);
-        createMapping(ah, m, cand);
-        // 先发布价格，让启用前置中的「无价格」分支不触发，从而暴露能力支撑校验失败
+        long mp = createMapping(ah, m, cand);
+        // 走完其余前置（价格 + 路由 + 路由目标），仅留能力不一致暴露给启用前置
         publishPrice(ah, m, "1.0", "2.0");
+        long route = createRoute(ah, m, "OPENAI");
+        createTarget(ah, route, mp);
 
         ResponseEntity<String> r = restTemplate.exchange(base + "/api/tenant-models/" + m + "/enable",
                 HttpMethod.POST, new HttpEntity<>(ah), String.class);
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(r.getBody()).contains("当前上游能力无法支撑");
+        assertThat(om.readTree(r.getBody()).get("code").asText())
+                .isEqualTo("TENANT_MODEL_CAPABILITY_UNSUPPORTED");
     }
 
     // =================== 10. 软删除后 deletedAt 不返回；status 派生 ===================
@@ -581,36 +585,58 @@ class TenantModelIntegrationTest {
         long candB = createCandidate(ah, chB, "model-B", false);
         long mA = createTenantModel(ah, tA, "pub-A-" + System.nanoTime(), "对外模型 A", false);
         long mB = createTenantModel(ah, tB, "pub-B-" + System.nanoTime(), "对外模型 B", false);
-        createMapping(ah, mA, candA);
-        createMapping(ah, mB, candB);
+        long mapA = createMapping(ah, mA, candA);
+        long mapB = createMapping(ah, mB, candB);
         publishPrice(ah, mA, "0.10", "0.30");
         publishPrice(ah, mB, "0.20", "0.40");
+        long routeA = createRoute(ah, mA, "OPENAI");
+        long routeB = createRoute(ah, mB, "OPENAI");
+        createTarget(ah, routeA, mapA);
+        createTarget(ah, routeB, mapB);
         enable(ah, mA);
         enable(ah, mB);
 
-        // A 租户管理员调 /api/models 只看到 A
+        // A 租户管理员调 /api/models 看到自己的 mA，且看不到 mB
         String adminAUsername = createTenantAdmin(ah, tA);
         HttpHeaders aH = login(adminAUsername, "TaPass2026!");
         ResponseEntity<String> rA = restTemplate.exchange(base + "/api/models",
                 HttpMethod.GET, new HttpEntity<>(aH), String.class);
         assertThat(rA.getStatusCode()).isEqualTo(HttpStatus.OK);
         JsonNode itemsA = om.readTree(rA.getBody()).get("data");
-        assertThat(itemsA.size()).isEqualTo(1);
-        assertThat(itemsA.get(0).get("id").asLong()).isEqualTo(mA);
+        boolean foundMA = false;
+        for (JsonNode it : itemsA) {
+            long id = it.get("id").asLong();
+            assertThat(id).as("租户 A 看不到 B 的模型").isNotEqualTo(mB);
+            if (id == mA) foundMA = true;
+        }
+        assertThat(foundMA).as("租户 A 应能看到 A 的模型").isTrue();
 
         // B 租户管理员只看到 B
         HttpHeaders bH = login(adminB, "TaPass2026!");
         ResponseEntity<String> rB = restTemplate.exchange(base + "/api/models",
                 HttpMethod.GET, new HttpEntity<>(bH), String.class);
         JsonNode itemsB = om.readTree(rB.getBody()).get("data");
-        assertThat(itemsB.size()).isEqualTo(1);
-        assertThat(itemsB.get(0).get("id").asLong()).isEqualTo(mB);
+        boolean foundMB = false;
+        for (JsonNode it : itemsB) {
+            long id = it.get("id").asLong();
+            assertThat(id).as("租户 B 看不到 A 的模型").isNotEqualTo(mA);
+            if (id == mB) foundMB = true;
+        }
+        assertThat(foundMB).as("租户 B 应能看到 B 的模型").isTrue();
 
-        // 公开目录绝不返回内部字段
-        String body = rA.getBody();
-        assertThat(body).doesNotContain("tenantId", "providerChannelId", "providerChannel",
-                "upstreamModelId", "candidate", "mapping", "route", "credential",
-                "publishStatus", "deletedAt", "version");
+        // 公开目录绝不返回内部字段：逐项断言键名而非粗匹配 body，避免与
+        // 用户自定义 modelCode/displayName（如「m-noroute-…」）误判
+        Set<String> allowedKeys = Set.of(
+                "id", "modelCode", "displayName", "description",
+                "supportsStreaming", "supportsToolCalling", "supportsVision", "supportsCache",
+                "currencyCode", "inputPricePerMillion", "outputPricePerMillion",
+                "cacheWritePricePerMillion", "cacheReadPricePerMillion");
+        for (JsonNode it : itemsA) {
+            for (java.util.Iterator<String> names = it.fieldNames(); names.hasNext(); ) {
+                String name = names.next();
+                assertThat(allowedKeys).as("公开目录字段 %s 不应出现", name).contains(name);
+            }
+        }
     }
 
     // =================== 16. 公开目录：DRAFT/无价/缺映射的模型不可见 ===================
@@ -642,6 +668,231 @@ class TenantModelIntegrationTest {
         }
     }
 
+    // =================== 17. 路由唯一（同模型同协议） + 协议归一化 ===================
+
+    @Test
+    void shouldEnforceRouteUniquenessPerProtocol() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long m = createTenantModel(ah, tA, "route-uniq-" + System.nanoTime(), "路由唯一", false);
+
+        createRoute(ah, m, "OPENAI");
+        // 同协议重复（不同大小写归一化为相同协议）
+        String dup = om.writeValueAsString(Map.of("inboundProtocol", "openai"));
+        ResponseEntity<String> r = restTemplate.exchange(base + "/api/tenant-models/" + m + "/routes",
+                HttpMethod.POST, new HttpEntity<>(dup, ah), String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        // 业务码用于程序识别
+        assertThat(om.readTree(r.getBody()).get("code").asText()).isEqualTo("TENANT_MODEL_INVALID");
+        // 不同协议允许
+        long routeAnthropic = createRoute(ah, m, "ANTHROPIC");
+        assertThat(routeAnthropic).isGreaterThan(0);
+        // 非法协议拒绝
+        String bad = om.writeValueAsString(Map.of("inboundProtocol", "GRPC"));
+        ResponseEntity<String> rb = restTemplate.exchange(base + "/api/tenant-models/" + m + "/routes",
+                HttpMethod.POST, new HttpEntity<>(bad, ah), String.class);
+        assertThat(rb.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    // =================== 18. 路由目标四方一致 + 协议兼容 + 同路由不重复 ===================
+
+    @Test
+    void shouldEnforceRouteTargetFourWayTenantConsistencyAndProtocolCompat() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long tB = createTenant(ah, "rt_" + System.nanoTime());
+
+        long pid = createSharedProvider(ah, "shp_" + System.nanoTime());
+        long bidOpenai = createBaseUrl(ah, pid, "OPENAI", "https://api.example.com/v1");
+        long bidAnthropic = createBaseUrl(ah, pid, "ANTHROPIC", "https://api.example.com/v1");
+        long chOpenaiA = createChannel(ah, tA, bidOpenai, "OAI-A");
+        long chAnthropicA = createChannel(ah, tA, bidAnthropic, "ANT-A");
+        long chOpenaiB = createChannel(ah, tB, bidOpenai, "OAI-B");
+        long candOAI_A = createCandidate(ah, chOpenaiA, "oai-a", false);
+        long candANT_A = createCandidate(ah, chAnthropicA, "ant-a", false);
+        long candOAI_B = createCandidate(ah, chOpenaiB, "oai-b", false);
+
+        long mA = createTenantModel(ah, tA, "rt-A-" + System.nanoTime(), "路由模型 A", false);
+        long mapOAI_A = createMapping(ah, mA, candOAI_A);
+        long mapANT_A = createMapping(ah, mA, candANT_A);
+        long routeOAI = createRoute(ah, mA, "OPENAI");
+
+        // 正常：A 的 OPENAI 路由 + A 的 OAI 映射
+        long t1 = createTarget(ah, routeOAI, mapOAI_A);
+        assertThat(t1).isGreaterThan(0);
+
+        // 同一映射重复添加：拒绝（业务码 TENANT_MODEL_MAPPING_DUPLICATE）
+        String dup = om.writeValueAsString(Map.of("tenantModelCandidateMappingId", mapOAI_A));
+        ResponseEntity<String> rd = restTemplate.exchange(base + "/api/routes/" + routeOAI + "/targets",
+                HttpMethod.POST, new HttpEntity<>(dup, ah), String.class);
+        assertThat(rd.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(om.readTree(rd.getBody()).get("code").asText())
+                .isEqualTo("TENANT_MODEL_MAPPING_DUPLICATE");
+
+        // 协议不兼容：OPENAI 路由 + ANTHROPIC 映射 → 拒绝
+        String wrong = om.writeValueAsString(Map.of("tenantModelCandidateMappingId", mapANT_A));
+        ResponseEntity<String> rw = restTemplate.exchange(base + "/api/routes/" + routeOAI + "/targets",
+                HttpMethod.POST, new HttpEntity<>(wrong, ah), String.class);
+        assertThat(rw.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(om.readTree(rw.getBody()).get("code").asText()).isEqualTo("TENANT_MODEL_INVALID");
+
+        // 跨租户：A 的路由 + B 的映射（注：mapOAI_A 已用过；这里直接尝试用 B 的候选 ID 当 mappingId 走 RESOLUTION 失败路径）
+        // 服务层 resolveMapping 不存在 → TENANT_MODEL_MAPPING_NOT_FOUND
+        // 但更严格的语义是：跨租户引用应被拒；做一次 B 租户内的合法映射后再尝试跨租户
+        String adminB = createTenantAdmin(ah, tB);
+        // 平台管理员代管为 B 创建模型 + 映射
+        long mB = createTenantModel(ah, tB, "rt-B-" + System.nanoTime(), "路由模型 B", false);
+        long mapB = createMapping(ah, mB, candOAI_B);
+        String crossBody = om.writeValueAsString(Map.of("tenantModelCandidateMappingId", mapB));
+        ResponseEntity<String> rc = restTemplate.exchange(base + "/api/routes/" + routeOAI + "/targets",
+                HttpMethod.POST, new HttpEntity<>(crossBody, ah), String.class);
+        assertThat(rc.getStatusCode().is4xxClientError()).isTrue();
+        assertThat(om.readTree(rc.getBody()).get("code").asText())
+                .isEqualTo("TENANT_MODEL_MAPPING_TENANT_MISMATCH");
+    }
+
+    // =================== 19. 启用前置：缺路由或缺路由目标都不可启用 ===================
+
+    @Test
+    void shouldBlockEnableWithoutRouteOrTarget() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long pid = createSharedProvider(ah, "shp_" + System.nanoTime());
+        long bid = createBaseUrl(ah, pid, "OPENAI", "https://api.example.com/v1");
+        long ch = createChannel(ah, tA, bid, "通道-noroute");
+        long cand = createCandidate(ah, ch, "noroute", false);
+        long m = createTenantModel(ah, tA, "m-noroute-" + System.nanoTime(), "无路由", false);
+        long mp = createMapping(ah, m, cand);
+        publishPrice(ah, m, "1.0", "2.0");
+
+        // 缺路由
+        ResponseEntity<String> r1 = restTemplate.exchange(base + "/api/tenant-models/" + m + "/enable",
+                HttpMethod.POST, new HttpEntity<>(ah), String.class);
+        assertThat(r1.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(r1.getBody()).contains("请补充价格与路由");
+
+        // 有路由但缺目标
+        long route = createRoute(ah, m, "OPENAI");
+        ResponseEntity<String> r2 = restTemplate.exchange(base + "/api/tenant-models/" + m + "/enable",
+                HttpMethod.POST, new HttpEntity<>(ah), String.class);
+        assertThat(r2.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(r2.getBody()).contains("请补充价格与路由");
+
+        // 配齐目标后通过
+        createTarget(ah, route, mp);
+        ResponseEntity<String> r3 = restTemplate.exchange(base + "/api/tenant-models/" + m + "/enable",
+                HttpMethod.POST, new HttpEntity<>(ah), String.class);
+        assertThat(r3.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    // =================== 20. 被启用 RouteTarget 占用的映射不可直接删除 ===================
+
+    @Test
+    void shouldProtectMappingInUseByActiveRouteTarget() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long pid = createSharedProvider(ah, "shp_" + System.nanoTime());
+        long bid = createBaseUrl(ah, pid, "OPENAI", "https://api.example.com/v1");
+        long ch = createChannel(ah, tA, bid, "通道-mapuse");
+        long cand = createCandidate(ah, ch, "mapuse", false);
+        long m = createTenantModel(ah, tA, "m-mapuse-" + System.nanoTime(), "映射保护", false);
+        long mp = createMapping(ah, m, cand);
+        long route = createRoute(ah, m, "OPENAI");
+        long target = createTarget(ah, route, mp);
+
+        // 试删映射：被启用的路由目标引用 → 拒绝（业务码 TENANT_MODEL_MAPPING_IN_USE）
+        ResponseEntity<String> del = restTemplate.exchange(
+                base + "/api/tenant-models/" + m + "/candidate-mappings/" + mp,
+                HttpMethod.DELETE, new HttpEntity<>(ah), String.class);
+        assertThat(del.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(om.readTree(del.getBody()).get("code").asText())
+                .isEqualTo("TENANT_MODEL_MAPPING_IN_USE");
+
+        // 先删路由目标，再删映射 → 通过
+        ResponseEntity<String> delT = restTemplate.exchange(
+                base + "/api/routes/" + route + "/targets/" + target,
+                HttpMethod.DELETE, new HttpEntity<>(ah), String.class);
+        assertThat(delT.getStatusCode()).isEqualTo(HttpStatus.OK);
+        ResponseEntity<String> del2 = restTemplate.exchange(
+                base + "/api/tenant-models/" + m + "/candidate-mappings/" + mp,
+                HttpMethod.DELETE, new HttpEntity<>(ah), String.class);
+        assertThat(del2.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    // =================== 21. 公开目录在缺路由/缺目标时不可见 ===================
+
+    @Test
+    void shouldHidePublicModelsLackingRouteOrTarget() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        String adminA = createTenantAdmin(ah, tA);
+        HttpHeaders aH = login(adminA, "TaPass2026!");
+
+        // 完整配置但「未启用」（DRAFT）→ 不可见
+        long pid = createSharedProvider(ah, "shp_" + System.nanoTime());
+        long bid = createBaseUrl(ah, pid, "OPENAI", "https://api.example.com/v1");
+        long ch = createChannel(ah, tA, bid, "通道-pub");
+        long cand = createCandidate(ah, ch, "pub-1", false);
+        long m = createTenantModel(ah, tA, "pub-route-" + System.nanoTime(), "公开路由验证", false);
+        long mp = createMapping(ah, m, cand);
+        publishPrice(ah, m, "1.0", "2.0");
+        long route = createRoute(ah, m, "OPENAI");
+        long target = createTarget(ah, route, mp);
+
+        // 还未 enable → 公开目录看不到
+        ResponseEntity<String> r1 = restTemplate.exchange(base + "/api/models",
+                HttpMethod.GET, new HttpEntity<>(aH), String.class);
+        for (JsonNode it : om.readTree(r1.getBody()).get("data")) {
+            assertThat(it.get("id").asLong()).isNotEqualTo(m);
+        }
+
+        // enable → 可见
+        enable(ah, m);
+        ResponseEntity<String> r2 = restTemplate.exchange(base + "/api/models",
+                HttpMethod.GET, new HttpEntity<>(aH), String.class);
+        boolean visible = false;
+        for (JsonNode it : om.readTree(r2.getBody()).get("data")) {
+            if (it.get("id").asLong() == m) visible = true;
+        }
+        assertThat(visible).isTrue();
+
+        // 删除路由目标 → 公开目录再次不可见（不需要先 disable）
+        restTemplate.exchange(base + "/api/routes/" + route + "/targets/" + target,
+                HttpMethod.DELETE, new HttpEntity<>(ah), String.class);
+        ResponseEntity<String> r3 = restTemplate.exchange(base + "/api/models",
+                HttpMethod.GET, new HttpEntity<>(aH), String.class);
+        for (JsonNode it : om.readTree(r3.getBody()).get("data")) {
+            assertThat(it.get("id").asLong()).as("无路由目标的模型不应在公开目录").isNotEqualTo(m);
+        }
+    }
+
+    // =================== 22. 路由列表脱敏 + 跨租户阻断 ===================
+
+    @Test
+    void shouldDenyCrossTenantRouteAccess() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long tB = createTenant(ah, "rtcross_" + System.nanoTime());
+        String adminB = createTenantAdmin(ah, tB);
+
+        long mA = createTenantModel(ah, tA, "rt-cross-A-" + System.nanoTime(), "A", false);
+        long routeA = createRoute(ah, mA, "OPENAI");
+
+        // B 租户管理员不应访问 A 的路由
+        HttpHeaders bH = login(adminB, "TaPass2026!");
+        // 通过 /api/tenant-models/{mA}/routes：先校验模型可见性 → 应 404
+        ResponseEntity<String> r = restTemplate.exchange(base + "/api/tenant-models/" + mA + "/routes",
+                HttpMethod.GET, new HttpEntity<>(bH), String.class);
+        assertThat(r.getStatusCode().is4xxClientError()).isTrue();
+        assertThat(r.getBody()).doesNotContain("Exception", "SQL", "stacktrace");
+
+        // 直接试编辑 routeA：路由可见性失败 → 4xx
+        String body = om.writeValueAsString(Map.of("enabled", false));
+        ResponseEntity<String> rp = restTemplate.exchange(base + "/api/routes/" + routeA,
+                HttpMethod.PUT, new HttpEntity<>(body, bH), String.class);
+        assertThat(rp.getStatusCode().is4xxClientError()).isTrue();
+    }
+
     // ---------- 帮助方法 ----------
 
     private void publishPrice(HttpHeaders ah, long modelId, String input, String output) throws Exception {
@@ -651,6 +902,24 @@ class TenantModelIntegrationTest {
         ResponseEntity<String> r = restTemplate.exchange(base + "/api/tenant-models/" + modelId + "/prices",
                 HttpMethod.POST, new HttpEntity<>(body, ah), String.class);
         assertThat(r.getStatusCode()).as("价格发布失败: %s", r.getBody()).isEqualTo(HttpStatus.OK);
+    }
+
+    /** 在模型下创建 OPENAI 路由并返回 routeId。 */
+    private long createRoute(HttpHeaders ah, long modelId, String protocol) throws Exception {
+        String body = om.writeValueAsString(Map.of("inboundProtocol", protocol));
+        ResponseEntity<String> r = restTemplate.exchange(base + "/api/tenant-models/" + modelId + "/routes",
+                HttpMethod.POST, new HttpEntity<>(body, ah), String.class);
+        assertThat(r.getStatusCode()).as("路由创建失败: %s", r.getBody()).isEqualTo(HttpStatus.OK);
+        return om.readTree(r.getBody()).get("data").get("id").asLong();
+    }
+
+    /** 在路由下创建路由目标并返回 targetId。 */
+    private long createTarget(HttpHeaders ah, long routeId, long mappingId) throws Exception {
+        String body = om.writeValueAsString(Map.of("tenantModelCandidateMappingId", mappingId));
+        ResponseEntity<String> r = restTemplate.exchange(base + "/api/routes/" + routeId + "/targets",
+                HttpMethod.POST, new HttpEntity<>(body, ah), String.class);
+        assertThat(r.getStatusCode()).as("路由目标创建失败: %s", r.getBody()).isEqualTo(HttpStatus.OK);
+        return om.readTree(r.getBody()).get("data").get("id").asLong();
     }
 
     private void enable(HttpHeaders ah, long modelId) throws Exception {

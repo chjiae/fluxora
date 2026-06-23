@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  模型路由 SQL：所有查询追加 deleted_at IS NULL；
+  同 (tenant_model_id, inbound_protocol) 未删除唯一由部分唯一索引 uk_model_route_active 兜底；
+  列表投影一次性带出当前目标数量，避免前端 N+1。
+-->
+<mapper namespace="io.fluxora.platform.model.mapper.ModelRouteMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO model_route(tenant_id, tenant_model_id, inbound_protocol, enabled, remark,
+            created_by, updated_by, created_at, updated_at)
+        VALUES(#{tenantId}, #{tenantModelId}, #{inboundProtocol}, #{enabled}, #{remark},
+            #{createdBy}, #{updatedBy}, NOW(), NOW())
+    </insert>
+
+    <select id="findById" resultType="io.fluxora.platform.model.ModelRoute">
+        SELECT id, tenant_id, tenant_model_id, inbound_protocol, enabled, remark,
+            deleted_at, created_by, updated_by, created_at, updated_at
+        FROM model_route WHERE id = #{id} AND deleted_at IS NULL
+    </select>
+
+    <select id="findByTenantModel" resultType="io.fluxora.platform.model.dto.ModelRouteSummary">
+        SELECT r.id, r.tenant_id, r.tenant_model_id, r.inbound_protocol, r.enabled, r.remark,
+            (SELECT COUNT(*) FROM route_target t
+                WHERE t.model_route_id = r.id AND t.deleted_at IS NULL) AS target_count,
+            r.created_at, r.updated_at
+        FROM model_route r
+        WHERE r.tenant_model_id = #{tenantModelId} AND r.deleted_at IS NULL
+        ORDER BY r.inbound_protocol ASC, r.id ASC
+    </select>
+
+    <select id="existsActiveByProtocol" resultType="int">
+        SELECT COUNT(*) FROM model_route
+        WHERE tenant_model_id = #{tenantModelId} AND inbound_protocol = #{inboundProtocol}
+          AND deleted_at IS NULL
+        <if test="excludeId != null">AND id &lt;&gt; #{excludeId}</if>
+    </select>
+
+    <update id="setEnabled">
+        UPDATE model_route SET enabled = #{enabled}, updated_by = #{updatedBy}, updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="updateRemark">
+        UPDATE model_route SET remark = #{remark}, updated_by = #{updatedBy}, updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        UPDATE model_route SET deleted_at = NOW(), updated_by = #{updatedBy}, updated_at = NOW(),
+            enabled = FALSE
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <select id="countActiveByTenantModel" resultType="long">
+        SELECT COUNT(*) FROM model_route
+        WHERE tenant_model_id = #{tenantModelId} AND deleted_at IS NULL
+    </select>
+
+    <select id="countActiveTargetsByTenantModel" resultType="long">
+        SELECT COUNT(*) FROM route_target t
+        JOIN model_route r ON r.id = t.model_route_id
+        WHERE r.tenant_model_id = #{tenantModelId}
+          AND r.deleted_at IS NULL AND t.deleted_at IS NULL
+    </select>
+</mapper>

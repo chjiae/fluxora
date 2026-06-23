@@ -45,6 +45,19 @@
                 AND cm.enabled = TRUE AND cm.deleted_at IS NULL
                 AND c.enabled = TRUE AND c.deleted_at IS NULL
           )
+          AND EXISTS(
+              SELECT 1 FROM model_route r
+              JOIN route_target t ON t.model_route_id = r.id
+              JOIN tenant_model_candidate_mapping mp ON mp.id = t.tenant_model_candidate_mapping_id
+              JOIN provider_channel_model cm ON cm.id = mp.provider_channel_model_id
+              JOIN provider_channel c ON c.id = cm.provider_channel_id
+              WHERE r.tenant_model_id = m.id
+                AND r.enabled = TRUE AND r.deleted_at IS NULL
+                AND t.enabled = TRUE AND t.deleted_at IS NULL
+                AND mp.enabled = TRUE AND mp.deleted_at IS NULL
+                AND cm.enabled = TRUE AND cm.deleted_at IS NULL
+                AND c.enabled = TRUE AND c.deleted_at IS NULL
+          )
         ORDER BY m.display_name ASC, m.id ASC
     </select>
 </mapper>

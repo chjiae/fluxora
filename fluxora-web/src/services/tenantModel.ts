@@ -157,6 +157,61 @@ export interface PublicTenantModel {
   cacheReadPricePerMillion: string | null
 }
 
+export type InboundProtocol = 'OPENAI' | 'ANTHROPIC'
+
+export interface ModelRouteSummary {
+  id: number
+  tenantId: number
+  tenantModelId: number
+  inboundProtocol: InboundProtocol
+  enabled: boolean
+  remark: string | null
+  targetCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RouteCreatePayload {
+  inboundProtocol: InboundProtocol
+  remark?: string
+}
+
+export interface RouteUpdatePayload {
+  enabled?: boolean
+  remark?: string
+}
+
+export interface RouteTargetSummary {
+  id: number
+  tenantId: number
+  modelRouteId: number
+  tenantModelCandidateMappingId: number
+  providerChannelId: number
+  channelName: string
+  upstreamModelIdSnapshot: string
+  enabled: boolean
+  priority: number
+  weight: number
+  remark: string | null
+  mappingAvailable: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TargetCreatePayload {
+  tenantModelCandidateMappingId: number
+  priority?: number
+  weight?: number
+  remark?: string
+}
+
+export interface TargetUpdatePayload {
+  enabled?: boolean
+  priority?: number
+  weight?: number
+  remark?: string
+}
+
 // ---------------- TenantModel ----------------
 
 export async function listTenantModels(params: TenantModelQuery): Promise<Page<TenantModelSummary>> {
@@ -249,4 +304,40 @@ export async function publishPrice(tenantModelId: number, payload: PricePublishP
 
 export async function listPublicModels(): Promise<PublicTenantModel[]> {
   return (await http.get('/api/models')).data.data
+}
+
+// ---------------- 路由 ----------------
+
+export async function listRoutes(tenantModelId: number): Promise<ModelRouteSummary[]> {
+  return (await http.get(`/api/tenant-models/${tenantModelId}/routes`)).data.data
+}
+
+export async function createRoute(tenantModelId: number, payload: RouteCreatePayload): Promise<ModelRouteSummary> {
+  return (await http.post(`/api/tenant-models/${tenantModelId}/routes`, payload)).data.data
+}
+
+export async function updateRoute(routeId: number, payload: RouteUpdatePayload): Promise<void> {
+  await http.put(`/api/routes/${routeId}`, payload)
+}
+
+export async function deleteRoute(routeId: number): Promise<void> {
+  await http.delete(`/api/routes/${routeId}`)
+}
+
+// ---------------- 路由目标 ----------------
+
+export async function listRouteTargets(routeId: number): Promise<RouteTargetSummary[]> {
+  return (await http.get(`/api/routes/${routeId}/targets`)).data.data
+}
+
+export async function createRouteTarget(routeId: number, payload: TargetCreatePayload): Promise<RouteTargetSummary> {
+  return (await http.post(`/api/routes/${routeId}/targets`, payload)).data.data
+}
+
+export async function updateRouteTarget(routeId: number, targetId: number, payload: TargetUpdatePayload): Promise<RouteTargetSummary> {
+  return (await http.put(`/api/routes/${routeId}/targets/${targetId}`, payload)).data.data
+}
+
+export async function deleteRouteTarget(routeId: number, targetId: number): Promise<void> {
+  await http.delete(`/api/routes/${routeId}/targets/${targetId}`)
 }

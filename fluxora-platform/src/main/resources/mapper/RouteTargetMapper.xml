@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  路由目标 SQL：所有查询追加 deleted_at IS NULL；
+  四方租户一致性与协议兼容性由服务层在写入前强校验；
+  countActiveByMapping 用于阻止删除被 ENABLED RouteTarget 引用的映射。
+-->
+<mapper namespace="io.fluxora.platform.model.mapper.RouteTargetMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO route_target(tenant_id, model_route_id, tenant_model_candidate_mapping_id,
+            provider_channel_id, upstream_model_id_snapshot, enabled, priority, weight, remark,
+            created_by, updated_by, created_at, updated_at)
+        VALUES(#{tenantId}, #{modelRouteId}, #{tenantModelCandidateMappingId},
+            #{providerChannelId}, #{upstreamModelIdSnapshot}, #{enabled}, #{priority}, #{weight}, #{remark},
+            #{createdBy}, #{updatedBy}, NOW(), NOW())
+    </insert>
+
+    <select id="findById" resultType="io.fluxora.platform.model.RouteTarget">
+        SELECT id, tenant_id, model_route_id, tenant_model_candidate_mapping_id,
+            provider_channel_id, upstream_model_id_snapshot, enabled, priority, weight, remark,
+            deleted_at, created_by, updated_by, created_at, updated_at
+        FROM route_target WHERE id = #{id} AND deleted_at IS NULL
+    </select>
+
+    <select id="findByRoute" resultType="io.fluxora.platform.model.dto.RouteTargetSummary">
+        SELECT t.id, t.tenant_id, t.model_route_id, t.tenant_model_candidate_mapping_id,
+            t.provider_channel_id, c.name AS channel_name, t.upstream_model_id_snapshot,
+            t.enabled, t.priority, t.weight, t.remark,
+            (mp.enabled = TRUE AND mp.deleted_at IS NULL
+                AND cm.enabled = TRUE AND cm.deleted_at IS NULL
+                AND c.enabled = TRUE AND c.deleted_at IS NULL) AS mapping_available,
+            t.created_at, t.updated_at
+        FROM route_target t
+        JOIN tenant_model_candidate_mapping mp ON mp.id = t.tenant_model_candidate_mapping_id
+        JOIN provider_channel_model cm ON cm.id = mp.provider_channel_model_id
+        JOIN provider_channel c ON c.id = t.provider_channel_id
+        WHERE t.model_route_id = #{modelRouteId} AND t.deleted_at IS NULL
+        ORDER BY t.priority ASC, t.id ASC
+    </select>
+
+    <select id="existsActivePair" resultType="int">
+        SELECT COUNT(*) FROM route_target
+        WHERE model_route_id = #{modelRouteId}
+          AND tenant_model_candidate_mapping_id = #{tenantModelCandidateMappingId}
+          AND deleted_at IS NULL
+    </select>
+
+    <update id="update">
+        UPDATE route_target
+        SET enabled = #{enabled}, priority = #{priority}, weight = #{weight}, remark = #{remark},
+            updated_by = #{updatedBy}, updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="setEnabled">
+        UPDATE route_target SET enabled = #{enabled}, updated_by = #{updatedBy}, updated_at = NOW()
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        UPDATE route_target SET deleted_at = NOW(), updated_by = #{updatedBy}, updated_at = NOW(),
+            enabled = FALSE
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <select id="countActiveByMapping" resultType="long">
+        SELECT COUNT(*) FROM route_target
+        WHERE tenant_model_candidate_mapping_id = #{mappingId}
+          AND enabled = TRUE AND deleted_at IS NULL
+    </select>
+
+    <!--
+      解析候选映射的事实快照：用于服务层在写入 RouteTarget 前做四方租户一致 + 协议兼容校验，
+      一次 JOIN 取得映射、候选、通道、协议；任一资源已删除则返回空。
+    -->
+    <select id="resolveMapping" resultType="io.fluxora.platform.model.mapper.RouteTargetMapper$MappingResolution">
+        SELECT mp.id AS mapping_id,
+               mp.tenant_id AS mapping_tenant_id,
+               mp.provider_channel_model_id,
+               cm.provider_channel_id,
+               c.tenant_id AS channel_tenant_id,
+               b.protocol,
+               cm.upstream_model_id,
+               mp.enabled AS mapping_enabled,
+               cm.enabled AS candidate_enabled,
+               c.enabled AS channel_enabled
+        FROM tenant_model_candidate_mapping mp
+        JOIN provider_channel_model cm ON cm.id = mp.provider_channel_model_id
+        JOIN provider_channel c ON c.id = cm.provider_channel_id
+        JOIN provider_base_url b ON b.id = c.provider_base_url_id
+        WHERE mp.id = #{mappingId}
+          AND mp.deleted_at IS NULL
+          AND cm.deleted_at IS NULL
+          AND c.deleted_at IS NULL
+          AND b.deleted_at IS NULL
+    </select>
+</mapper>
