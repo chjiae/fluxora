@@ -147,21 +147,39 @@ class GatewayRuntimeBehaviorTest {
     }
 
     @Test
-    void expiredTenantMustRejectAllApiKeys() {
+    void tenantExpiredByDateMustRejectAllApiKeys() {
         MemorySource source = new MemorySource();
         String apiKey = "flx_AbCdEf12_0123456789abcdefghijklmnopqrstuv";
         String lookupHash = new ApiKeyLookupHasher(SECRET).hash(apiKey);
         source.put(RuntimeScopeType.AUTH_API_KEY, lookupHash, apiKeySnapshot(lookupHash, true));
         source.put(RuntimeScopeType.AUTH_USER, "7:9", userSnapshot(7, 9, true));
+        // 租户状态 ENABLED 但 tenantExpiresAt 在过去 → notExpired 返回 false
         JsonObject expiredTenant = tenantSnapshot(7, true)
-                .put("expireAt", "2020-01-01T00:00:00Z")
-                .put("tenantStatus", "EXPIRED");
+                .put("tenantExpiresAt", "2020-01-01T00:00:00Z");
         source.put(RuntimeScopeType.AUTH_TENANT, "7", expiredTenant);
 
         Exception exception = assertThrows(Exception.class,
                 () -> await(authenticator(source).authenticate(apiKey)));
 
         assertEquals(GatewayFailure.Type.ACCOUNT_UNAVAILABLE, gatewayFailure(exception).type());
+    }
+
+    @Test
+    void apiKeyExpiredByDateMustBeRejectedAndEnterNegativeCache() {
+        MemorySource source = new MemorySource();
+        String apiKey = "flx_AbCdEf12_0123456789abcdefghijklmnopqrstuv";
+        String lookupHash = new ApiKeyLookupHasher(SECRET).hash(apiKey);
+        // API Key 状态 ENABLED 但 apiKeyExpiresAt 在过去
+        JsonObject expiredKey = apiKeySnapshot(lookupHash, true)
+                .put("apiKeyExpiresAt", "2020-01-01T00:00:00Z");
+        source.put(RuntimeScopeType.AUTH_API_KEY, lookupHash, expiredKey);
+
+        Exception exception = assertThrows(Exception.class,
+                () -> await(authenticator(source).authenticate(apiKey)));
+
+        assertEquals(GatewayFailure.Type.INVALID_API_KEY, gatewayFailure(exception).type());
+        // 过期 Key 进入负缓存 — 第二次调用不再查 Redis
+        assertEquals(1, source.loads(RuntimeScopeType.AUTH_API_KEY, lookupHash));
     }
 
     @Test
