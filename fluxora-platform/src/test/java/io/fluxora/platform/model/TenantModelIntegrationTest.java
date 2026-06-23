@@ -390,6 +390,8 @@ class TenantModelIntegrationTest {
         // 模型声明支持流式
         long m = createTenantModel(ah, tA, "m-cap-" + System.nanoTime(), "能力测试", true);
         createMapping(ah, m, cand);
+        // 先发布价格，让启用前置中的「无价格」分支不触发，从而暴露能力支撑校验失败
+        publishPrice(ah, m, "1.0", "2.0");
 
         ResponseEntity<String> r = restTemplate.exchange(base + "/api/tenant-models/" + m + "/enable",
                 HttpMethod.POST, new HttpEntity<>(ah), String.class);
@@ -412,5 +414,248 @@ class TenantModelIntegrationTest {
                 "ciphertext", "credential_fingerprint", "initialization_vector");
         // status 派生字段必须存在
         assertThat(om.readTree(body).get("data").get("status").asText()).isIn("DRAFT", "ENABLED", "DISABLED");
+    }
+
+    // =================== 11. 价格发布与版本递增（4 项 CNY 字符串） ===================
+
+    @Test
+    void shouldPublishImmutablePriceVersions() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long m = createTenantModel(ah, tA, "price-v-" + System.nanoTime(), "价格版本", false);
+
+        // v1
+        java.util.Map<String, Object> v1m = new java.util.HashMap<>();
+        v1m.put("inputPricePerMillion", "1.00");
+        v1m.put("outputPricePerMillion", "3.50");
+        v1m.put("cacheWritePricePerMillion", null);
+        v1m.put("cacheReadPricePerMillion", null);
+        String v1 = om.writeValueAsString(v1m);
+        ResponseEntity<String> r1 = restTemplate.exchange(base + "/api/tenant-models/" + m + "/prices",
+                HttpMethod.POST, new HttpEntity<>(v1, ah), String.class);
+        assertThat(r1.getStatusCode()).as("v1: %s", r1.getBody()).isEqualTo(HttpStatus.OK);
+        assertThat(om.readTree(r1.getBody()).get("data").get("version").asInt()).isEqualTo(1);
+        // 金额必须以字符串呈现（不是 Number）
+        assertThat(om.readTree(r1.getBody()).get("data").get("inputPricePerMillion").isTextual()).isTrue();
+
+        // v2 改价
+        String v2 = om.writeValueAsString(Map.of(
+                "inputPricePerMillion", "1.20",
+                "outputPricePerMillion", "3.60"));
+        ResponseEntity<String> r2 = restTemplate.exchange(base + "/api/tenant-models/" + m + "/prices",
+                HttpMethod.POST, new HttpEntity<>(v2, ah), String.class);
+        assertThat(r2.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(om.readTree(r2.getBody()).get("data").get("version").asInt()).isEqualTo(2);
+
+        // current 返回 v2
+        ResponseEntity<String> cur = restTemplate.exchange(base + "/api/tenant-models/" + m + "/prices/current",
+                HttpMethod.GET, new HttpEntity<>(ah), String.class);
+        assertThat(om.readTree(cur.getBody()).get("data").get("version").asInt()).isEqualTo(2);
+
+        // history 包含两条且 v2 在前
+        ResponseEntity<String> hist = restTemplate.exchange(base + "/api/tenant-models/" + m + "/prices",
+                HttpMethod.GET, new HttpEntity<>(ah), String.class);
+        JsonNode items = om.readTree(hist.getBody()).get("data");
+        assertThat(items.size()).isEqualTo(2);
+        assertThat(items.get(0).get("version").asInt()).isEqualTo(2);
+        assertThat(items.get(1).get("version").asInt()).isEqualTo(1);
+        // 历史 v1 携带 expiredAt 时刻
+        assertThat(items.get(1).get("expiredAt").isNull()).isFalse();
+    }
+
+    // =================== 12. 价格输入只接受字符串，拒绝 JSON Number 与超精度 ===================
+
+    @Test
+    void shouldRejectInvalidPriceInputs() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long m = createTenantModel(ah, tA, "price-bad-" + System.nanoTime(), "拒绝精度", false);
+
+        // 1) JSON Number 直接拒绝（DecimalStringDeserializer）
+        String numberBody = "{\"inputPricePerMillion\":1.5,\"outputPricePerMillion\":\"2.0\"}";
+        ResponseEntity<String> rn = restTemplate.exchange(base + "/api/tenant-models/" + m + "/prices",
+                HttpMethod.POST, new HttpEntity<>(numberBody, ah), String.class);
+        assertThat(rn.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        // 2) 超过 8 位小数
+        String body9 = om.writeValueAsString(Map.of(
+                "inputPricePerMillion", "1.123456789",
+                "outputPricePerMillion", "2.0"));
+        ResponseEntity<String> r9 = restTemplate.exchange(base + "/api/tenant-models/" + m + "/prices",
+                HttpMethod.POST, new HttpEntity<>(body9, ah), String.class);
+        assertThat(r9.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        // 3) 科学计数法
+        String sciBody = om.writeValueAsString(Map.of(
+                "inputPricePerMillion", "1e-3",
+                "outputPricePerMillion", "2.0"));
+        ResponseEntity<String> rs = restTemplate.exchange(base + "/api/tenant-models/" + m + "/prices",
+                HttpMethod.POST, new HttpEntity<>(sciBody, ah), String.class);
+        assertThat(rs.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        // 错误响应不暴露异常类、SQL、堆栈
+        assertThat(r9.getBody()).doesNotContain("Exception", "SQL", "stacktrace");
+    }
+
+    // =================== 13. 缓存能力与缓存价的一致性 ===================
+
+    @Test
+    void shouldEnforceCacheCapabilityVsCachePrice() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+
+        // 模型不支持缓存：禁止提交缓存价
+        long mNoCache = createTenantModel(ah, tA, "no-cache-" + System.nanoTime(), "无缓存", false);
+        String bad = om.writeValueAsString(Map.of(
+                "inputPricePerMillion", "1.0",
+                "outputPricePerMillion", "2.0",
+                "cacheWritePricePerMillion", "0.5",
+                "cacheReadPricePerMillion", "0.1"));
+        ResponseEntity<String> r1 = restTemplate.exchange(base + "/api/tenant-models/" + mNoCache + "/prices",
+                HttpMethod.POST, new HttpEntity<>(bad, ah), String.class);
+        assertThat(r1.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        // 模型支持缓存：必须两项缓存价齐备
+        String supportsCacheBody = om.writeValueAsString(Map.of(
+                "tenantId", tA,
+                "modelCode", "cache-" + System.nanoTime(),
+                "displayName", "缓存模型",
+                "supportsCache", true));
+        ResponseEntity<String> created = restTemplate.exchange(base + "/api/tenant-models",
+                HttpMethod.POST, new HttpEntity<>(supportsCacheBody, ah), String.class);
+        long mCache = om.readTree(created.getBody()).get("data").get("id").asLong();
+        String partial = om.writeValueAsString(Map.of(
+                "inputPricePerMillion", "1.0",
+                "outputPricePerMillion", "2.0",
+                "cacheWritePricePerMillion", "0.5"));
+        ResponseEntity<String> r2 = restTemplate.exchange(base + "/api/tenant-models/" + mCache + "/prices",
+                HttpMethod.POST, new HttpEntity<>(partial, ah), String.class);
+        assertThat(r2.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        // 完整缓存价：通过
+        String full = om.writeValueAsString(Map.of(
+                "inputPricePerMillion", "1.0",
+                "outputPricePerMillion", "2.0",
+                "cacheWritePricePerMillion", "0.5",
+                "cacheReadPricePerMillion", "0.1"));
+        ResponseEntity<String> r3 = restTemplate.exchange(base + "/api/tenant-models/" + mCache + "/prices",
+                HttpMethod.POST, new HttpEntity<>(full, ah), String.class);
+        assertThat(r3.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    // =================== 14. 启用前置：必须有当前有效价格 ===================
+
+    @Test
+    void shouldBlockEnableWithoutCurrentPrice() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long pid = createSharedProvider(ah, "shp_" + System.nanoTime());
+        long bid = createBaseUrl(ah, pid, "OPENAI", "https://api.example.com/v1");
+        long ch = createChannel(ah, tA, bid, "通道-no-price");
+        long cand = createCandidate(ah, ch, "gpt-no-price", false);
+        long m = createTenantModel(ah, tA, "m-no-price-" + System.nanoTime(), "无价格", false);
+        createMapping(ah, m, cand);
+
+        ResponseEntity<String> r = restTemplate.exchange(base + "/api/tenant-models/" + m + "/enable",
+                HttpMethod.POST, new HttpEntity<>(ah), String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        // 用户可见的默认安全文案
+        assertThat(r.getBody()).contains("尚未满足启用条件", "请补充价格");
+    }
+
+    // =================== 15. 公开目录：当前租户可见 + 跨租户隔离 + 字段脱敏 ===================
+
+    @Test
+    void shouldExposeOnlyCurrentTenantPublishedModelsViaPublicCatalog() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long tB = createTenant(ah, "pubcat_" + System.nanoTime());
+        String adminB = createTenantAdmin(ah, tB);
+
+        // 为 A 与 B 各配置一个完整发布模型
+        long pid = createSharedProvider(ah, "shp_" + System.nanoTime());
+        long bid = createBaseUrl(ah, pid, "OPENAI", "https://api.example.com/v1");
+        long chA = createChannel(ah, tA, bid, "通道 A");
+        long chB = createChannel(ah, tB, bid, "通道 B");
+        long candA = createCandidate(ah, chA, "model-A", false);
+        long candB = createCandidate(ah, chB, "model-B", false);
+        long mA = createTenantModel(ah, tA, "pub-A-" + System.nanoTime(), "对外模型 A", false);
+        long mB = createTenantModel(ah, tB, "pub-B-" + System.nanoTime(), "对外模型 B", false);
+        createMapping(ah, mA, candA);
+        createMapping(ah, mB, candB);
+        publishPrice(ah, mA, "0.10", "0.30");
+        publishPrice(ah, mB, "0.20", "0.40");
+        enable(ah, mA);
+        enable(ah, mB);
+
+        // A 租户管理员调 /api/models 只看到 A
+        String adminAUsername = createTenantAdmin(ah, tA);
+        HttpHeaders aH = login(adminAUsername, "TaPass2026!");
+        ResponseEntity<String> rA = restTemplate.exchange(base + "/api/models",
+                HttpMethod.GET, new HttpEntity<>(aH), String.class);
+        assertThat(rA.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode itemsA = om.readTree(rA.getBody()).get("data");
+        assertThat(itemsA.size()).isEqualTo(1);
+        assertThat(itemsA.get(0).get("id").asLong()).isEqualTo(mA);
+
+        // B 租户管理员只看到 B
+        HttpHeaders bH = login(adminB, "TaPass2026!");
+        ResponseEntity<String> rB = restTemplate.exchange(base + "/api/models",
+                HttpMethod.GET, new HttpEntity<>(bH), String.class);
+        JsonNode itemsB = om.readTree(rB.getBody()).get("data");
+        assertThat(itemsB.size()).isEqualTo(1);
+        assertThat(itemsB.get(0).get("id").asLong()).isEqualTo(mB);
+
+        // 公开目录绝不返回内部字段
+        String body = rA.getBody();
+        assertThat(body).doesNotContain("tenantId", "providerChannelId", "providerChannel",
+                "upstreamModelId", "candidate", "mapping", "route", "credential",
+                "publishStatus", "deletedAt", "version");
+    }
+
+    // =================== 16. 公开目录：DRAFT/无价/缺映射的模型不可见 ===================
+
+    @Test
+    void shouldHidePublicModelsLackingPublishConditions() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        String adminA = createTenantAdmin(ah, tA);
+        HttpHeaders aH = login(adminA, "TaPass2026!");
+
+        // DRAFT 模型：未启用不可见
+        long mDraft = createTenantModel(ah, tA, "draft-" + System.nanoTime(), "草稿", false);
+        // 无价模型：即使配了映射，没有价格不应进入 enable，公开目录也不应出现
+        long pid = createSharedProvider(ah, "shp_" + System.nanoTime());
+        long bid = createBaseUrl(ah, pid, "OPENAI", "https://api.example.com/v1");
+        long ch = createChannel(ah, tA, bid, "通道-hide");
+        long cand = createCandidate(ah, ch, "hide-1", false);
+        long mNoPrice = createTenantModel(ah, tA, "no-price-pub-" + System.nanoTime(), "无价", false);
+        createMapping(ah, mNoPrice, cand);
+
+        ResponseEntity<String> r = restTemplate.exchange(base + "/api/models",
+                HttpMethod.GET, new HttpEntity<>(aH), String.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode items = om.readTree(r.getBody()).get("data");
+        for (JsonNode it : items) {
+            long id = it.get("id").asLong();
+            assertThat(id).as("草稿或无价模型不应出现在公开目录").isNotIn(mDraft, mNoPrice);
+        }
+    }
+
+    // ---------- 帮助方法 ----------
+
+    private void publishPrice(HttpHeaders ah, long modelId, String input, String output) throws Exception {
+        String body = om.writeValueAsString(Map.of(
+                "inputPricePerMillion", input,
+                "outputPricePerMillion", output));
+        ResponseEntity<String> r = restTemplate.exchange(base + "/api/tenant-models/" + modelId + "/prices",
+                HttpMethod.POST, new HttpEntity<>(body, ah), String.class);
+        assertThat(r.getStatusCode()).as("价格发布失败: %s", r.getBody()).isEqualTo(HttpStatus.OK);
+    }
+
+    private void enable(HttpHeaders ah, long modelId) throws Exception {
+        ResponseEntity<String> r = restTemplate.exchange(base + "/api/tenant-models/" + modelId + "/enable",
+                HttpMethod.POST, new HttpEntity<>(ah), String.class);
+        assertThat(r.getStatusCode()).as("启用失败: %s", r.getBody()).isEqualTo(HttpStatus.OK);
     }
 }

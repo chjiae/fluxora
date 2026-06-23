@@ -1,8 +1,10 @@
 package io.fluxora.platform.model;
 
 import io.fluxora.common.response.ApiResponse;
+import io.fluxora.platform.billing.DecimalStringDeserializer;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.model.dto.TenantModelCandidateMappingSummary;
+import io.fluxora.platform.model.dto.TenantModelPriceView;
 import io.fluxora.platform.model.dto.TenantModelStats;
 import io.fluxora.platform.model.dto.TenantModelSummary;
 import io.fluxora.platform.upstream.dto.UpstreamPage;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 /**
  * 租户模型管理与候选映射接口。
@@ -32,11 +35,14 @@ public class TenantModelController {
 
     private final TenantModelService tenantModelService;
     private final TenantModelCandidateMappingService mappingService;
+    private final TenantModelPriceService priceService;
 
     public TenantModelController(TenantModelService tenantModelService,
-                                 TenantModelCandidateMappingService mappingService) {
+                                 TenantModelCandidateMappingService mappingService,
+                                 TenantModelPriceService priceService) {
         this.tenantModelService = tenantModelService;
         this.mappingService = mappingService;
+        this.priceService = priceService;
     }
 
     // ========== 列表 / 详情 / 指标 ==========
@@ -184,6 +190,41 @@ public class TenantModelController {
         return m;
     }
 
+    // ========== 价格子资源 ==========
+
+    @GetMapping("/{tenantModelId}/prices/current")
+    @PreAuthorize("hasAuthority('PERM_TENANT_MODEL_READ')")
+    public ResponseEntity<ApiResponse<TenantModelPriceView>> currentPrice(
+            @PathVariable Long tenantModelId,
+            @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        return ResponseEntity.ok(ApiResponse.success(
+                priceService.currentPrice(tenantModelId, user, auth).orElse(null)));
+    }
+
+    @GetMapping("/{tenantModelId}/prices")
+    @PreAuthorize("hasAuthority('PERM_TENANT_MODEL_READ')")
+    public ResponseEntity<ApiResponse<List<TenantModelPriceView>>> priceHistory(
+            @PathVariable Long tenantModelId,
+            @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        return ResponseEntity.ok(ApiResponse.success(
+                priceService.priceHistory(tenantModelId, user, auth)));
+    }
+
+    @PostMapping("/{tenantModelId}/prices")
+    @PreAuthorize("hasAuthority('PERM_TENANT_MODEL_MANAGE')")
+    public ResponseEntity<ApiResponse<TenantModelPriceView>> publishPrice(
+            @PathVariable Long tenantModelId,
+            @RequestBody PricePublishRequest req,
+            @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        return ResponseEntity.ok(ApiResponse.success(priceService.publishPrice(
+                tenantModelId,
+                req.inputPricePerMillion(),
+                req.outputPricePerMillion(),
+                req.cacheWritePricePerMillion(),
+                req.cacheReadPricePerMillion(),
+                user, auth)));
+    }
+
     public record TenantModelRequest(
             /** 平台管理员必须显式传 tenantId；租户管理员忽略此入参，强制使用 JWT 当前租户 */
             Long tenantId,
@@ -201,5 +242,17 @@ public class TenantModelController {
     }
 
     public record MappingUpdateRequest(Boolean enabled, String remark) {
+    }
+
+    /**
+     * 价格发布请求体：所有金额字段必须为十进制字符串；
+     * 由 DecimalStringDeserializer 全局拒绝 JSON Number / 科学计数法 / 布尔。
+     */
+    public record PricePublishRequest(
+            @JsonDeserialize(using = DecimalStringDeserializer.class) String inputPricePerMillion,
+            @JsonDeserialize(using = DecimalStringDeserializer.class) String outputPricePerMillion,
+            @JsonDeserialize(using = DecimalStringDeserializer.class) String cacheWritePricePerMillion,
+            @JsonDeserialize(using = DecimalStringDeserializer.class) String cacheReadPricePerMillion
+    ) {
     }
 }

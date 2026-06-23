@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  C 端公开目录 SQL：
+  - 单条 JOIN 完成 TenantModel + 当前有效价格的拼装；
+  - 严格筛选可见模型：publish_status=ENABLED + enabled=TRUE + 未删除 + 存在当前有效价格
+    + 存在至少一个启用映射且对应候选与通道均启用未删除；
+  - 不暴露任何上游、候选、通道、凭证、路由细节；金额由 Jackson 全局序列化为字符串。
+-->
+<mapper namespace="io.fluxora.platform.model.mapper.PublicModelCatalogMapper">
+
+    <select id="findPublicModels" resultType="io.fluxora.platform.model.dto.PublicTenantModel">
+        SELECT
+            m.id,
+            m.model_code,
+            m.display_name,
+            m.description,
+            m.supports_streaming,
+            m.supports_tool_calling,
+            m.supports_vision,
+            m.supports_cache,
+            p.currency_code,
+            p.input_price_per_million,
+            p.output_price_per_million,
+            p.cache_write_price_per_million,
+            p.cache_read_price_per_million
+        FROM tenant_model m
+        JOIN tenant_model_price p
+          ON p.tenant_model_id = m.id AND p.expired_at IS NULL
+        JOIN tenant tn
+          ON tn.id = m.tenant_id
+        WHERE m.tenant_id = #{tenantId}
+          AND m.deleted_at IS NULL
+          AND m.publish_status = 'ENABLED'
+          AND m.enabled = TRUE
+          AND tn.deleted_at IS NULL
+          AND tn.enabled = TRUE
+          AND (tn.expire_at IS NULL OR tn.expire_at &gt; NOW())
+          AND EXISTS(
+              SELECT 1 FROM tenant_model_candidate_mapping mp
+              JOIN provider_channel_model cm ON cm.id = mp.provider_channel_model_id
+              JOIN provider_channel c ON c.id = cm.provider_channel_id
+              WHERE mp.tenant_model_id = m.id
+                AND mp.enabled = TRUE AND mp.deleted_at IS NULL
+                AND cm.enabled = TRUE AND cm.deleted_at IS NULL
+                AND c.enabled = TRUE AND c.deleted_at IS NULL
+          )
+        ORDER BY m.display_name ASC, m.id ASC
+    </select>
+</mapper>

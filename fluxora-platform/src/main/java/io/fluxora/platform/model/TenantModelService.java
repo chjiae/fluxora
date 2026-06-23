@@ -7,6 +7,7 @@ import io.fluxora.platform.model.dto.TenantModelSummary;
 import io.fluxora.platform.model.mapper.ProviderChannelModelMapper;
 import io.fluxora.platform.model.mapper.TenantModelCandidateMappingMapper;
 import io.fluxora.platform.model.mapper.TenantModelMapper;
+import io.fluxora.platform.model.mapper.TenantModelPriceMapper;
 import io.fluxora.platform.upstream.dto.UpstreamPage;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
 import java.util.List;
@@ -26,15 +27,18 @@ public class TenantModelService {
     private final TenantModelMapper tenantModelMapper;
     private final TenantModelCandidateMappingMapper mappingMapper;
     private final ProviderChannelModelMapper channelModelMapper;
+    private final TenantModelPriceMapper priceMapper;
     private final UpstreamTenantGuard tenantGuard;
 
     public TenantModelService(TenantModelMapper tenantModelMapper,
                               TenantModelCandidateMappingMapper mappingMapper,
                               ProviderChannelModelMapper channelModelMapper,
+                              TenantModelPriceMapper priceMapper,
                               UpstreamTenantGuard tenantGuard) {
         this.tenantModelMapper = tenantModelMapper;
         this.mappingMapper = mappingMapper;
         this.channelModelMapper = channelModelMapper;
+        this.priceMapper = priceMapper;
         this.tenantGuard = tenantGuard;
     }
 
@@ -202,6 +206,11 @@ public class TenantModelService {
         if (mappingCount == 0) {
             throw new ModelException(BusinessErrorCode.TENANT_MODEL_NOT_ENABLEABLE,
                     "请至少先完成一个有效的上游候选映射");
+        }
+        // 条件 2：必须存在当前有效价格
+        if (priceMapper.findCurrent(id).isEmpty()) {
+            throw new ModelException(BusinessErrorCode.TENANT_MODEL_NOT_ENABLEABLE,
+                    "请先配置有效价格后再发布模型");
         }
         // 条件 4：能力支撑校验——从有效候选集合中逐一比对
         List<ProviderChannelModel> candidates = mappingMapper.findActiveSupportingCandidates(id);

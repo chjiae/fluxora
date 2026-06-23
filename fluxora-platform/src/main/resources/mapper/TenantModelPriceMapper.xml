@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  租户模型价格 SQL：
+  - 价格版本不可篡改：只允许 INSERT；版本切换通过 expireCurrent + insert 两条 SQL 在同事务完成。
+  - 部分唯一索引 uk_tenant_model_price_current 兜底「同一模型最多一个有效价格版本」。
+  - 金额字段由 Jackson 全局序列化为 plain 字符串，禁止 IEEE-754 Number。
+-->
+<mapper namespace="io.fluxora.platform.model.mapper.TenantModelPriceMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO tenant_model_price(tenant_id, tenant_model_id, currency_code,
+            input_price_per_million, output_price_per_million,
+            cache_write_price_per_million, cache_read_price_per_million,
+            version, effective_at, expired_at, created_by, created_at)
+        VALUES(#{tenantId}, #{tenantModelId}, #{currencyCode},
+            #{inputPricePerMillion}, #{outputPricePerMillion},
+            #{cacheWritePricePerMillion}, #{cacheReadPricePerMillion},
+            #{version}, NOW(), NULL, #{createdBy}, NOW())
+    </insert>
+
+    <update id="expireCurrent">
+        UPDATE tenant_model_price
+        SET expired_at = NOW()
+        WHERE tenant_model_id = #{tenantModelId} AND expired_at IS NULL
+    </update>
+
+    <select id="findCurrent" resultType="io.fluxora.platform.model.dto.TenantModelPriceView">
+        SELECT id, tenant_id, tenant_model_id, currency_code,
+            input_price_per_million, output_price_per_million,
+            cache_write_price_per_million, cache_read_price_per_million,
+            version, effective_at, expired_at, created_at
+        FROM tenant_model_price
+        WHERE tenant_model_id = #{tenantModelId} AND expired_at IS NULL
+    </select>
+
+    <select id="findHistory" resultType="io.fluxora.platform.model.dto.TenantModelPriceView">
+        SELECT id, tenant_id, tenant_model_id, currency_code,
+            input_price_per_million, output_price_per_million,
+            cache_write_price_per_million, cache_read_price_per_million,
+            version, effective_at, expired_at, created_at
+        FROM tenant_model_price
+        WHERE tenant_model_id = #{tenantModelId}
+        ORDER BY version DESC, id DESC
+    </select>
+
+    <select id="findMaxVersion" resultType="int">
+        SELECT COALESCE(MAX(version), 0) FROM tenant_model_price
+        WHERE tenant_model_id = #{tenantModelId}
+    </select>
+</mapper>

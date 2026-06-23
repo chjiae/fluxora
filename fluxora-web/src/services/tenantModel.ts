@@ -114,6 +114,49 @@ export interface MappingUpdatePayload {
   remark?: string
 }
 
+// 价格视图：金额字段一律字符串，禁止 IEEE-754 Number；historical 版本携带 expiredAt。
+export interface TenantModelPriceView {
+  id: number
+  tenantId: number
+  tenantModelId: number
+  currencyCode: string
+  inputPricePerMillion: string
+  outputPricePerMillion: string
+  cacheWritePricePerMillion: string | null
+  cacheReadPricePerMillion: string | null
+  version: number
+  effectiveAt: string
+  /** 当前有效版本为 null */
+  expiredAt: string | null
+  createdAt: string
+}
+
+export interface PricePublishPayload {
+  /** 十进制字符串：禁止 number 类型，禁止科学计数法，最多 8 位小数 */
+  inputPricePerMillion: string
+  outputPricePerMillion: string
+  /** 不支持缓存的模型必须传 null/undefined；支持缓存的模型必须同时传两项 */
+  cacheWritePricePerMillion?: string | null
+  cacheReadPricePerMillion?: string | null
+}
+
+// C 端公开目录：绝不包含通道、上游模型、候选、映射、路由、版本号、deletedAt。
+export interface PublicTenantModel {
+  id: number
+  modelCode: string
+  displayName: string
+  description: string | null
+  supportsStreaming: boolean
+  supportsToolCalling: boolean
+  supportsVision: boolean
+  supportsCache: boolean
+  currencyCode: string
+  inputPricePerMillion: string
+  outputPricePerMillion: string
+  cacheWritePricePerMillion: string | null
+  cacheReadPricePerMillion: string | null
+}
+
 // ---------------- TenantModel ----------------
 
 export async function listTenantModels(params: TenantModelQuery): Promise<Page<TenantModelSummary>> {
@@ -186,4 +229,24 @@ export async function disableChannelCandidate(channelId: number, id: number): Pr
 }
 export async function deleteChannelCandidate(channelId: number, id: number): Promise<void> {
   await http.delete(`/api/provider-channels/${channelId}/models/${id}`)
+}
+
+// ---------------- 价格 ----------------
+
+export async function getCurrentPrice(tenantModelId: number): Promise<TenantModelPriceView | null> {
+  return (await http.get(`/api/tenant-models/${tenantModelId}/prices/current`)).data.data
+}
+
+export async function getPriceHistory(tenantModelId: number): Promise<TenantModelPriceView[]> {
+  return (await http.get(`/api/tenant-models/${tenantModelId}/prices`)).data.data
+}
+
+export async function publishPrice(tenantModelId: number, payload: PricePublishPayload): Promise<TenantModelPriceView> {
+  return (await http.post(`/api/tenant-models/${tenantModelId}/prices`, payload)).data.data
+}
+
+// ---------------- C 端公开目录 ----------------
+
+export async function listPublicModels(): Promise<PublicTenantModel[]> {
+  return (await http.get('/api/models')).data.data
 }
