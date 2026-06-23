@@ -15,6 +15,8 @@ import ConsoleOverviewView from '../views/ConsoleOverviewView.vue'
 import ProviderManagementView from '../views/ProviderManagementView.vue'
 import ProviderBaseUrlManagementView from '../views/ProviderBaseUrlManagementView.vue'
 import ProviderChannelManagementView from '../views/ProviderChannelManagementView.vue'
+import TenantModelManagementView from '../views/TenantModelManagementView.vue'
+import PublicModelCatalogView from '../views/PublicModelCatalogView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 export const router = createRouter({
@@ -22,6 +24,7 @@ export const router = createRouter({
   routes: [
     { path: '/', component: HomeView },
     { path: '/docs', component: DocsView },
+    { path: '/models', component: PublicModelCatalogView, meta: { requiresAuth: true } },
     { path: '/login', component: LoginView, meta: { guest: true } },
     { path: '/console/setup', component: SelfOperatedSetupView, meta: { requiresAuth: true } },
     {
@@ -83,6 +86,7 @@ export const router = createRouter({
         { path: 'providers', component: ProviderManagementView },
         { path: 'provider-base-urls', component: ProviderBaseUrlManagementView },
         { path: 'provider-channels', component: ProviderChannelManagementView },
+        { path: 'tenant-models', component: TenantModelManagementView },
       ],
     },
   ],
@@ -153,8 +157,13 @@ router.beforeEach(async (to, _from, next) => {
         && !auth.canReadUpstream) {
       return next('/console/overview')
     }
+    // 租户模型管理页：只允许有 TENANT_MODEL_READ 的角色（PLATFORM_ADMIN / TENANT_ADMIN）进入；
+    // 普通成员只能访问公开目录 /models（依赖 TENANT_MODEL_PUBLIC_READ）
+    if (to.path === '/console/tenant-models' && !auth.canReadTenantModels) {
+      return next('/console/overview')
+    }
 
-    // 平台管理员且自营未初始化时，跳转初始化向导（setup页面除外）
+    // 自营初始化仅平台管理员可访问，租户管理员重定向到概览
     if (auth.isPlatformAdmin && to.path !== '/console/setup') {
       await auth.checkSelfOperatedStatus()
       if (!auth.selfOperatedInitialized) {

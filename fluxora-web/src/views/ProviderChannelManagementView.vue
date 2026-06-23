@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import MetricStrip from '@/components/MetricStrip.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import CredentialManagementPanel from '@/components/CredentialManagementPanel.vue'
+import ChannelModelCandidatesPanel from '@/components/ChannelModelCandidatesPanel.vue'
 import {
   createProviderChannel, deleteProviderChannel, getProviderChannelStats,
   getProviderChannel, listProviderBaseUrls, listProviderChannels, listProviders,
@@ -248,7 +249,10 @@ onMounted(async () => {
         </div>
         <n-divider style="margin:16px 0">通道凭证</n-divider>
         <CredentialManagementPanel :channel-id="detailChannel.id" :can-manage="detailCanManage" />
-        <!-- 上游模型候选已迁出本抽屉，统一在「租户模型」管理页中以候选映射形式维护，避免跨模块上下文跳跃 -->
+        <n-divider style="margin:16px 0">上游模型候选</n-divider>
+        <!-- 候选仅是「上游模型 + 能力 + 启停」纯 CRUD；
+             V10 后不再可映射到任何全局模型，候选用于「租户模型 → 候选映射」中被引用 -->
+        <ChannelModelCandidatesPanel :channel-id="detailChannel.id" :can-manage="detailCanManage" />
       </n-drawer-content>
     </n-drawer>
   </section>
