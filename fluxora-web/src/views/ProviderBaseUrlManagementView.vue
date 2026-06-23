@@ -146,7 +146,10 @@ onMounted(async () => { await loadProviders(); await loadAll() })
 
     <MetricStrip :items="metricItems" :loading="statsLoading" />
 
-    <n-alert v-if="selectedProvider && selectedProvider.scopeType === 'PLATFORM_SHARED' && !auth.isPlatformAdmin" type="info" :bordered="false">平台共享接入地址可供创建通道，但只有平台管理员可以修改。</n-alert>
+    <!-- 始终占据 Grid 的提示行，避免条件渲染后表格落入 auto 行而 flex-height 无法显示数据。 -->
+    <div class="notice-region">
+      <n-alert v-if="selectedProvider && selectedProvider.scopeType === 'PLATFORM_SHARED' && !auth.isPlatformAdmin" type="info" :bordered="false">平台共享接入地址可供创建通道，但只有平台管理员可以修改。</n-alert>
+    </div>
 
     <div class="table-region">
       <n-data-table v-if="rows.length || loading" :columns="columns" :data="rows" :loading="loading" :pagination="false" :bordered="false" :single-line="false" :row-props="rowProps" :scroll-x="800" flex-height size="medium" />
@@ -171,6 +174,7 @@ onMounted(async () => { await loadProviders(); await loadAll() })
 .page-hdr-text h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
 .page-hdr-text p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
 .hdr-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.notice-region { min-height: 0; }
 .table-region { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .table-region :deep(.n-data-table) { flex: 1; min-height: 0; }
 .empty { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 240px; }

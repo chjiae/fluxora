@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 
 describe('upstream management', () => {
   it('exposes typed upstream API operations', async () => {
@@ -15,6 +17,13 @@ describe('upstream management', () => {
     await expect(import('@/views/ProviderManagementView.vue')).resolves.toBeDefined()
     await expect(import('@/views/ProviderBaseUrlManagementView.vue')).resolves.toBeDefined()
     await expect(import('@/views/ProviderChannelManagementView.vue')).resolves.toBeDefined()
+  })
+
+  it('keeps the base-url table in the flexible Grid row even when its notice is hidden', async () => {
+    const source = await readFile(resolve(process.cwd(), 'src/views/ProviderBaseUrlManagementView.vue'), 'utf8')
+    expect(source).toContain('class="notice-region"')
+    expect(source).toContain('.notice-region { min-height: 0; }')
+    expect(source).toContain('grid-template-rows: auto auto auto 1fr')
   })
 
   it('exposes credential panel and import drawer components', async () => {
