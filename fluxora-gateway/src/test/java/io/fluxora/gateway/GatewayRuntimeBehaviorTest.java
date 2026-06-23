@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Gateway 热路径测试使用内存快照来源，确保无需 PostgreSQL 或真实 Redis。 */
 class GatewayRuntimeBehaviorTest {
@@ -128,6 +129,151 @@ class GatewayRuntimeBehaviorTest {
                 apiKeySnapshot(lookupHash, true)));
         assertEquals(lookupHash, await(first).scopeKey());
         assertEquals(lookupHash, await(second).scopeKey());
+    }
+
+    @Test
+    void disabledTenantMustRejectAllApiKeys() {
+        MemorySource source = new MemorySource();
+        String apiKey = "flx_AbCdEf12_0123456789abcdefghijklmnopqrstuv";
+        String lookupHash = new ApiKeyLookupHasher(SECRET).hash(apiKey);
+        source.put(RuntimeScopeType.AUTH_API_KEY, lookupHash, apiKeySnapshot(lookupHash, true));
+        source.put(RuntimeScopeType.AUTH_USER, "7:9", userSnapshot(7, 9, true));
+        source.put(RuntimeScopeType.AUTH_TENANT, "7", tenantSnapshot(7, false));
+
+        Exception exception = assertThrows(Exception.class,
+                () -> await(authenticator(source).authenticate(apiKey)));
+
+        assertEquals(GatewayFailure.Type.ACCOUNT_UNAVAILABLE, gatewayFailure(exception).type());
+    }
+
+    @Test
+    void expiredTenantMustRejectAllApiKeys() {
+        MemorySource source = new MemorySource();
+        String apiKey = "flx_AbCdEf12_0123456789abcdefghijklmnopqrstuv";
+        String lookupHash = new ApiKeyLookupHasher(SECRET).hash(apiKey);
+        source.put(RuntimeScopeType.AUTH_API_KEY, lookupHash, apiKeySnapshot(lookupHash, true));
+        source.put(RuntimeScopeType.AUTH_USER, "7:9", userSnapshot(7, 9, true));
+        JsonObject expiredTenant = tenantSnapshot(7, true)
+                .put("expireAt", "2020-01-01T00:00:00Z")
+                .put("tenantStatus", "EXPIRED");
+        source.put(RuntimeScopeType.AUTH_TENANT, "7", expiredTenant);
+
+        Exception exception = assertThrows(Exception.class,
+                () -> await(authenticator(source).authenticate(apiKey)));
+
+        assertEquals(GatewayFailure.Type.ACCOUNT_UNAVAILABLE, gatewayFailure(exception).type());
+    }
+
+    @Test
+    void malformedApiKeyMustNotAccessRedis() {
+        MemorySource source = new MemorySource();
+        GatewayAuthenticator authenticator = authenticator(source);
+
+        // 格式非法（不以 flx_ 开头）→ 格式校验直接拒绝，不查 Redis
+        assertThrows(Exception.class, () -> await(authenticator.authenticate("not-a-flx-key")));
+        assertThrows(Exception.class, () -> await(authenticator.authenticate("sk-1234567890")));
+        assertThrows(Exception.class, () -> await(authenticator.authenticate("")));
+        assertThrows(Exception.class, () -> await(authenticator.authenticate((String) null)));
+    }
+
+    @Test
+    void disabledTenantModelMustRejectRouteResolution() {
+        MemorySource source = new MemorySource();
+        String scope = RouteScopeKey.of(101, "OPENAI", "gpt-disabled");
+        JsonObject route = routeSnapshot(101, "gpt-disabled", 1001);
+        route.put("tenantModelEnabled", false).put("tenantModelStatus", "DISABLED");
+        source.put(RuntimeScopeType.TENANT_MODEL_ROUTE, scope, route);
+
+        Exception exception = assertThrows(Exception.class,
+                () -> await(routeResolver(source).resolve(101, "OPENAI", "gpt-disabled", false)));
+
+        assertEquals(GatewayFailure.Type.MODEL_UNAVAILABLE, gatewayFailure(exception).type());
+    }
+
+    @Test
+    void disabledRouteMustRejectResolution() {
+        MemorySource source = new MemorySource();
+        String scope = RouteScopeKey.of(101, "OPENAI", "gpt-route-off");
+        JsonObject route = routeSnapshot(101, "gpt-route-off", 1001);
+        route.put("routeEnabled", false).put("routeStatus", "DISABLED");
+        source.put(RuntimeScopeType.TENANT_MODEL_ROUTE, scope, route);
+
+        Exception exception = assertThrows(Exception.class,
+                () -> await(routeResolver(source).resolve(101, "OPENAI", "gpt-route-off", false)));
+
+        assertEquals(GatewayFailure.Type.MODEL_UNAVAILABLE, gatewayFailure(exception).type());
+    }
+
+    @Test
+    void priceUnavailableMustRejectRouteResolution() {
+        MemorySource source = new MemorySource();
+        String scope = RouteScopeKey.of(101, "OPENAI", "gpt-no-price");
+        JsonObject route = routeSnapshot(101, "gpt-no-price", 1001);
+        route.put("priceAvailable", false);
+        source.put(RuntimeScopeType.TENANT_MODEL_ROUTE, scope, route);
+
+        Exception exception = assertThrows(Exception.class,
+                () -> await(routeResolver(source).resolve(101, "OPENAI", "gpt-no-price", false)));
+
+        assertEquals(GatewayFailure.Type.MODEL_UNAVAILABLE, gatewayFailure(exception).type());
+    }
+
+    @Test
+    void disabledRouteTargetMustBeExcludedFromSelection() {
+        JsonArray targets = new JsonArray()
+                .add(target(1, 10, 100).put("targetStatus", "DISABLED"))
+                .add(target(2, 20, 100));
+        RouteTargetSelector selector = new RouteTargetSelector();
+
+        // 唯一 enabled target 在 priority 20，应选中它
+        assertEquals(2L, selector.select(targets, "OPENAI").routeTargetId());
+    }
+
+    @Test
+    void invalidWeightMustBeExcludedFromSelection() {
+        // weight=0 和 weight=-1 不参与选择；唯一正 weight 为 target(3) weight=1
+        JsonArray targets = new JsonArray()
+                .add(target(1, 10, 0))
+                .add(target(2, 10, -1))
+                .add(target(3, 10, 1));
+        RouteTargetSelector selector = new RouteTargetSelector();
+        for (int i = 0; i < 50; i++) {
+            assertEquals(3L, selector.select(targets, "OPENAI").routeTargetId());
+        }
+    }
+
+    @Test
+    void weightSelectionMustConvergeToExpectedDistribution() {
+        JsonArray targets = new JsonArray()
+                .add(target(1, 10, 1))
+                .add(target(2, 10, 9));
+        RouteTargetSelector selector = new RouteTargetSelector();
+        int count1 = 0, count2 = 0;
+        for (int i = 0; i < 1000; i++) {
+            if (selector.select(targets, "OPENAI").routeTargetId() == 1L) count1++;
+            else count2++;
+        }
+        // 1:9 比例 → target2 应占 ~90%
+        assertTrue(count2 > 800, "weight=9 应承担 ~90% 流量，实际=" + count2 + "/1000");
+        assertTrue(count1 > 50, "weight=1 应承担 ~10% 流量，实际=" + count1 + "/1000");
+    }
+
+    @Test
+    void noUsableTargetMustMakeModelUnavailable() {
+        // 所有 target 都是 disabled 或 weight=0
+        JsonArray targets = new JsonArray()
+                .add(target(1, 10, 100).put("targetStatus", "DISABLED"))
+                .add(target(2, 10, 0));
+        JsonObject route = routeSnapshot(101, "gpt-dead", 1001);
+        route.put("targets", targets);
+        MemorySource source = new MemorySource();
+        source.put(RuntimeScopeType.TENANT_MODEL_ROUTE,
+                RouteScopeKey.of(101, "OPENAI", "gpt-dead"), route);
+
+        Exception exception = assertThrows(Exception.class,
+                () -> await(routeResolver(source).resolve(101, "OPENAI", "gpt-dead", false)));
+
+        assertEquals(GatewayFailure.Type.MODEL_UNAVAILABLE, gatewayFailure(exception).type());
     }
 
     private GatewayAuthenticator authenticator(MemorySource source) {

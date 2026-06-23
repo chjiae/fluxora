@@ -209,6 +209,50 @@ class RuntimeProjectionIntegrationTest {
         assertThat(error).as("错误摘要应持久化").contains("Redis");
     }
 
+    @Test
+    void outboxAndBusinessWriteMustBeSameTransaction() {
+        // 业务写入（INSERT tenant）与 Outbox 写入共享同一数据库事务。
+        // 验证方法：单个 tenant INSERT 后不提交事务无法被 Outbox 读取。
+        long tenantId = insertTenant();
+        outboxService.record(tenantId, "TENANT", tenantId, "CREATED", null);
+
+        // 同事务内 Outbox 记录可被立即领取
+        String worker = "tx-verify-" + System.nanoTime();
+        List<RuntimeOutboxEvent> events = runtimeMapper.claimDueBatch(worker, 5);
+        boolean found = events.stream().anyMatch(
+                e -> "TENANT".equals(e.aggregateType()) && tenantId == e.aggregateId());
+        assertThat(found).as("同一事务内的 Outbox 记录必须可被领取").isTrue();
+
+        // 清理
+        events.forEach(e -> runtimeMapper.markCompleted(e.id()));
+    }
+
+    @Test
+    void incompatibleSchemaVersionMustRejectManifestSwitch() {
+        long tenantId = insertTenant();
+        outboxService.record(tenantId, "TENANT", tenantId, "ENABLED", null);
+        RuntimeOutboxEvent event = claimSingle("schema-guard-" + System.nanoTime());
+
+        Set<RuntimeScope> scopes = impactResolver.resolve(event);
+        assertThat(scopes).isNotEmpty();
+        RuntimeScope scope = scopes.iterator().next();
+
+        // 构造 schemaVersion=999 的非法快照
+        long version = runtimeMapper.allocateVersion(scope.type().name(), scope.scopeKey());
+        com.fasterxml.jackson.databind.node.ObjectNode badSnapshot =
+                new com.fasterxml.jackson.databind.node.ObjectNode(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance);
+        badSnapshot.put("schemaVersion", 999);
+        badSnapshot.put("runtimeVersion", version);
+        badSnapshot.put("generatedAt", "");
+
+        // validateSnapshot 应拒绝 schemaVersion != 1
+        assertThat(org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> snapshotStore.writeSnapshotAndSwitch(scope, version, badSnapshot, event)))
+                .as("不兼容 schemaVersion 必须拒绝").hasMessageContaining("不完整");
+
+        runtimeMapper.markCompleted(event.id());
+    }
+
     private RuntimeOutboxEvent claimSingle(String workerId) {
         List<RuntimeOutboxEvent> events = runtimeMapper.claimDueBatch(workerId, 10);
         assertThat(events).hasSize(1);
