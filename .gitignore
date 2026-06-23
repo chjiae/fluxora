@@ -9,3 +9,9 @@ test-results/
 .idea/
 .vscode/
 *.iml
+# 本地开发日志：mvn / npm dev 调试输出，禁止入库
+*.local.log
+*.log
+# 本地 Claude / agents 缓存
+.claude/
+.agents/

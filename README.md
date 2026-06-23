@@ -101,6 +101,8 @@ npm run dev
 | PUT | `/api/cards/{cardId}/enable\|disable` | 启用 / 停用单张卡密（终态卡密拒绝） | 同上 |
 | GET | `/api/admin/cards/batches` | 跨租户卡密批次分页 | `CARD_CROSS_TENANT_MANAGE` |
 
+模型领域 API 清单详见「## 模型领域（V10 重建）」的接口清单小节；公开目录 `/api/models` 返回当前租户已发布模型的对外价格与能力。
+
 ## 上游配置
 
 ### 模型关系
@@ -180,14 +182,169 @@ $bytes = new-object byte[] 32; (new-object Security.Cryptography.RNGCryptoServic
 4. 使用默认租户管理员 `e2eadmin / chen2983` 登录（或通过自营初始化创建）。
 5. 进入「上游厂商」，可看到共享 Provider（只读）并创建本租户私有 Provider。
 6. 进入「上游通道」，点击 **新增通道**：选择共享厂商 → 选择 OPENAI 接入地址 → 填写名称，创建通道。
-7. 在通道列表点击通道名称，打开详情抽屉的「凭证」区域：
-   - **新增凭证**：输入上游 API Key（密码框），保存后列表只显示脱敏值（`sk-***YZ`），不可查看明文。
-   - **批量导入**：粘贴多行凭证，点击导入，查看汇总与逐行脱敏明细；再次导入相同凭证应全部跳过。
-   - **替换凭证**：输入新凭证并确认，旧密文不再被引用。
+7. 在通道列表点击通道名称，打开详情抽屉：
+   - 「凭证」区域：新增 / 替换 / 批量导入凭证，列表只显示脱敏值。
+   - 「上游模型候选」区域：手工新增候选（输入上游模型标识 + 能力声明），列表显示来源、状态与能力 chip。候选不再可映射到任何全局模型；候选用于「租户模型 → 候选映射」中被引用。
+   - 删除候选若仍被映射引用 → 显示「当前映射仍被路由使用，请先处理关联路由」中文提示。
 8. 普通成员（无 `UPSTREAM_READ` 权限）看不到「上游配置」菜单，访问路由被守卫拦截。
 9. 上下游配置页面在桌面（1440×900）、平板（768×1024）、移动端（390×844）视口下无横向溢出。
 10. 所有失败 toast / dialog 不出现 HTTP 状态码、业务编码、SQL、堆栈或后端原始 message。
 
+
+
+## 模型领域（V10 重建）
+
+### 核心结论
+
+- **不再存在全局 PlatformModel / PlatformModelPrice / 候选映射全局模型 / 平台默认价 / 价格继承 / TENANT_CUSTOM**。所有概念已从数据库、运行时、接口、页面、权限菜单移除。
+- `TenantModel` 是**唯一**对外模型主体；模型、价格、候选映射、路由、RouteTarget 全部按 `tenant_id` 隔离。
+- 不同租户允许使用相同 `model_code`；能力、价格、候选与路由完全独立。
+- **共享 Provider / ProviderBaseUrl** 只是「厂商定义 + 接入基础地址」两层共享；自 `provider_channel` 起所有资源带 `tenant_id`，跨租户不可达。共享 ≠ 共享通道 / 共享凭证 / 共享候选 / 共享模型 / 共享价格 / 共享路由。
+- C 端目录 `/api/models` 严格按当前用户 `tenant_id` 过滤；只返回 `publish_status=ENABLED` + 有当前有效价格 + 有映射 + 有路由 + 有 RouteTarget 的模型。
+
+### 最终关系
+
+```text
+Tenant
+├── Provider (PLATFORM_SHARED | TENANT_PRIVATE)         ← V7 保留
+├── ProviderBaseUrl                                      ← V7 保留
+├── ProviderChannel (tenant_id 必填)                    ← V7 保留
+│    ├── ProviderCredential                              ← V7 保留
+│    └── ProviderChannelModel                            ← V10 重建（无 platform_model_id）
+│
+└── TenantModel (tenant_id + model_code 部分唯一)        ← V10 新增
+     ├── TenantModelPrice (NUMERIC(24,8)，版本化历史)
+     ├── TenantModelCandidateMapping (三方租户一致)
+     └── ModelRoute (OPENAI / ANTHROPIC，同模型同协议未删除唯一)
+          └── RouteTarget (引用 mapping，承载 priority / weight)
+```
+
+启用 `TenantModel` 的前置条件（按服务层 `assertEnableable` 顺序）：
+
+1. 至少存在一个有效候选映射；
+2. 存在当前有效价格（`tenant_model_price.expired_at IS NULL`）；
+3. 至少一条未删除路由；
+4. 至少一个未删除 RouteTarget；
+5. 模型声明的全部能力（流式 / 工具 / 视觉 / 缓存）至少被一个有效候选（候选启用 + 通道启用 + 全部未删除）支撑；
+6. 当模型声明 `supportsCache=true` 时，价格必须同时配置缓存读 / 写两项。
+
+### 权限矩阵
+
+| 操作 | PLATFORM_ADMIN | TENANT_ADMIN | TENANT_MEMBER |
+|---|---|---|---|
+| 跨租户读 TenantModel | ✅ 显式 tenantId | ❌ | ❌ |
+| 本租户 TenantModel / 映射 / 价格 / 路由 / 目标 CRUD | ✅ 显式 tenantId 代管 | ✅ | ❌ |
+| 公开目录 `/api/models` | ✅ | ✅ | ✅ |
+
+权限码：`TENANT_MODEL_READ` / `TENANT_MODEL_MANAGE` / `TENANT_MODEL_CROSS_TENANT_MANAGE` / `TENANT_MODEL_PUBLIC_READ`。
+
+### 接口清单
+
+```text
+GET    /api/tenant-models                                列表（平台管理员可按 tenantId 过滤）
+POST   /api/tenant-models                                创建（平台管理员必须显式 tenantId）
+GET    /api/tenant-models/stats                          MetricStrip 单次聚合 SQL
+GET    /api/tenant-models/{id}                           详情
+PUT    /api/tenant-models/{id}                           编辑
+POST   /api/tenant-models/{id}/enable | disable          启停（启用走完整前置校验）
+DELETE /api/tenant-models/{id}                           软删（deleted_at）
+
+GET    /api/tenant-models/{id}/candidate-mappings        映射列表
+POST   /api/tenant-models/{id}/candidate-mappings        新增映射（三方租户一致 + 同对未删除唯一）
+PUT    /api/tenant-models/{id}/candidate-mappings/{mid}  启停 / 备注
+DELETE /api/tenant-models/{id}/candidate-mappings/{mid}  软删（被启用 RouteTarget 引用时拒绝）
+
+GET    /api/tenant-models/{id}/prices                    价格历史（倒序）
+GET    /api/tenant-models/{id}/prices/current            当前有效价格
+POST   /api/tenant-models/{id}/prices                    发布新版本（字符串、最多 8 位小数）
+
+GET    /api/tenant-models/{id}/routes                    路由列表
+POST   /api/tenant-models/{id}/routes                    新增路由
+PUT    /api/routes/{routeId}                             启停 / 备注
+DELETE /api/routes/{routeId}                             软删
+GET    /api/routes/{routeId}/targets                     路由目标列表
+POST   /api/routes/{routeId}/targets                     新增目标（四方租户一致 + 协议兼容）
+PUT    /api/routes/{routeId}/targets/{tid}               启停 / 优先级 / 权重 / 备注
+DELETE /api/routes/{routeId}/targets/{tid}               软删
+
+GET    /api/provider-channels/{cid}/models               候选列表（挂在通道下）
+POST/PUT/DELETE + enable / disable                       候选 CRUD（被映射引用时拒删）
+
+GET    /api/models                                       C 端公开目录（仅当前租户可见）
+```
+
+### 价格规则
+
+- 币种当前固定 `CNY`；保留 `currency_code` 字段为未来多币种预留。
+- 单价表示**每 100 万 Token 的 CNY 8 位小数原子精度值**；接口必须以字符串传输。
+- 入站统一通过 `@JsonDeserialize(using = DecimalStringDeserializer.class)` 拒绝 JSON Number / 布尔 / 结构化值。
+- `CnyPrecisionPolicy.toDecimal(...)` 拒绝科学计数法、超 8 位小数、负数。
+- 改价新增版本而非覆盖；部分唯一索引 `uk_tenant_model_price_current` 兜底「同时仅一个有效版本」。
+- 不支持缓存的模型不得配置缓存价；支持缓存的模型必须同时配置缓存读 / 写两项。
+
+### 清库与重建（开发环境）
+
+V8 / V9 历史迁移已写入 `flyway_schema_history`，但本地开发数据库可以重置后从空库重放 V1 → V10。**生产环境严禁执行**。
+
+```powershell
+# 1. 停掉 fluxora-platform
+# 2. 清空数据库（保留容器；只 DROP schema 后重建）
+docker exec -it <pg-container> psql -U fluxora -d fluxora -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+
+# 3. 重启 platform：Flyway 自动按 V1..V10 顺序执行迁移
+mvn -pl fluxora-platform -am spring-boot:run
+
+# 4. 启动 fluxora-web 后即可访问控制台
+cd fluxora-web; npm run dev
+```
+
+V10 自身包含 `DROP TABLE IF EXISTS … CASCADE` + `CREATE TABLE` 的完整重建语义，干净库重放路径上 V8 创建旧表 → V9 加宽旧列 → V10 删旧表并建新表，结果一致正确。**不要修改已有 V1–V9 文件**（会破坏 Flyway checksum）。
+
+### 浏览器手工验收
+
+按 `## 启动` 节启动 PostgreSQL、Redis、`fluxora-platform`、`fluxora-web` 后，可在浏览器完整走通租户模型领域：
+
+1. 以 `admin / Admin@2026!` 登录平台。
+2. 进入「上游厂商」/「接入地址」按 V7 流程创建共享 Provider + OPENAI 接入地址；为目标租户创建一个共享通道（也可走「上游通道」UI）。
+3. 进入「上游通道」详情抽屉，在「上游模型候选」区域为通道手工新增候选（输入上游模型标识 + 能力声明）。**控制台菜单不再有「平台模型库」入口**。
+4. 进入「租户模型」：
+   - 平台管理员在工具栏选择目标租户后才能创建模型；不选则提示「请先在工具栏选择目标租户」。
+   - 创建一个 TenantModel，填写编码 / 展示名 / 能力声明。
+   - 点击列表行进入详情抽屉：
+     - 「上游候选映射」分区：添加映射；候选池只包含本租户启用通道下未被映射的候选；尝试重复添加显示「该上游候选已映射到当前模型，无需重复添加」。
+     - 「价格」分区：发布新版本；输入 9 位小数或科学计数法触发前端正则拦截，错误提示不含 HTTP 状态码或异常文本。
+     - 「协议路由」分区：新增 OPENAI 路由 → 展开 → 添加目标。
+   - 在列表行 kebab 菜单选择「启用」；前置不满足时返回中文「模型尚未满足启用条件，请补充价格与路由配置后重试」。
+5. 切换到某租户管理员（如 `e2eadmin`）登录：
+   - 「租户模型」页只显示本租户模型，工具栏不出现「目标租户」选择器。
+   - 试图访问其他租户的模型路径 → 友好的 404 / 403 提示，不含技术文本。
+6. 退出后以任意租户成员访问 `/models`：
+   - 只看到当前租户已发布、配置完整的模型；
+   - 卡片只展示 `modelCode` / `displayName` / `description` / 能力 chip / 四项价格；**绝不**出现 `tenantId` / `providerChannelId` / `upstreamModelId` / `route` / `mapping` / `credential` / `version` / `publishStatus` / `deletedAt` 字段名或值。
+7. 桌面 / 平板 / 移动三视口下租户模型管理与公开目录均无横向溢出。
+8. 删除候选映射时若被启用 RouteTarget 占用，按钮触发后显示「当前映射仍被路由使用，请先处理关联路由」，先删除路由目标后映射可删。
+
+### 验收命令
+
+```powershell
+# 后端：15 类 / 132 测试
+mvn -pl fluxora-platform test
+
+# 前端单元：14 spec / 61 测试 + 生产构建
+cd fluxora-web; npm run test -- --run; npm run build
+
+# E2E（需先启动 platform + web；spec 7 场景 × 3 视口 = 21 测试）
+cd fluxora-web; npx playwright test e2e/tenant-model-isolation.spec.ts
+```
+
+### 本轮未实现（保留至后续提交）
+
+- Redis 运行时快照 / Outbox / 配置下发 / 网关本地缓存 / 真实路由解析；
+- 真实上游中继、SSE 流式转发、Token 解析、扣费、余额冻结、异步结算；
+- 候选自动同步（OpenAI `/models` 等）、连接测试、协议转换 / Adapter；
+- 「平台统一采购上游凭证并分配给多个租户」共享凭证能力（未来独立领域，本轮不混入）。
+
+模型领域的最终关系已可直接支撑未来按 `tenantId + inboundProtocol + tenantModelCode` 构建运行时快照：`TenantModel → TenantModelPrice → ModelRoute → RouteTarget → TenantModelCandidateMapping → ProviderChannelModel → ProviderChannel → ProviderCredential`。
 
 
 ## 自营租户保护规则
@@ -387,15 +544,14 @@ RETURNING balance - :delta AS balance_before,
 
 ## 验证
 
-### 模型目录、路由与定价验收
+### 模型领域验收（V10 重建）
 
-1. 启动 PostgreSQL、Redis、平台服务和前端后，平台管理员进入「平台模型库」创建模型；可编辑能力并启停。
-2. 在模型行选择「价格」，以 CNY 十进制字符串发布价格；最多 8 位小数，`1e-3`、JSON Number 与超过 8 位小数会被安全拒绝。
-3. 在「租户模型」选择目标租户，将平台模型发布为草稿；配置继承平台价或自定义价、协议路由与路由目标后才可启用。
-4. 在「上游通道」详情的「上游模型候选」区域，可手工新增、编辑、启停、删除候选；平台管理员可显式映射到平台模型。相同名称不会自动合并。
-5. OpenAI 通道可使用「自动同步」。本地演示可设置 `MODEL_DISCOVERY_MOCK_ENABLED=true`，不读取凭证也不发网络请求，但仍保留 SSRF 地址校验；同步结果会展示新增、更新、跳过、失败及逐项安全原因。
-6. 使用租户成员访问 `/models`，只会看到已启用租户模型的展示名称、能力、实际价格和币种；不会返回通道、上游模型、凭证、候选映射或路由信息。
-7. 执行 `mvn -pl fluxora-platform test`、`cd fluxora-web; npm run test -- --run; npm run build`。真实浏览器验收执行 `npx playwright test e2e/model-catalog.spec.ts`。
+详见上文「## 模型领域（V10 重建）」节的「浏览器手工验收」与「验收命令」。一次完整的端到端验收路径：
+
+1. `mvn -pl fluxora-platform test`：15 类 / 132 测试，含 `TenantModelIntegrationTest`（26 用例覆盖跨租户隔离、能力支撑、四方一致、引用保护、字段脱敏）。
+2. `cd fluxora-web; npm run test -- --run; npm run build`：14 spec / 61 测试 + vue-tsc + vite 全绿。
+3. 启动 platform + web，按浏览器手工验收节流程走通完整租户模型 / 候选映射 / 价格 / 路由 / 目标 / 公开目录。
+4. `npx playwright test e2e/tenant-model-isolation.spec.ts`：7 场景 × 3 视口（桌面 / 平板 / 移动）= 21 端到端测试。
 
 ### 后端
 ```powershell
@@ -438,8 +594,8 @@ npx playwright test
 - **API Key 管理**：`api_key` 表，HMAC-SHA256 + pepper 安全哈希，完整 plaintext 仅创建响应一次性返回，四态状态派生，双入口路由，跨租户权限隔离
 - **用户额度**：`user_credit_account`（DECIMAL 精确存储） + `credit_transaction`（不可篡改流水），`UPDATE…WHERE balance + delta >= 0 RETURNING` 原子调整，并发安全
 - **卡密充值**：`recharge_card_batch` + `recharge_card` 两层模型，独立 pepper + HMAC-SHA256 安全哈希，完整明文仅创建响应一次性返回，原子 UPDATE…RETURNING 核销 + 部分唯一索引双层防重复入账；`credit_transaction.source` 扩展为 `MANUAL_ADJUSTMENT` / `CARD_REDEEM`
+- **租户模型领域（V10 重建）**：V10 移除 PlatformModel / PlatformModelPrice / 候选映射全局模型 / 平台默认价 / 价格继承 / TENANT_CUSTOM 全部概念。新建六张以 `tenant_id` 隔离的表：`provider_channel_model`、`tenant_model`、`tenant_model_price`、`tenant_model_candidate_mapping`、`model_route`、`route_target`。`TenantModel` 是唯一对外模型主体；同租户内 `model_code` 唯一，跨租户允许重复。价格以「每 100 万 Token 的 CNY 8 位小数」字符串接口传输，版本化历史不可篡改。候选映射强制三方租户一致；RouteTarget 强制四方一致 + 协议兼容。启用模型需要：映射 + 价格 + 路由 + 目标 + 能力支撑全部满足。公开目录 `/api/models` 只返回当前租户已发布且配置完整的模型，绝不返回通道 / 候选 / 凭证 / 路由 / 映射 / 内部价格版本。前端在「上游通道详情」抽屉嵌入纯候选 CRUD；「租户模型」管理页五行 Grid + MetricStrip 单次聚合 + 详情抽屉嵌套（基础信息 / 候选映射 / 价格 / 路由 + 路由目标）；平台管理员代管必须显式选择目标租户。新权限：`TENANT_MODEL_READ` / `TENANT_MODEL_MANAGE` / `TENANT_MODEL_CROSS_TENANT_MANAGE` / `TENANT_MODEL_PUBLIC_READ`。
 - **人民币精度规则（V9）**：余额、流水、卡密和模型价格固定使用 `NUMERIC(24,8)`；唯一精度策略 `CnyPrecisionPolicy` 定义 `1 CNY = 100,000,000` 原子单位。接口以字符串传输，禁止 float/double/JavaScript Number。未来单次计费先以 `BigInteger` 汇总四项 `Token × 每百万 Token 单价` 分子，除以 `1,000,000` 后仅一次按“向上取整到余额原子单位”扣减；禁止分项提前舍入。
-- **模型控制面（V8/V9）**：每个通道独立维护 `ProviderChannelModel` 候选，支持手工新增、编辑、启停、软删，以及受 SSRF 防护的 OpenAI `/models` 同步；平台模型库维护稳定的公开编码与能力；租户模型以草稿发布，通过 `ModelRoute → RouteTarget` 配置协议、通道和候选映射，再设置继承或自定义 CNY 价格后启用。公开目录 `/api/models` 仅返回当前租户可用模型与实际价格，绝不返回通道、凭证、上游模型、映射或路由信息。
 - **前端页面**：`/console/api-keys`（我的 API Key）、`/console/credit`（我的额度）、`/console/credit/manage`（额度管理）、`/console/cards/redeem`（卡密充值）、`/console/cards/manage`（卡密管理），含一次性 Key 展示组件 `ApiKeyRevealPanel` 与一次性卡密展示组件 `RechargeCardRevealPanel`（含本地 TXT/CSV 导出）
 - **上游配置控制面**（V7）：`provider`、`provider_base_url`、`provider_channel`、`provider_credential` 四张表；AES-256-GCM 可逆加密 + HMAC-SHA-256 去重指纹；凭证批量导入（批内去重、一次 IN 查询、批量 INSERT…RETURNING）；部分唯一索引并发兜底；平台共享/租户私有隔离；三个管理页（上游厂商/接入地址/上游通道）+ 通道凭证管理与批量导入
 - **上游配置前端**：`/console/providers`、`/console/provider-base-urls`、`/console/provider-channels`；通道详情抽屉内嵌凭证管理面板与批量导入抽屉；StatusDot 脱敏展示；密码输入不回显；MetricStrip 指标条；所有页面复用五行 Grid + Naive UI 骨架
