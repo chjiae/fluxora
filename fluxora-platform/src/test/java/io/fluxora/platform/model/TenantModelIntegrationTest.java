@@ -893,6 +893,130 @@ class TenantModelIntegrationTest {
         assertThat(rp.getStatusCode().is4xxClientError()).isTrue();
     }
 
+    // =================== 23. 一模型多候选 + 一候选多模型（多对多语义） ===================
+
+    @Test
+    void shouldSupportManyToManyMappings() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long pid = createSharedProvider(ah, "shp_" + System.nanoTime());
+        long bid = createBaseUrl(ah, pid, "OPENAI", "https://api.example.com/v1");
+        long ch = createChannel(ah, tA, bid, "通道-m2m");
+        long cand1 = createCandidate(ah, ch, "m2m-cand-1", false);
+        long cand2 = createCandidate(ah, ch, "m2m-cand-2", false);
+        long m1 = createTenantModel(ah, tA, "m2m-A-" + System.nanoTime(), "模型 1", false);
+        long m2 = createTenantModel(ah, tA, "m2m-B-" + System.nanoTime(), "模型 2", false);
+
+        // 模型 1 映射两个候选
+        createMapping(ah, m1, cand1);
+        createMapping(ah, m1, cand2);
+        // 候选 1 同时被模型 1、模型 2 引用
+        createMapping(ah, m2, cand1);
+
+        ResponseEntity<String> r1 = restTemplate.exchange(
+                base + "/api/tenant-models/" + m1 + "/candidate-mappings",
+                HttpMethod.GET, new HttpEntity<>(ah), String.class);
+        assertThat(om.readTree(r1.getBody()).get("data").size()).isEqualTo(2);
+
+        ResponseEntity<String> r2 = restTemplate.exchange(
+                base + "/api/tenant-models/" + m2 + "/candidate-mappings",
+                HttpMethod.GET, new HttpEntity<>(ah), String.class);
+        assertThat(om.readTree(r2.getBody()).get("data").size()).isEqualTo(1);
+    }
+
+    // =================== 24. 软删除后资源不可继续被绑定 / 启用 / 路由 ===================
+
+    @Test
+    void shouldRejectOperationsOnSoftDeletedResources() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long m = createTenantModel(ah, tA, "soft-del-" + System.nanoTime(), "软删测试", false);
+
+        ResponseEntity<String> del = restTemplate.exchange(base + "/api/tenant-models/" + m,
+                HttpMethod.DELETE, new HttpEntity<>(ah), String.class);
+        assertThat(del.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // 软删除后任何后续操作返回 404 / 业务码 TENANT_MODEL_NOT_FOUND
+        ResponseEntity<String> get = restTemplate.exchange(base + "/api/tenant-models/" + m,
+                HttpMethod.GET, new HttpEntity<>(ah), String.class);
+        assertThat(get.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        ResponseEntity<String> en = restTemplate.exchange(base + "/api/tenant-models/" + m + "/enable",
+                HttpMethod.POST, new HttpEntity<>(ah), String.class);
+        assertThat(en.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        String body = om.writeValueAsString(Map.of("inputPricePerMillion", "1.0", "outputPricePerMillion", "2.0"));
+        ResponseEntity<String> pp = restTemplate.exchange(base + "/api/tenant-models/" + m + "/prices",
+                HttpMethod.POST, new HttpEntity<>(body, ah), String.class);
+        assertThat(pp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        // 错误响应不暴露技术文本
+        assertThat(pp.getBody()).doesNotContain("Exception", "SQL", "stacktrace");
+    }
+
+    // =================== 25. 共享 Provider/BaseUrl 各租户独立 Channel + 全链隔离 ===================
+
+    @Test
+    void shouldKeepResourcesIsolatedAcrossTenantsOverSharedProviderAndBaseUrl() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tA = ensureDefaultTenant(ah);
+        long tB = createTenant(ah, "share_" + System.nanoTime());
+        String adminB = createTenantAdmin(ah, tB);
+
+        // 同一个共享 Provider 与 BaseUrl
+        long pid = createSharedProvider(ah, "shp_" + System.nanoTime());
+        long bid = createBaseUrl(ah, pid, "OPENAI", "https://share.example.com/v1");
+
+        // 两租户各自创建独立通道
+        long chA = createChannel(ah, tA, bid, "share-A");
+        long chB = createChannel(ah, tB, bid, "share-B");
+        long candA = createCandidate(ah, chA, "share-a-cand", false);
+        long candB = createCandidate(ah, chB, "share-b-cand", false);
+        long mA = createTenantModel(ah, tA, "share-A-m-" + System.nanoTime(), "A 模型", false);
+        long mB = createTenantModel(ah, tB, "share-B-m-" + System.nanoTime(), "B 模型", false);
+        createMapping(ah, mA, candA);
+        createMapping(ah, mB, candB);
+
+        // 跨租户：A 的模型不能引用 B 的候选；即使 Provider/BaseUrl 共享也不行
+        String crossBody = om.writeValueAsString(Map.of("providerChannelModelId", candB));
+        ResponseEntity<String> cross = restTemplate.exchange(
+                base + "/api/tenant-models/" + mA + "/candidate-mappings",
+                HttpMethod.POST, new HttpEntity<>(crossBody, ah), String.class);
+        assertThat(cross.getStatusCode().is4xxClientError()).isTrue();
+
+        // 租户 B 管理员调通道列表不应包含 A 的通道
+        HttpHeaders bH = login(adminB, "TaPass2026!");
+        ResponseEntity<String> chList = restTemplate.exchange(
+                base + "/api/provider-channels", HttpMethod.GET, new HttpEntity<>(bH), String.class);
+        for (JsonNode it : om.readTree(chList.getBody()).get("data").get("items")) {
+            assertThat(it.get("tenantId").asLong()).as("租户 B 不应看到 A 的通道").isNotEqualTo(tA);
+        }
+    }
+
+    // =================== 26. 运行时不存在 PlatformModel 痕迹（V10 后） ===================
+
+    @Test
+    void shouldNotExposeAnyPlatformModelArtifacts() throws Exception {
+        HttpHeaders ah = adminAuth();
+        ensureDefaultTenant(ah);
+
+        // 现有租户模型接口的响应不应出现旧字段
+        ResponseEntity<String> list = restTemplate.exchange(base + "/api/tenant-models",
+                HttpMethod.GET, new HttpEntity<>(ah), String.class);
+        String body = list.getBody();
+        assertThat(body).doesNotContain("platformModelId", "platform_model_id",
+                "MODEL_CATALOG_", "MODEL_PLATFORM_", "INHERIT_PLATFORM_DEFAULT");
+
+        // 旧接口已彻底移除：Spring Security 链对未注册路由返回 403/404；不返回 Spring 内部错误
+        ResponseEntity<String> oldPath = restTemplate.exchange(base + "/api/platform-models",
+                HttpMethod.GET, new HttpEntity<>(ah), String.class);
+        assertThat(oldPath.getStatusCode().is4xxClientError() || oldPath.getStatusCode().is5xxServerError())
+                .as("旧 /api/platform-models 不应继续提供 200 响应").isTrue();
+        if (oldPath.getBody() != null) {
+            // 即使 4xx/5xx，响应体不得暴露异常堆栈
+            assertThat(oldPath.getBody()).doesNotContain("at io.fluxora", "java.lang.", "SQLException");
+        }
+    }
+
     // ---------- 帮助方法 ----------
 
     private void publishPrice(HttpHeaders ah, long modelId, String input, String output) throws Exception {
