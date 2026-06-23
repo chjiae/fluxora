@@ -120,6 +120,56 @@ class RuntimeProjectionIntegrationTest {
                 "credentialFingerprint", "runtime-secret");
     }
 
+    @Test
+    void manifestMustNeverRollBackToLowerVersion() throws Exception {
+        long tenantId = insertTenant();
+        long userId = insertTenantUser(tenantId);
+        String lookupHash = "b".repeat(64);
+        long apiKeyId = insertApiKey(tenantId, userId, lookupHash);
+
+        // v1 投影
+        outboxService.record(tenantId, "API_KEY", apiKeyId, "CREATED", null);
+        projector.project(claimSingle("runtime-reg-v1"));
+
+        RuntimeScope scope = RuntimeScope.apiKey(lookupHash, tenantId);
+        JsonNode manifestV1 = readManifest(scope);
+        assertThat(manifestV1.path("activeRuntimeVersion").asLong()).isEqualTo(1L);
+
+        // v2 投影
+        outboxService.record(tenantId, "API_KEY", apiKeyId, "DISABLED", null);
+        projector.project(claimSingle("runtime-reg-v2"));
+
+        JsonNode manifestV2 = readManifest(scope);
+        assertThat(manifestV2.path("activeRuntimeVersion").asLong()).isEqualTo(2L);
+
+        // 尝试用旧版本 v1 覆盖 Manifest — 必须被 Lua 脚本拒绝
+        String v1SnapshotJson = redisTemplate.opsForValue().get(
+                RuntimeRedisSnapshotStore.snapshotKey(scope, 1L));
+        assertThat(v1SnapshotJson).isNotNull();
+        JsonNode v1Snapshot = objectMapper.readTree(v1SnapshotJson);
+
+        // 直接用 Lua 尝试以 v1 覆盖 Manifest — 版本号小于当前 2，Lua 应拒绝
+        Long switched = redisTemplate.execute(
+                new org.springframework.data.redis.core.script.DefaultRedisScript<>("""
+                        local current = redis.call('GET', KEYS[1])
+                        if current then
+                          local decoded = cjson.decode(current)
+                          if decoded['activeRuntimeVersion'] and tonumber(decoded['activeRuntimeVersion']) >= tonumber(ARGV[1]) then
+                            return 0
+                          end
+                        end
+                        redis.call('SET', KEYS[1], ARGV[2])
+                        return 1
+                        """, Long.class),
+                java.util.List.of(RuntimeRedisSnapshotStore.manifestKey(scope)),
+                "1", v1SnapshotJson);
+        assertThat(switched).as("低版本 Manifest 不得覆盖高版本").isEqualTo(0L);
+
+        // Manifest 仍指向 v2
+        JsonNode manifestAfter = readManifest(scope);
+        assertThat(manifestAfter.path("activeRuntimeVersion").asLong()).isEqualTo(2L);
+    }
+
     private RuntimeOutboxEvent claimSingle(String workerId) {
         List<RuntimeOutboxEvent> events = runtimeMapper.claimDueBatch(workerId, 10);
         assertThat(events).hasSize(1);
