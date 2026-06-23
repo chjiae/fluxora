@@ -8,6 +8,7 @@ import io.fluxora.platform.model.mapper.RouteTargetMapper;
 import io.fluxora.platform.model.mapper.TenantModelCandidateMappingMapper;
 import io.fluxora.platform.model.mapper.TenantModelMapper;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -28,17 +29,20 @@ public class TenantModelCandidateMappingService {
     private final ProviderChannelModelMapper channelModelMapper;
     private final RouteTargetMapper routeTargetMapper;
     private final UpstreamTenantGuard tenantGuard;
+    private final RuntimeOutboxService runtimeOutboxService;
 
     public TenantModelCandidateMappingService(TenantModelCandidateMappingMapper mappingMapper,
                                               TenantModelMapper tenantModelMapper,
                                               ProviderChannelModelMapper channelModelMapper,
                                               RouteTargetMapper routeTargetMapper,
-                                              UpstreamTenantGuard tenantGuard) {
+                                              UpstreamTenantGuard tenantGuard,
+                                              RuntimeOutboxService runtimeOutboxService) {
         this.mappingMapper = mappingMapper;
         this.tenantModelMapper = tenantModelMapper;
         this.channelModelMapper = channelModelMapper;
         this.routeTargetMapper = routeTargetMapper;
         this.tenantGuard = tenantGuard;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     @Transactional(readOnly = true)
@@ -84,6 +88,7 @@ public class TenantModelCandidateMappingService {
         entity.setCreatedBy(user.getId());
         entity.setUpdatedBy(user.getId());
         mappingMapper.insert(entity);
+        runtimeOutboxService.record(model.getTenantId(), "TENANT_MODEL_CANDIDATE_MAPPING", entity.getId(), "CREATED", null);
         return mappingMapper.findByTenantModel(tenantModelId).stream()
                 .filter(s -> s.id().equals(entity.getId()))
                 .findFirst()
@@ -95,6 +100,8 @@ public class TenantModelCandidateMappingService {
         TenantModelCandidateMapping mapping = requireMapping(id, user, auth);
         tenantGuard.assertWritable(mapping.getTenantId());
         mappingMapper.setEnabled(id, enabled, user.getId());
+        runtimeOutboxService.record(mapping.getTenantId(), "TENANT_MODEL_CANDIDATE_MAPPING", id,
+                enabled ? "ENABLED" : "DISABLED", null);
     }
 
     @Transactional
@@ -114,6 +121,7 @@ public class TenantModelCandidateMappingService {
                     "当前映射仍被启用的路由目标引用，请先处理关联路由目标");
         }
         mappingMapper.softDelete(id, user.getId());
+        runtimeOutboxService.record(mapping.getTenantId(), "TENANT_MODEL_CANDIDATE_MAPPING", id, "DELETED", null);
     }
 
     private TenantModelCandidateMapping requireMapping(Long id, UserAccount user, Authentication auth) {

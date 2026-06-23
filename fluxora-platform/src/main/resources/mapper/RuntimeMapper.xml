@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  运行时配置唯一 SQL 文件。业务 Service 不得拼 Redis Key、决定 L1 名称或自行发送通知；
+  它们只在同一事务写 runtime_outbox，以下查询集中计算最小影响 Scope 与完整快照。
+-->
+<mapper namespace="io.fluxora.platform.runtime.mapper.RuntimeMapper">
+  <insert id="insertOutbox">
+    INSERT INTO runtime_outbox(tenant_id,aggregate_type,aggregate_id,mutation_type,impact_hint,occurred_at,status,next_retry_at)
+    VALUES(#{tenantId},#{aggregateType},#{aggregateId},#{mutationType},#{impactHint},NOW(),'PENDING',NOW())
+  </insert>
+  <!-- 原子领取一批任务；FOR UPDATE SKIP LOCKED 避免多 Projector 实例重复抢占。 -->
+  <select id="claimDueBatch" resultType="io.fluxora.platform.runtime.RuntimeOutboxEvent" affectData="true" flushCache="true">
+    WITH claimed AS (
+      SELECT id FROM runtime_outbox
+      WHERE status IN ('PENDING','RETRY') AND next_retry_at &lt;= NOW()
+      ORDER BY id FOR UPDATE SKIP LOCKED LIMIT #{limit}
+    )
+    UPDATE runtime_outbox outbox
+    SET status='PROCESSING', locked_by=#{workerId}, locked_at=NOW(), attempt_count=attempt_count+1
+    FROM claimed WHERE outbox.id=claimed.id
+    RETURNING outbox.id,outbox.tenant_id,outbox.aggregate_type,outbox.aggregate_id,outbox.mutation_type,
+              outbox.impact_hint,outbox.attempt_count,outbox.occurred_at
+  </select>
+  <!-- 进程在领取后崩溃时释放超时 PROCESSING 记录，避免任务永久卡死。 -->
+  <update id="recoverStaleProcessing">
+    UPDATE runtime_outbox SET status='RETRY',next_retry_at=NOW(),locked_by=NULL,locked_at=NULL,
+      last_error_summary='运行时投影领取超时，已安全重新调度'
+    WHERE status='PROCESSING' AND locked_at &lt; #{olderThan}
+  </update>
+  <update id="markCompleted">
+    UPDATE runtime_outbox SET status='COMPLETED',projected_at=NOW(),notified_at=NOW(),processed_at=NOW(),
+      locked_by=NULL,locked_at=NULL,last_error_summary=NULL WHERE id=#{id}
+  </update>
+  <update id="markRetry">
+    UPDATE runtime_outbox SET status='RETRY',next_retry_at=#{nextRetryAt},last_error_summary=#{errorSummary},
+      locked_by=NULL,locked_at=NULL WHERE id=#{id}
+  </update>
+  <!-- 同 Scope 版本由 PostgreSQL 原子 UPSERT 分配，禁止只用毫秒时间戳。 -->
+  <select id="allocateVersion" resultType="long" affectData="true" flushCache="true">
+    INSERT INTO runtime_snapshot_version(scope_type,scope_key,current_version,updated_at)
+    VALUES(#{scopeType},#{scopeKey},1,NOW())
+    ON CONFLICT(scope_type,scope_key) DO UPDATE
+      SET current_version=runtime_snapshot_version.current_version+1,updated_at=NOW()
+    RETURNING current_version
+  </select>
+
+  <select id="findApiKeyLookupHash" resultType="string">
+    SELECT lookup_hash FROM api_key WHERE id=#{apiKeyId} AND lookup_hash_version=1
+  </select>
+  <select id="findAuthUserScope" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow">
+    SELECT tenant_id AS tenantId,'AUTH' AS inboundProtocol,CAST(id AS TEXT) AS tenantModelCode FROM user_account WHERE id=#{userId}
+  </select>
+  <select id="findAuthTenantScope" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow">
+    SELECT id AS tenantId,'AUTH' AS inboundProtocol,CAST(id AS TEXT) AS tenantModelCode FROM tenant WHERE id=#{tenantId}
+  </select>
+
+  <sql id="routeScopeColumns">tm.tenant_id AS tenantId,r.inbound_protocol AS inboundProtocol,tm.model_code AS tenantModelCode</sql>
+  <sql id="routeScopeJoin">FROM tenant_model tm JOIN model_route r ON r.tenant_model_id=tm.id</sql>
+  <sql id="routeScopeDistinct">SELECT DISTINCT <include refid="routeScopeColumns"/> <include refid="routeScopeJoin"/></sql>
+  <select id="findRouteScopesByTenantModel" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> WHERE tm.id=#{tenantModelId}</select>
+  <select id="findRouteScopesByRoute" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> WHERE r.id=#{routeId}</select>
+  <select id="findRouteScopesByTarget" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN route_target target ON target.model_route_id=r.id WHERE target.id=#{targetId}</select>
+  <select id="findRouteScopesByMapping" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN route_target target ON target.model_route_id=r.id WHERE target.tenant_model_candidate_mapping_id=#{mappingId}</select>
+  <select id="findRouteScopesByCandidate" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id WHERE mapping.provider_channel_model_id=#{candidateId}</select>
+  <select id="findRouteScopesByChannel" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id WHERE candidate.provider_channel_id=#{channelId}</select>
+  <select id="findRouteScopesByCredential" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id JOIN provider_channel_credential binding ON binding.provider_channel_id=candidate.provider_channel_id WHERE binding.provider_credential_id=#{credentialId}</select>
+  <select id="findRouteScopesByProvider" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id JOIN provider_channel channel ON channel.id=candidate.provider_channel_id JOIN provider_base_url baseUrl ON baseUrl.id=channel.provider_base_url_id WHERE baseUrl.provider_id=#{providerId}</select>
+  <select id="findRouteScopesByBaseUrl" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id JOIN provider_channel channel ON channel.id=candidate.provider_channel_id WHERE channel.provider_base_url_id=#{baseUrlId}</select>
+  <select id="findAllRouteScopes" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/></select>
+  <select id="findAllApiKeyLookupHashes" resultType="string">SELECT lookup_hash FROM api_key WHERE lookup_hash_version=1</select>
+  <!-- 全量恢复用户快照时必须显式取 userId，禁止复用路由 Scope 的 modelCode 列。 -->
+  <select id="findAllAuthUserScopes" resultType="io.fluxora.platform.runtime.mapper.RuntimeAuthUserScopeRow">SELECT tenant_id AS tenantId,id AS userId FROM user_account WHERE tenant_id IS NOT NULL</select>
+  <select id="findAllAuthTenantScopes" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow">SELECT id AS tenantId,'AUTH' AS inboundProtocol,CAST(id AS TEXT) AS tenantModelCode FROM tenant</select>
+
+  <select id="findAuthApiKeySnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeAuthApiKeyRow">
+    SELECT id AS apiKeyId,tenant_id AS tenantId,user_id AS userId,enabled,expire_at AS expireAt,deleted_at AS deletedAt,
+           lookup_hash AS lookupHash,lookup_hash_version AS lookupHashVersion
+    FROM api_key WHERE lookup_hash=#{lookupHash} AND lookup_hash_version=1
+  </select>
+  <select id="findAuthUserSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeAuthUserRow">
+    SELECT tenant_id AS tenantId,id AS userId,enabled,deleted_at AS deletedAt FROM user_account WHERE id=#{userId} AND tenant_id=#{tenantId}
+  </select>
+  <select id="findAuthTenantSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeAuthTenantRow">
+    SELECT id AS tenantId,enabled,expire_at AS expireAt,deleted_at AS deletedAt,settlement_currency_code AS settlementCurrencyCode FROM tenant WHERE id=#{tenantId}
+  </select>
+  <!-- 强关联模型/价格/路由/目标/候选/通道/凭证池一次读取，供单个 TENANT_MODEL_ROUTE 原子快照使用。 -->
+  <select id="findRouteSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeRouteRow">
+    SELECT tm.tenant_id AS tenantId,tm.id AS tenantModelId,tm.model_code AS tenantModelCode,tm.enabled AS tenantModelEnabled,
+      tm.supports_streaming AS supportsStreaming,tm.supports_tool_calling AS supportsToolCalling,tm.supports_vision AS supportsVision,tm.supports_cache AS supportsCache,
+      route.inbound_protocol AS inboundProtocol,price.id AS priceId,price.version AS priceVersion,price.currency_code AS currencyCode,
+      price.input_price_per_million AS inputPricePerMillion,price.output_price_per_million AS outputPricePerMillion,
+      price.cache_write_price_per_million AS cacheWritePricePerMillion,price.cache_read_price_per_million AS cacheReadPricePerMillion,
+      price.effective_at AS priceEffectiveAt,price.expired_at AS priceExpiresAt,route.id AS routeId,route.enabled AS routeEnabled,
+      target.id AS routeTargetId,mapping.id AS mappingId,channel.id AS providerChannelId,candidate.id AS providerChannelModelId,
+      target.priority,target.weight,
+      COALESCE(target.enabled AND target.deleted_at IS NULL,FALSE) AS targetEnabled,
+      COALESCE(mapping.enabled AND mapping.deleted_at IS NULL,FALSE) AS mappingEnabled,
+      COALESCE(candidate.enabled AND candidate.deleted_at IS NULL,FALSE) AS candidateEnabled,
+      COALESCE(channel.enabled AND baseUrl.enabled AND provider.enabled AND channel.deleted_at IS NULL AND baseUrl.deleted_at IS NULL AND provider.deleted_at IS NULL,FALSE) AS channelEnabled,
+      baseUrl.protocol AS outboundProtocol,candidate.upstream_model_id AS upstreamModelId,
+      EXISTS(SELECT 1 FROM provider_channel_credential binding JOIN provider_credential credential ON credential.id=binding.provider_credential_id
+             WHERE binding.provider_channel_id=channel.id AND binding.enabled=TRUE AND binding.deleted_at IS NULL AND credential.enabled=TRUE AND credential.deleted_at IS NULL) AS hasUsableCredential,
+      COALESCE((SELECT MAX(EXTRACT(EPOCH FROM GREATEST(binding.updated_at,credential.updated_at))*1000)::BIGINT
+                FROM provider_channel_credential binding JOIN provider_credential credential ON credential.id=binding.provider_credential_id
+                WHERE binding.provider_channel_id=channel.id AND binding.deleted_at IS NULL AND credential.deleted_at IS NULL),0) AS credentialPoolVersion
+    FROM tenant_model tm JOIN model_route route ON route.tenant_model_id=tm.id
+      LEFT JOIN tenant_model_price price ON price.tenant_model_id=tm.id AND price.expired_at IS NULL
+      LEFT JOIN route_target target ON target.model_route_id=route.id AND target.deleted_at IS NULL
+      LEFT JOIN tenant_model_candidate_mapping mapping ON mapping.id=target.tenant_model_candidate_mapping_id
+      LEFT JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id
+      LEFT JOIN provider_channel channel ON channel.id=candidate.provider_channel_id
+      LEFT JOIN provider_base_url baseUrl ON baseUrl.id=channel.provider_base_url_id
+      LEFT JOIN provider ON provider.id=baseUrl.provider_id
+    WHERE tm.tenant_id=#{tenantId} AND tm.model_code=#{tenantModelCode} AND route.inbound_protocol=#{inboundProtocol}
+      AND tm.deleted_at IS NULL AND route.deleted_at IS NULL
+  </select>
+
+  <select id="findExpiredApiKeyIdsSince" resultType="long">SELECT id FROM api_key WHERE expire_at &gt; #{from} AND expire_at &lt;= #{until}</select>
+  <select id="findExpiredTenantIdsSince" resultType="long">SELECT id FROM tenant WHERE expire_at &gt; #{from} AND expire_at &lt;= #{until}</select>
+  <select id="findPriceChangedTenantModelIdsSince" resultType="long">SELECT DISTINCT tenant_model_id FROM tenant_model_price WHERE (effective_at &gt; #{from} AND effective_at &lt;= #{until}) OR (expired_at &gt; #{from} AND expired_at &lt;= #{until})</select>
+  <select id="findProjectionState" resultType="string">SELECT state_value FROM runtime_projection_state WHERE state_key=#{stateKey}</select>
+  <insert id="upsertProjectionState">INSERT INTO runtime_projection_state(state_key,state_value,updated_at) VALUES(#{stateKey},#{stateValue},NOW()) ON CONFLICT(state_key) DO UPDATE SET state_value=EXCLUDED.state_value,updated_at=NOW()</insert>
+</mapper>

@@ -14,6 +14,7 @@ import io.fluxora.platform.identity.mapper.MemberRow;
 import io.fluxora.platform.tenant.Tenant;
 import io.fluxora.platform.tenant.TenantException;
 import io.fluxora.platform.tenant.TenantMapper;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -55,15 +56,18 @@ public class MemberService {
     private final TenantMapper tenantMapper;
     private final PasswordEncoder passwordEncoder;
     private final io.fluxora.platform.credit.mapper.CreditMapper creditMapper;
+    private final RuntimeOutboxService runtimeOutboxService;
 
     public MemberService(IdentityMapper identityMapper,
                          TenantMapper tenantMapper,
                          PasswordEncoder passwordEncoder,
-                         io.fluxora.platform.credit.mapper.CreditMapper creditMapper) {
+                         io.fluxora.platform.credit.mapper.CreditMapper creditMapper,
+                         RuntimeOutboxService runtimeOutboxService) {
         this.identityMapper = identityMapper;
         this.tenantMapper = tenantMapper;
         this.passwordEncoder = passwordEncoder;
         this.creditMapper = creditMapper;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     // ============================================================
@@ -159,6 +163,7 @@ public class MemberService {
         user.setPasswordHash(passwordEncoder.encode(req.password()));
         identityMapper.insertUser(user);
         identityMapper.insertUserRole(user.getId(), role.getId());
+        runtimeOutboxService.record(tenantId, "USER_ACCOUNT", user.getId(), "CREATED", null);
 
         // 新建 TENANT 用户立即为其创建额度账户（幂等：如果账户已存在不重复创建）
         // 与 V5 迁移的数据回填互补——新建用户用服务层逻辑，已有用户靠迁移脚本补齐。
@@ -233,6 +238,7 @@ public class MemberService {
         assertSameTenant(currentUser, row.getTenantId());
         assertTenantWritable(row.getTenantId());
         identityMapper.setEnabled(memberId, true);
+        runtimeOutboxService.record(row.getTenantId(), "USER_ACCOUNT", memberId, "ENABLED", null);
         return loadSummary(memberId);
     }
 
@@ -251,6 +257,7 @@ public class MemberService {
             assertNotLastTenantAdmin(row.getTenantId(), memberId);
         }
         identityMapper.setEnabled(memberId, false);
+        runtimeOutboxService.record(row.getTenantId(), "USER_ACCOUNT", memberId, "DISABLED", null);
         return loadSummary(memberId);
     }
 
@@ -267,6 +274,7 @@ public class MemberService {
             assertNotLastTenantAdmin(row.getTenantId(), memberId);
         }
         identityMapper.softDelete(memberId);
+        runtimeOutboxService.record(row.getTenantId(), "USER_ACCOUNT", memberId, "DELETED", null);
         log.info("成员已软删除：userId={}, tenantId={}", memberId, row.getTenantId());
     }
 

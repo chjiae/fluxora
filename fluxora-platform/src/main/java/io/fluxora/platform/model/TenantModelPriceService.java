@@ -6,6 +6,7 @@ import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.model.dto.TenantModelPriceView;
 import io.fluxora.platform.model.mapper.TenantModelPriceMapper;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -25,13 +26,16 @@ public class TenantModelPriceService {
     private final TenantModelPriceMapper priceMapper;
     private final TenantModelService tenantModelService;
     private final UpstreamTenantGuard tenantGuard;
+    private final RuntimeOutboxService runtimeOutboxService;
 
     public TenantModelPriceService(TenantModelPriceMapper priceMapper,
                                    TenantModelService tenantModelService,
-                                   UpstreamTenantGuard tenantGuard) {
+                                   UpstreamTenantGuard tenantGuard,
+                                   RuntimeOutboxService runtimeOutboxService) {
         this.priceMapper = priceMapper;
         this.tenantModelService = tenantModelService;
         this.tenantGuard = tenantGuard;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     @Transactional(readOnly = true)
@@ -98,6 +102,7 @@ public class TenantModelPriceService {
         entity.setVersion(nextVersion);
         entity.setCreatedBy(user.getId());
         priceMapper.insert(entity);
+        runtimeOutboxService.record(model.getTenantId(), "TENANT_MODEL_PRICE", tenantModelId, "PUBLISHED", null);
 
         return priceMapper.findCurrent(tenantModelId)
                 .orElseThrow(() -> new ModelException(BusinessErrorCode.INTERNAL_ERROR, "价格写入后无法读回"));

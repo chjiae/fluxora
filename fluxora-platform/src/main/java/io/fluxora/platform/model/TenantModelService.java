@@ -10,6 +10,7 @@ import io.fluxora.platform.model.mapper.TenantModelCandidateMappingMapper;
 import io.fluxora.platform.model.mapper.TenantModelMapper;
 import io.fluxora.platform.model.mapper.TenantModelPriceMapper;
 import io.fluxora.platform.upstream.dto.UpstreamPage;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
 import java.util.List;
 import org.springframework.security.core.Authentication;
@@ -31,19 +32,22 @@ public class TenantModelService {
     private final TenantModelPriceMapper priceMapper;
     private final ModelRouteMapper routeMapper;
     private final UpstreamTenantGuard tenantGuard;
+    private final RuntimeOutboxService runtimeOutboxService;
 
     public TenantModelService(TenantModelMapper tenantModelMapper,
                               TenantModelCandidateMappingMapper mappingMapper,
                               ProviderChannelModelMapper channelModelMapper,
                               TenantModelPriceMapper priceMapper,
                               ModelRouteMapper routeMapper,
-                              UpstreamTenantGuard tenantGuard) {
+                              UpstreamTenantGuard tenantGuard,
+                              RuntimeOutboxService runtimeOutboxService) {
         this.tenantModelMapper = tenantModelMapper;
         this.mappingMapper = mappingMapper;
         this.channelModelMapper = channelModelMapper;
         this.priceMapper = priceMapper;
         this.routeMapper = routeMapper;
         this.tenantGuard = tenantGuard;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     public boolean isPlatformAdmin(Authentication auth) {
@@ -121,6 +125,7 @@ public class TenantModelService {
         entity.setCreatedBy(user.getId());
         entity.setUpdatedBy(user.getId());
         tenantModelMapper.insert(entity);
+        runtimeOutboxService.record(tenantId, "TENANT_MODEL", entity.getId(), "CREATED", null);
         return detail(entity.getId(), user, auth);
     }
 
@@ -129,6 +134,7 @@ public class TenantModelService {
                                      UserAccount user, Authentication auth) {
         TenantModel current = requireVisible(id, user, auth);
         Long tenantId = current.getTenantId();
+        String previousModelCode = current.getModelCode();
         tenantGuard.assertWritable(tenantId);
         validateBasics(patch);
         assertCodeUnique(tenantId, patch.getModelCode(), id);
@@ -141,6 +147,8 @@ public class TenantModelService {
         current.setSupportsCache(patch.isSupportsCache());
         current.setUpdatedBy(user.getId());
         tenantModelMapper.updateBasics(current);
+        // 保留更新前编码，使 Resolver 能同时重建旧模型编码与新模型编码的 Scope。
+        runtimeOutboxService.record(tenantId, "TENANT_MODEL", id, "UPDATED", previousModelCode);
         return detail(id, user, auth);
     }
 
@@ -152,6 +160,7 @@ public class TenantModelService {
         // 校验启用前置条件
         assertEnableable(current);
         tenantModelMapper.setPublishStatus(id, "ENABLED", true, user.getId());
+        runtimeOutboxService.record(tenantId, "TENANT_MODEL", id, "ENABLED", null);
     }
 
     @Transactional
@@ -159,6 +168,7 @@ public class TenantModelService {
         TenantModel current = requireVisible(id, user, auth);
         tenantGuard.assertWritable(current.getTenantId());
         tenantModelMapper.setPublishStatus(id, "DISABLED", false, user.getId());
+        runtimeOutboxService.record(current.getTenantId(), "TENANT_MODEL", id, "DISABLED", null);
     }
 
     @Transactional
@@ -168,6 +178,7 @@ public class TenantModelService {
         // 级联软删：路由目标 → 路由 → 模型 + 候选映射
         tenantModelMapper.cascadeSoftDelete(id, user.getId());
         tenantModelMapper.cascadeSoftDeleteMappings(id, user.getId());
+        runtimeOutboxService.record(current.getTenantId(), "TENANT_MODEL", id, "DELETED", current.getModelCode());
     }
 
     // ========== 内部校验 ==========

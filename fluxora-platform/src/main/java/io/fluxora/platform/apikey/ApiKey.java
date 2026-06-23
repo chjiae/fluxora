@@ -8,7 +8,8 @@ import java.time.Instant;
  * 安全约定：
  *   - 实体绝不持有完整明文 Key；plaintext 仅在 {@link io.fluxora.platform.apikey.dto.CreatedApiKeyResponse}
  *     中由创建接口返回一次。
- *   - key_prefix 是可见的公开标识；key_hash 是 HMAC-SHA256(secret_part, server_pepper) 的 hex。
+ *   - key_prefix 是可见的公开标识；lookupHash 是完整 canonical API Key 的 HMAC-SHA256 摘要，
+ *     供 Gateway 不访问 PostgreSQL 地安全定位运行时快照。
  *   - 状态四态由 enabled / expireAt / deletedAt 三个字段派生（{@link #getStatus()}），
  *     遵循 AGENT.md 软删除规范（deleted_at TIMESTAMPTZ NULL）。
  */
@@ -23,8 +24,10 @@ public class ApiKey {
     private String name;
     /** Key 前缀，形如 flx_XXXXXXXX，DB 索引列 */
     private String keyPrefix;
-    /** HMAC-SHA256(secret_part, server_pepper) 的 hex；网关校验用 */
-    private String keyHash;
+    /** 完整 canonical API Key 的 HMAC-SHA256 Lookup 摘要；严禁出现在 API 响应或日志。 */
+    private String lookupHash;
+    /** Lookup 摘要算法版本；1 为当前算法，0 仅表示迁移前停用历史 Key。 */
+    private int lookupHashVersion;
     /** 启用状态 */
     private boolean enabled;
     /** 过期时间；NULL 表示永不过期 */
@@ -46,8 +49,10 @@ public class ApiKey {
     public void setName(String name) { this.name = name; }
     public String getKeyPrefix() { return keyPrefix; }
     public void setKeyPrefix(String keyPrefix) { this.keyPrefix = keyPrefix; }
-    public String getKeyHash() { return keyHash; }
-    public void setKeyHash(String keyHash) { this.keyHash = keyHash; }
+    public String getLookupHash() { return lookupHash; }
+    public void setLookupHash(String lookupHash) { this.lookupHash = lookupHash; }
+    public int getLookupHashVersion() { return lookupHashVersion; }
+    public void setLookupHashVersion(int lookupHashVersion) { this.lookupHashVersion = lookupHashVersion; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public Instant getExpireAt() { return expireAt; }

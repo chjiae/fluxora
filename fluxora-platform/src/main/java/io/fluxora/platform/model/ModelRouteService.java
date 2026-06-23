@@ -5,6 +5,7 @@ import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.model.dto.ModelRouteSummary;
 import io.fluxora.platform.model.mapper.ModelRouteMapper;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import java.util.List;
 import java.util.Set;
 import org.springframework.security.core.Authentication;
@@ -24,13 +25,16 @@ public class ModelRouteService {
     private final ModelRouteMapper routeMapper;
     private final TenantModelService tenantModelService;
     private final UpstreamTenantGuard tenantGuard;
+    private final RuntimeOutboxService runtimeOutboxService;
 
     public ModelRouteService(ModelRouteMapper routeMapper,
                              TenantModelService tenantModelService,
-                             UpstreamTenantGuard tenantGuard) {
+                             UpstreamTenantGuard tenantGuard,
+                             RuntimeOutboxService runtimeOutboxService) {
         this.routeMapper = routeMapper;
         this.tenantModelService = tenantModelService;
         this.tenantGuard = tenantGuard;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     @Transactional(readOnly = true)
@@ -60,6 +64,7 @@ public class ModelRouteService {
         entity.setCreatedBy(user.getId());
         entity.setUpdatedBy(user.getId());
         routeMapper.insert(entity);
+        runtimeOutboxService.record(model.getTenantId(), "MODEL_ROUTE", entity.getId(), "CREATED", null);
         return routeMapper.findByTenantModel(tenantModelId).stream()
                 .filter(s -> s.id().equals(entity.getId()))
                 .findFirst()
@@ -71,6 +76,7 @@ public class ModelRouteService {
         ModelRoute route = requireRoute(id, user, auth);
         tenantGuard.assertWritable(route.getTenantId());
         routeMapper.setEnabled(id, enabled, user.getId());
+        runtimeOutboxService.record(route.getTenantId(), "MODEL_ROUTE", id, enabled ? "ENABLED" : "DISABLED", null);
     }
 
     @Transactional
@@ -87,6 +93,7 @@ public class ModelRouteService {
         // RouteTarget 通过 model_route_id 引用本表；软删 route 后已有 target 不再可见，
         // 因此无需级联硬删 target；后续启用前置会重新校验路由与目标是否存在。
         routeMapper.softDelete(id, user.getId());
+        runtimeOutboxService.record(route.getTenantId(), "MODEL_ROUTE", id, "DELETED", null);
     }
 
     /**

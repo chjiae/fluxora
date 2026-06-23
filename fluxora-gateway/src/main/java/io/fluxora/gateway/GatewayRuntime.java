@@ -1,0 +1,56 @@
+package io.fluxora.gateway;
+
+import io.fluxora.gateway.auth.ApiKeyLookupHasher;
+import io.fluxora.gateway.auth.GatewayAuthenticator;
+import io.fluxora.gateway.route.GatewayRouteResolver;
+import io.fluxora.gateway.route.RouteTargetSelector;
+import io.fluxora.gateway.runtime.RedisRuntimeSnapshotSource;
+import io.fluxora.gateway.runtime.RuntimeInvalidationSubscriber;
+import io.fluxora.gateway.runtime.RuntimeL1Caches;
+import io.vertx.core.Future;
+import io.vertx.core.Vertx;
+import io.vertx.redis.client.Redis;
+import io.vertx.redis.client.RedisOptions;
+
+/** Gateway 运行时组合根：只装配 Redis、L1、HMAC 与内存路由，不含 JDBC、Platform HTTP 或上游凭证能力。 */
+public final class GatewayRuntime {
+    private final Vertx vertx;
+    private final Redis redis;
+    private final RuntimeInvalidationSubscriber subscriber;
+    private final GatewayAuthenticator authenticator;
+    private final GatewayRouteResolver routeResolver;
+    private final GatewayMetrics metrics;
+    private final RuntimeL1Caches caches;
+    /** 受限热点版本核对定时器；关闭 Gateway 时必须取消，避免测试/优雅退出后继续访问 Redis。 */
+    private long manifestVerificationTimerId = -1L;
+
+    public GatewayRuntime(Vertx vertx, GatewayRuntimeConfig config) {
+        this.vertx = vertx;
+        this.redis = Redis.createClient(vertx, new RedisOptions().setConnectionString(config.redisConnectionString()));
+        this.metrics = new GatewayMetrics();
+        this.caches = new RuntimeL1Caches(new RedisRuntimeSnapshotSource(redis), config, metrics);
+        this.authenticator = new GatewayAuthenticator(new ApiKeyLookupHasher(config.apiKeyLookupSecret()), caches, metrics);
+        this.routeResolver = new GatewayRouteResolver(caches, new RouteTargetSelector());
+        this.subscriber = new RuntimeInvalidationSubscriber(vertx, redis, config.invalidationChannel(), caches, metrics);
+    }
+
+    public GatewayAuthenticator authenticator() { return authenticator; }
+    public GatewayRouteResolver routeResolver() { return routeResolver; }
+    public GatewayMetrics metrics() { return metrics; }
+
+    /** Redis 暂不可用时仍启动 HTTP Server 并失败关闭；后台订阅会自动重连。 */
+    public void start() {
+        subscriber.start();
+        // 受限核对只覆盖本机热点缓存，不能替代 Pub/Sub 和硬 TTL，也不会形成逐请求 Redis 读取。
+        manifestVerificationTimerId = vertx.setPeriodic(5_000L, ignored -> caches.verifyHotManifestVersions(32));
+    }
+
+    public Future<Void> close() {
+        if (manifestVerificationTimerId >= 0L) {
+            vertx.cancelTimer(manifestVerificationTimerId);
+            manifestVerificationTimerId = -1L;
+        }
+        subscriber.close();
+        return redis.close();
+    }
+}

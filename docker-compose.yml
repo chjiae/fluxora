@@ -13,6 +13,7 @@ services:
       REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      APIKEY_LOOKUP_SECRET: ${APIKEY_LOOKUP_SECRET:-fluxora-apikey-lookup-secret-for-local-development-only-please-override}
     ports: ["${PLATFORM_PORT:-8080}:8080"]
   gateway:
     build:
@@ -23,6 +24,7 @@ services:
       REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      APIKEY_LOOKUP_SECRET: ${APIKEY_LOOKUP_SECRET:-fluxora-apikey-lookup-secret-for-local-development-only-please-override}
     ports: ["${GATEWAY_PORT:-8081}:8081"]
   web:
     build:

@@ -7,6 +7,7 @@ import io.fluxora.platform.model.mapper.ProviderChannelModelMapper;
 import io.fluxora.platform.upstream.channel.ProviderChannel;
 import io.fluxora.platform.upstream.channel.ProviderChannelMapper;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -24,13 +25,16 @@ public class ProviderChannelModelService {
     private final ProviderChannelModelMapper mapper;
     private final ProviderChannelMapper channelMapper;
     private final UpstreamTenantGuard tenantGuard;
+    private final RuntimeOutboxService runtimeOutboxService;
 
     public ProviderChannelModelService(ProviderChannelModelMapper mapper,
                                        ProviderChannelMapper channelMapper,
-                                       UpstreamTenantGuard tenantGuard) {
+                                       UpstreamTenantGuard tenantGuard,
+                                       RuntimeOutboxService runtimeOutboxService) {
         this.mapper = mapper;
         this.channelMapper = channelMapper;
         this.tenantGuard = tenantGuard;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     public boolean isPlatformAdmin(Authentication auth) {
@@ -67,6 +71,7 @@ public class ProviderChannelModelService {
         entity.setCreatedBy(user.getId());
         entity.setUpdatedBy(user.getId());
         mapper.insert(entity);
+        runtimeOutboxService.record(tenantId, "PROVIDER_CHANNEL_MODEL", entity.getId(), "CREATED", null);
         return mapper.findByChannel(channelId).stream()
                 .filter(s -> s.id().equals(entity.getId()))
                 .findFirst()
@@ -94,6 +99,7 @@ public class ProviderChannelModelService {
         current.setSupportsCache(patch.isSupportsCache());
         current.setUpdatedBy(user.getId());
         mapper.updateBasics(current);
+        runtimeOutboxService.record(current.getTenantId(), "PROVIDER_CHANNEL_MODEL", id, "UPDATED", null);
         return mapper.findByChannel(current.getProviderChannelId()).stream()
                 .filter(s -> s.id().equals(id))
                 .findFirst().orElseThrow(() -> new ModelException(BusinessErrorCode.CHANNEL_MODEL_NOT_FOUND, "候选已不存在"));
@@ -105,6 +111,8 @@ public class ProviderChannelModelService {
                 .orElseThrow(() -> new ModelException(BusinessErrorCode.CHANNEL_MODEL_NOT_FOUND, "上游候选不存在"));
         tenantGuard.assertWritable(current.getTenantId());
         mapper.setEnabled(id, enabled, user.getId());
+        runtimeOutboxService.record(current.getTenantId(), "PROVIDER_CHANNEL_MODEL", id,
+                enabled ? "ENABLED" : "DISABLED", null);
     }
 
     @Transactional
@@ -118,5 +126,6 @@ public class ProviderChannelModelService {
                     "当前候选仍被租户模型映射引用，无法删除");
         }
         mapper.softDelete(id, user.getId());
+        runtimeOutboxService.record(current.getTenantId(), "PROVIDER_CHANNEL_MODEL", id, "DELETED", null);
     }
 }

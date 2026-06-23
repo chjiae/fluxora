@@ -22,7 +22,17 @@ public interface ProviderCredentialMapper {
      * 使用 INSERT ... ON CONFLICT (...) DO NOTHING RETURNING，单条 SQL 完成批量写入与并发兜底；
      * 返回值用于区分本请求成功写入的行与因并发已存在被跳过的行，避免逐条查询（N+1）。
      */
-    List<String> insertBatchReturningFingerprints(@Param("items") List<ProviderCredential> items);
+    List<ProviderCredential> insertBatchReturningCredentials(@Param("items") List<ProviderCredential> items);
+
+    /** 在同一租户通道创建有效绑定；绑定关系才决定该通道的凭证池是否可用。 */
+    void bindCredential(@Param("tenantId") Long tenantId,
+                        @Param("channelId") Long channelId,
+                        @Param("credentialId") Long credentialId);
+
+    /** 批量导入后单条 SQL 批量创建绑定，禁止逐个调用 Mapper。 */
+    void bindBatch(@Param("tenantId") Long tenantId,
+                   @Param("channelId") Long channelId,
+                   @Param("credentials") List<ProviderCredential> credentials);
 
     /** 元数据投影：不含密文、随机向量、指纹、加密版本、deleted_at。 */
     Optional<ProviderCredential> findMetadataById(@Param("id") Long id);
@@ -46,6 +56,15 @@ public interface ProviderCredentialMapper {
                                         @Param("channelId") Long channelId,
                                         @Param("fingerprints") Collection<String> fingerprints,
                                         @Param("excludeId") Long excludeId);
+
+    /** 用于显式复用同租户同 Provider 的已有凭证，返回值仍不含密文。 */
+    Optional<ProviderCredential> findActiveByFingerprint(@Param("tenantId") Long tenantId,
+                                                          @Param("fingerprint") String fingerprint);
+    boolean hasActiveBinding(@Param("channelId") Long channelId, @Param("credentialId") Long credentialId);
+    long countActiveBindings(@Param("credentialId") Long credentialId);
+    void setBindingEnabled(@Param("channelId") Long channelId, @Param("credentialId") Long credentialId,
+                           @Param("enabled") boolean enabled);
+    void softDeleteBinding(@Param("channelId") Long channelId, @Param("credentialId") Long credentialId);
 
     void updateMetadata(ProviderCredential credential);
     void replaceSecret(ProviderCredential credential);

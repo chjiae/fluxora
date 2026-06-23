@@ -6,6 +6,7 @@ import io.fluxora.platform.model.dto.RouteTargetSummary;
 import io.fluxora.platform.model.mapper.MappingResolution;
 import io.fluxora.platform.model.mapper.RouteTargetMapper;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -27,13 +28,16 @@ public class RouteTargetService {
     private final RouteTargetMapper targetMapper;
     private final ModelRouteService routeService;
     private final UpstreamTenantGuard tenantGuard;
+    private final RuntimeOutboxService runtimeOutboxService;
 
     public RouteTargetService(RouteTargetMapper targetMapper,
                               ModelRouteService routeService,
-                              UpstreamTenantGuard tenantGuard) {
+                              UpstreamTenantGuard tenantGuard,
+                              RuntimeOutboxService runtimeOutboxService) {
         this.targetMapper = targetMapper;
         this.routeService = routeService;
         this.tenantGuard = tenantGuard;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     @Transactional(readOnly = true)
@@ -91,6 +95,7 @@ public class RouteTargetService {
         entity.setCreatedBy(user.getId());
         entity.setUpdatedBy(user.getId());
         targetMapper.insert(entity);
+        runtimeOutboxService.record(route.getTenantId(), "ROUTE_TARGET", entity.getId(), "CREATED", null);
         return targetMapper.findByRoute(routeId).stream()
                 .filter(s -> s.id().equals(entity.getId()))
                 .findFirst()
@@ -119,6 +124,7 @@ public class RouteTargetService {
         current.setRemark(blankToNull(remark));
         current.setUpdatedBy(user.getId());
         targetMapper.update(current);
+        runtimeOutboxService.record(route.getTenantId(), "ROUTE_TARGET", targetId, "UPDATED", null);
         return targetMapper.findByRoute(routeId).stream()
                 .filter(s -> s.id().equals(targetId))
                 .findFirst()
@@ -135,6 +141,7 @@ public class RouteTargetService {
             throw new ModelException(BusinessErrorCode.RESOURCE_NOT_FOUND, "路由目标不属于当前路由");
         }
         targetMapper.softDelete(targetId, user.getId());
+        runtimeOutboxService.record(route.getTenantId(), "ROUTE_TARGET", targetId, "DELETED", null);
     }
 
     private static String blankToNull(String s) {

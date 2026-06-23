@@ -2,13 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!--
     API Key MyBatis 映射。
-    所有业务查询默认追加 AND deleted_at IS NULL；keyHash 仅在 INSERT 写入，
-    不在任何 SELECT 返回；列表/详情字段集严格脱敏（无 key_hash，无 plaintext）。
+    所有业务查询默认追加 AND deleted_at IS NULL；lookupHash 仅在 INSERT 与内部运行时投影读取，
+    不在任何公开 SELECT 返回；列表/详情字段集严格脱敏（无 lookup_hash，无 plaintext）。
 -->
 <mapper namespace="io.fluxora.platform.apikey.mapper.ApiKeyMapper">
 
     <select id="findById" resultType="io.fluxora.platform.apikey.ApiKey">
-        SELECT id, tenant_id, user_id, name, key_prefix, key_hash, enabled,
+        SELECT id, tenant_id, user_id, name, key_prefix, lookup_hash, lookup_hash_version, enabled,
                expire_at, last_used_at, deleted_at, created_at, updated_at
         FROM api_key
         WHERE id = #{id} AND deleted_at IS NULL
@@ -111,9 +111,9 @@
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO api_key (tenant_id, user_id, name, key_prefix, key_hash,
+        INSERT INTO api_key (tenant_id, user_id, name, key_prefix, lookup_hash, lookup_hash_version,
                              enabled, expire_at, created_at, updated_at)
-        VALUES (#{tenantId}, #{userId}, #{name}, #{keyPrefix}, #{keyHash},
+        VALUES (#{tenantId}, #{userId}, #{name}, #{keyPrefix}, #{lookupHash}, #{lookupHashVersion},
                 #{enabled}, #{expireAt}, NOW(), NOW())
     </insert>
 

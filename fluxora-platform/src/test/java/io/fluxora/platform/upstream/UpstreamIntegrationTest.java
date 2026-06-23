@@ -478,7 +478,7 @@ class UpstreamIntegrationTest {
         assertThat(importedTotal.get()).isLessThanOrEqualTo(1);
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         Integer active = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM provider_credential WHERE provider_channel_id=? AND deleted_at IS NULL",
+                "SELECT COUNT(*) FROM provider_channel_credential WHERE provider_channel_id=? AND deleted_at IS NULL AND enabled = TRUE",
                 Integer.class, channel);
         assertThat(active).isEqualTo(1);
     }

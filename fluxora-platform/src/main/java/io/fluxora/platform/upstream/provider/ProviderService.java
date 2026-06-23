@@ -16,6 +16,7 @@ import io.fluxora.platform.upstream.provider.dto.ProviderStats;
 import io.fluxora.platform.upstream.provider.dto.ProviderSummary;
 import io.fluxora.platform.upstream.provider.mapper.ProviderRow;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 
 /**
  * 上游厂商与接入地址服务。
@@ -33,11 +34,14 @@ public class ProviderService {
     private final ProviderMapper mapper;
     private final ProviderBaseUrlNormalizer normalizer;
     private final UpstreamTenantGuard tenantGuard;
+    private final RuntimeOutboxService runtimeOutboxService;
 
-    public ProviderService(ProviderMapper mapper, ProviderBaseUrlNormalizer normalizer, UpstreamTenantGuard tenantGuard) {
+    public ProviderService(ProviderMapper mapper, ProviderBaseUrlNormalizer normalizer, UpstreamTenantGuard tenantGuard,
+                           RuntimeOutboxService runtimeOutboxService) {
         this.mapper = mapper;
         this.normalizer = normalizer;
         this.tenantGuard = tenantGuard;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     public boolean isPlatformAdmin(Authentication auth) {
@@ -109,6 +113,7 @@ public class ProviderService {
             provider.setTenantId(targetTenant);
         }
         mapper.insert(provider);
+        runtimeOutboxService.record(provider.getTenantId(), "PROVIDER", provider.getId(), "CREATED", null);
         return providerDetail(provider.getId(), user, auth);
     }
 
@@ -120,6 +125,7 @@ public class ProviderService {
         current.setName(name.trim());
         current.setDescription(blankToNull(description));
         mapper.update(current);
+        runtimeOutboxService.record(current.getTenantId(), "PROVIDER", id, "UPDATED", null);
         return providerDetail(id, user, auth);
     }
 
@@ -128,6 +134,7 @@ public class ProviderService {
         Provider current = requireVisible(id, user, auth);
         assertWritable(current, user, auth);
         mapper.setEnabled(id, enabled);
+        runtimeOutboxService.record(current.getTenantId(), "PROVIDER", id, enabled ? "ENABLED" : "DISABLED", null);
     }
 
     @Transactional
@@ -138,6 +145,7 @@ public class ProviderService {
             throw new ProviderException(BusinessErrorCode.UPSTREAM_PROVIDER_IN_USE, "上游厂商仍被接入地址引用");
         }
         mapper.softDelete(id);
+        runtimeOutboxService.record(current.getTenantId(), "PROVIDER", id, "DELETED", null);
     }
 
     /** 内部可见性加载，供写操作前置校验。 */
@@ -190,6 +198,7 @@ public class ProviderService {
         entity.setRemark(blankToNull(remark));
         entity.setEnabled(true);
         mapper.insertBaseUrl(entity);
+        runtimeOutboxService.record(provider.getTenantId(), "PROVIDER_BASE_URL", entity.getId(), "CREATED", null);
         return toSummary(mapper.findBaseUrlById(entity.getId())
                 .orElseThrow(() -> new ProviderException(BusinessErrorCode.INTERNAL_ERROR, "接入地址创建失败")));
     }
@@ -212,6 +221,7 @@ public class ProviderService {
         current.setDisplayName(blankToNull(displayName));
         current.setRemark(blankToNull(remark));
         mapper.updateBaseUrl(current);
+        runtimeOutboxService.record(provider.getTenantId(), "PROVIDER_BASE_URL", id, "UPDATED", null);
         return toSummary(mapper.findBaseUrlById(id)
                 .orElseThrow(() -> new ProviderException(BusinessErrorCode.RESOURCE_NOT_FOUND, "接入地址不存在或不可访问")));
     }
@@ -223,6 +233,8 @@ public class ProviderService {
         Provider provider = requireVisible(current.getProviderId(), user, auth);
         assertWritable(provider, user, auth);
         mapper.setBaseUrlEnabled(id, enabled);
+        runtimeOutboxService.record(provider.getTenantId(), "PROVIDER_BASE_URL", id,
+                enabled ? "ENABLED" : "DISABLED", null);
     }
 
     @Transactional
@@ -235,6 +247,7 @@ public class ProviderService {
             throw new ProviderException(BusinessErrorCode.UPSTREAM_BASE_URL_IN_USE, "接入地址仍被通道引用");
         }
         mapper.softDeleteBaseUrl(id);
+        runtimeOutboxService.record(provider.getTenantId(), "PROVIDER_BASE_URL", id, "DELETED", null);
     }
 
     // ==================== 映射与校验 ====================

@@ -143,7 +143,7 @@ class ApiKeyIntegrationTest {
         assertThat(plaintext).startsWith("flx_");
         assertThat(plaintext).hasSize(45);
 
-        // DB 中应该没有 plaintext 列；也没有任何行的 key_hash == plaintext
+        // DB 中应该没有 plaintext 列；也没有任何行的 lookup_hash == plaintext
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         Integer plaintextCol = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.columns "
@@ -152,7 +152,7 @@ class ApiKeyIntegrationTest {
         assertThat(plaintextCol).as("api_key 表不应有任何明文列").isEqualTo(0);
 
         String hash = jdbc.queryForObject(
-                "SELECT key_hash FROM api_key WHERE key_prefix = ?",
+                "SELECT lookup_hash FROM api_key WHERE key_prefix = ?",
                 String.class, prefix);
         assertThat(hash).isNotEqualTo(plaintext);
         assertThat(hash).doesNotContain(plaintext);
@@ -181,7 +181,7 @@ class ApiKeyIntegrationTest {
         JsonNode detail = objectMapper.readTree(det.getBody()).get("data");
         assertThat(detail.has("plaintext")).isFalse();
         assertThat(detail.has("keyHash")).isFalse();
-        assertThat(detail.has("key_hash")).isFalse();
+        assertThat(detail.has("lookup_hash")).isFalse();
         assertThat(detail.get("keyPrefix").asText()).isEqualTo(prefix);
 
         // GET 列表

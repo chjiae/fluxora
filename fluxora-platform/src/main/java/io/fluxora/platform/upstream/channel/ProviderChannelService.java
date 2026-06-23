@@ -18,6 +18,7 @@ import io.fluxora.platform.upstream.provider.ProviderException;
 import io.fluxora.platform.upstream.provider.ProviderMapper;
 import io.fluxora.platform.upstream.provider.ProviderService;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 
 /**
  * 上游通道服务。
@@ -34,13 +35,16 @@ public class ProviderChannelService {
     private final ProviderMapper providerMapper;
     private final ProviderService providerService;
     private final UpstreamTenantGuard tenantGuard;
+    private final RuntimeOutboxService runtimeOutboxService;
 
     public ProviderChannelService(ProviderChannelMapper channelMapper, ProviderMapper providerMapper,
-            ProviderService providerService, UpstreamTenantGuard tenantGuard) {
+            ProviderService providerService, UpstreamTenantGuard tenantGuard,
+            RuntimeOutboxService runtimeOutboxService) {
         this.channelMapper = channelMapper;
         this.providerMapper = providerMapper;
         this.providerService = providerService;
         this.tenantGuard = tenantGuard;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     public boolean isPlatformAdmin(Authentication auth) {
@@ -83,6 +87,7 @@ public class ProviderChannelService {
         validate(channel);
         assertBaseUrlUsable(channel.getProviderBaseUrlId(), tenantId, user, auth);
         channelMapper.insert(channel);
+        runtimeOutboxService.record(tenantId, "PROVIDER_CHANNEL", channel.getId(), "CREATED", null);
         return channelDetail(channel.getId(), user, auth);
     }
 
@@ -100,6 +105,7 @@ public class ProviderChannelService {
         current.setReadTimeoutMs(patch.getReadTimeoutMs());
         current.setRemark(patch.getRemark());
         channelMapper.update(current);
+        runtimeOutboxService.record(current.getTenantId(), "PROVIDER_CHANNEL", id, "UPDATED", null);
         return channelDetail(id, user, auth);
     }
 
@@ -108,6 +114,8 @@ public class ProviderChannelService {
         ProviderChannel current = requireVisible(id, user, auth);
         tenantGuard.assertWritable(current.getTenantId());
         channelMapper.setEnabled(id, enabled);
+        runtimeOutboxService.record(current.getTenantId(), "PROVIDER_CHANNEL", id,
+                enabled ? "ENABLED" : "DISABLED", null);
     }
 
     @Transactional
@@ -118,6 +126,7 @@ public class ProviderChannelService {
             throw new ProviderException(BusinessErrorCode.UPSTREAM_CHANNEL_IN_USE, "通道仍被凭证引用");
         }
         channelMapper.softDelete(id);
+        runtimeOutboxService.record(current.getTenantId(), "PROVIDER_CHANNEL", id, "DELETED", null);
     }
 
     /**

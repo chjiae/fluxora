@@ -13,6 +13,7 @@ import io.fluxora.platform.apikey.mapper.ApiKeyRow;
 import io.fluxora.platform.identity.entity.Role;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.identity.mapper.IdentityMapper;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import io.fluxora.platform.tenant.Tenant;
 import io.fluxora.platform.tenant.TenantException;
 import io.fluxora.platform.tenant.TenantMapper;
@@ -58,17 +59,20 @@ public class ApiKeyService {
     private final TenantMapper tenantMapper;
     private final ApiKeyHashingService hashingService;
     private final ApiKeyGenerator generator;
+    private final RuntimeOutboxService runtimeOutboxService;
 
     public ApiKeyService(ApiKeyMapper apiKeyMapper,
                          IdentityMapper identityMapper,
                          TenantMapper tenantMapper,
                          ApiKeyHashingService hashingService,
-                         ApiKeyGenerator generator) {
+                         ApiKeyGenerator generator,
+                         RuntimeOutboxService runtimeOutboxService) {
         this.apiKeyMapper = apiKeyMapper;
         this.identityMapper = identityMapper;
         this.tenantMapper = tenantMapper;
         this.hashingService = hashingService;
         this.generator = generator;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     // ============================================================
@@ -155,10 +159,14 @@ public class ApiKeyService {
         key.setUserId(target.getId());
         key.setName(req.name().trim());
         key.setKeyPrefix(gen.prefix());
-        key.setKeyHash(hashingService.hash(gen.secretPart()));
+        // Lookup 摘要覆盖完整 Key，而不是仅覆盖 secretPart；Gateway 因此可直接以请求 Header 的
+        // canonical 值查 Redis 运行时快照，无需按前缀查询 PostgreSQL 或执行慢哈希。
+        key.setLookupHash(hashingService.lookupHash(gen.plaintext()));
+        key.setLookupHashVersion(1);
         key.setEnabled(true);
         key.setExpireAt(expireAt);
         apiKeyMapper.insert(key);
+        runtimeOutboxService.record(key.getTenantId(), "API_KEY", key.getId(), "CREATED", null);
 
         log.info("API Key 已创建：tenantId={}, userId={}, keyId={}, prefix={}",
                 target.getTenantId(), target.getId(), key.getId(), gen.prefix());
@@ -198,6 +206,7 @@ public class ApiKeyService {
         }
 
         apiKeyMapper.updateMeta(keyId, name, expire, clearExpire);
+        runtimeOutboxService.record(key.getTenantId(), "API_KEY", keyId, "UPDATED", "EXPIRE_OR_METADATA");
         return loadSummaryOrThrow(keyId);
     }
 
@@ -207,6 +216,7 @@ public class ApiKeyService {
         assertCanOperate(currentUser, key);
         assertTenantWritable(key.getTenantId());
         apiKeyMapper.setEnabled(keyId, true);
+        runtimeOutboxService.record(key.getTenantId(), "API_KEY", keyId, "ENABLED", null);
         return loadSummaryOrThrow(keyId);
     }
 
@@ -216,6 +226,7 @@ public class ApiKeyService {
         assertCanOperate(currentUser, key);
         assertTenantWritable(key.getTenantId());
         apiKeyMapper.setEnabled(keyId, false);
+        runtimeOutboxService.record(key.getTenantId(), "API_KEY", keyId, "DISABLED", null);
         return loadSummaryOrThrow(keyId);
     }
 
@@ -225,6 +236,7 @@ public class ApiKeyService {
         assertCanOperate(currentUser, key);
         assertTenantWritable(key.getTenantId());
         apiKeyMapper.softDelete(keyId);
+        runtimeOutboxService.record(key.getTenantId(), "API_KEY", keyId, "DELETED", null);
         log.info("API Key 已软删除：keyId={}", keyId);
     }
 

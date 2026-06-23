@@ -4,6 +4,7 @@ import io.fluxora.common.error.BusinessErrorCode;
 import io.fluxora.platform.identity.entity.Role;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.identity.mapper.IdentityMapper;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -21,10 +22,13 @@ public class TenantService {
 
     private final TenantMapper tenantMapper;
     private final IdentityMapper identityMapper;
+    private final RuntimeOutboxService runtimeOutboxService;
 
-    public TenantService(TenantMapper tenantMapper, IdentityMapper identityMapper) {
+    public TenantService(TenantMapper tenantMapper, IdentityMapper identityMapper,
+                         RuntimeOutboxService runtimeOutboxService) {
         this.tenantMapper = tenantMapper;
         this.identityMapper = identityMapper;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     public boolean isSelfOperatedInitialized() {
@@ -87,6 +91,7 @@ public class TenantService {
         tenant.setType(SELF_OPERATED);
         tenant.setEnabled(true);
         tenantMapper.insert(tenant);
+        runtimeOutboxService.record(tenant.getId(), "TENANT", tenant.getId(), "CREATED", null);
 
         if (identityMapper.existsByUsername(adminUsername)) {
             throw new TenantException(BusinessErrorCode.TENANT_CODE_DUPLICATE,
@@ -102,6 +107,7 @@ public class TenantService {
         tenantAdmin.setTenantId(tenant.getId());
         tenantAdmin.setEnabled(true);
         identityMapper.insertUser(tenantAdmin);
+        runtimeOutboxService.record(tenant.getId(), "USER_ACCOUNT", tenantAdmin.getId(), "CREATED", null);
 
         Role tenantAdminRole = identityMapper.findRoleByCode("TENANT_ADMIN")
                 .orElseThrow(() -> new IllegalStateException("TENANT_ADMIN 角色不存在"));
@@ -148,6 +154,67 @@ public class TenantService {
             throw new TenantException(BusinessErrorCode.VALIDATION_ERROR,
                     "不允许通过此接口创建自营租户，自营租户仅通过初始化流程创建");
         }
+    }
+
+    /** 租户写操作统一在 Service 事务内完成，并与运行时 Outbox 同步提交。 */
+    @Transactional
+    public Tenant createTenant(Tenant tenant) {
+        if (tenantMapper.existsByCode(tenant.getTenantCode())) {
+            throw new TenantException(BusinessErrorCode.TENANT_CODE_DUPLICATE);
+        }
+        assertNotSelfOperatedType(tenant.getType());
+        tenantMapper.insert(tenant);
+        runtimeOutboxService.record(tenant.getId(), "TENANT", tenant.getId(), "CREATED", null);
+        return tenant;
+    }
+
+    @Transactional
+    public Tenant updateTenantBasic(Long id, String name, String description) {
+        Tenant tenant = tenantMapper.findById(id)
+                .orElseThrow(() -> new TenantException(BusinessErrorCode.RESOURCE_NOT_FOUND, "租户不存在"));
+        tenant.setName(name);
+        if (description != null) {
+            tenant.setDescription(description);
+        }
+        tenantMapper.update(tenant);
+        runtimeOutboxService.record(id, "TENANT", id, "UPDATED", "BASIC_METADATA");
+        return tenant;
+    }
+
+    @Transactional
+    public Tenant enableTenant(Long id) {
+        assertSelfOperatedProtected(id);
+        tenantMapper.enableTenant(id);
+        runtimeOutboxService.record(id, "TENANT", id, "ENABLED", null);
+        return loadTenant(id);
+    }
+
+    @Transactional
+    public Tenant disableTenant(Long id) {
+        assertSelfOperatedProtected(id);
+        tenantMapper.disableTenant(id);
+        runtimeOutboxService.record(id, "TENANT", id, "DISABLED", null);
+        return loadTenant(id);
+    }
+
+    @Transactional
+    public Tenant setTenantExpireAt(Long id, Instant expireAt) {
+        assertSelfOperatedProtected(id);
+        tenantMapper.setExpireAt(id, expireAt);
+        runtimeOutboxService.record(id, "TENANT", id, "UPDATED", "EXPIRE_AT");
+        return loadTenant(id);
+    }
+
+    @Transactional
+    public void deleteTenant(Long id) {
+        assertSelfOperatedProtected(id);
+        tenantMapper.softDelete(id);
+        runtimeOutboxService.record(id, "TENANT", id, "DELETED", null);
+    }
+
+    private Tenant loadTenant(Long id) {
+        return tenantMapper.findById(id)
+                .orElseThrow(() -> new TenantException(BusinessErrorCode.RESOURCE_NOT_FOUND, "租户不存在"));
     }
 
     /**

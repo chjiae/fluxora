@@ -18,31 +18,33 @@ test.describe('真实验收（桌面端）', () => {
     await page.waitForURL(/\/console/, { timeout: 10000 })
 
     if (page.url().includes('/console/setup')) {
-      await page.locator('.n-input input').nth(0).fill('Fluxora 自营')
-      await page.locator('.n-input input').nth(1).fill('e2eadmin')
-      await page.locator('.n-input input').nth(2).fill('e2epass123')
-      await page.locator('.n-input input').nth(3).fill('E2E 管理员')
-      await page.locator('button:has-text("创建自营租户")').click()
-      await page.waitForURL(/\/console/, { timeout: 10000 })
-      const btn = page.locator('button:has-text("进入控制台")')
-      await expect(btn).toBeVisible({ timeout: 8000 })
-      await btn.click()
+      // 两步向导：通过 n-form-item label 定位输入框
+      await page.locator('.n-form-item:has(.n-form-item-label:text("租户名称")) input').fill('Fluxora 自营')
+      await page.locator('button:has-text("下一步")').click()
+      await page.waitForTimeout(300) // 等 step 过渡
+      await page.locator('.n-form-item:has(.n-form-item-label:text("管理员用户名")) input').fill('e2eadmin')
+      await page.locator('.n-form-item:has(.n-form-item-label:text("管理员显示名")) input').fill('E2E 管理员')
+      await page.locator('.n-form-item:has(.n-form-item-label:text("管理员密码")) input').fill('Admin@2026!')
+      await page.locator('.n-form-item:has(.n-form-item-label:text("确认密码")) input').fill('Admin@2026!')
+      await page.locator('button:has-text("创建并进入控制台")').click()
+      await page.waitForURL(/\/console\/overview/, { timeout: 10000 })
     }
 
-    await expect(page.locator('.console')).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('[data-testid="console-content"]')).toBeVisible({ timeout: 8000 })
     await page.locator('.n-menu-item-content:has-text("租户管理")').click()
     await page.waitForLoadState('networkidle')
     await expect(page.locator('.n-data-table')).toBeVisible({ timeout: 5000 })
 
     const tenantCode = 'e2e-' + Date.now()
     await page.locator('button:has-text("新增租户")').click()
-    await expect(page.locator('.n-drawer')).toBeVisible({ timeout: 3000 })
-    await page.locator('.n-drawer .n-input input').first().fill(tenantCode)
-    await page.locator('.n-drawer .n-input input').nth(1).fill('E2E 测试租户')
-    await page.locator('.n-drawer button:has-text("创建")').click()
-    await expect(page.locator('.n-drawer')).not.toBeVisible({ timeout: 8000 })
+    await expect(page.locator('.tenant-modal').last()).toBeVisible({ timeout: 3000 })
+    await page.locator('.tenant-modal').last().locator('.n-input input').first().fill(tenantCode)
+    await page.locator('.tenant-modal').last().locator('.n-input input').nth(1).fill('E2E 测试租户')
+    await page.locator('.tenant-modal button:has-text("创建租户")').click()
+    await expect(page.locator('.tenant-modal').last()).not.toBeVisible({ timeout: 8000 })
 
-    await page.locator('.n-input input').first().fill(tenantCode)
+    await page.waitForTimeout(500) // 等列表刷新完成
+    await page.locator('input[placeholder*="搜索"]').first().fill(tenantCode)
     await page.waitForLoadState('networkidle')
     await expect(page.locator('.n-data-table-tr').first()).toBeVisible({ timeout: 5000 })
   })
@@ -54,7 +56,7 @@ test.describe('真实验收（桌面端）', () => {
     const p = await ctx.newPage()
     await p.goto(WEB_URL + '/login')
     await p.locator('input[placeholder*="用户名"]').first().fill('e2eadmin')
-    await p.locator('input[placeholder*="密码"]').first().fill('e2epass123')
+    await p.locator('input[placeholder*="密码"]').first().fill('Admin@2026!')
     await p.locator('button:has-text("登录")').click()
     await p.waitForURL(/\/console/, { timeout: 10000 })
     await expect(p.locator('.n-menu-item-content:has-text("租户管理")')).toHaveCount(0, { timeout: 5000 })
@@ -65,8 +67,11 @@ test.describe('真实验收（桌面端）', () => {
   })
 
   test('主题切换持久化', async ({ page }) => {
+    test.skip(test.info().project.name !== 'desktop', '响应式由专门用例覆盖')
     await page.goto(WEB_URL + '/login')
-    await page.locator('.hero-footer .n-button').first().click()
+    const toggle = page.locator('button[aria-label^="切换为"]').first()
+    await expect(toggle).toBeVisible({ timeout: 3000 })
+    await toggle.click()
     const t1 = await page.evaluate(() => document.documentElement.getAttribute('data-theme'))
     expect(['light', 'dark']).toContain(t1)
     await page.reload()

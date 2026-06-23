@@ -80,6 +80,39 @@ public class ProviderCredentialController {
                         req.name(), req.priority(), req.weight(), req.remark()), user, auth)));
     }
 
+    /** 把已有凭证绑定到同租户同 Provider 的另一通道；响应不返回密文、指纹或上游认证材料。 */
+    @PostMapping("/{id}/bindings")
+    @PreAuthorize("hasAuthority('PERM_UPSTREAM_UPDATE')")
+    public ResponseEntity<ApiResponse<Void>> bind(@PathVariable Long id, @RequestBody CredentialBindingRequest req,
+                                                    @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        service.bindExisting(id, req.providerChannelId(), user, auth);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PutMapping("/{id}/bindings/{providerChannelId}/enable")
+    @PreAuthorize("hasAuthority('PERM_UPSTREAM_ENABLE')")
+    public ResponseEntity<ApiResponse<Void>> enableBinding(@PathVariable Long id, @PathVariable Long providerChannelId,
+                                                            @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        service.setBindingEnabled(id, providerChannelId, true, user, auth);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PutMapping("/{id}/bindings/{providerChannelId}/disable")
+    @PreAuthorize("hasAuthority('PERM_UPSTREAM_DISABLE')")
+    public ResponseEntity<ApiResponse<Void>> disableBinding(@PathVariable Long id, @PathVariable Long providerChannelId,
+                                                             @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        service.setBindingEnabled(id, providerChannelId, false, user, auth);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @DeleteMapping("/{id}/bindings/{providerChannelId}")
+    @PreAuthorize("hasAuthority('PERM_UPSTREAM_DELETE')")
+    public ResponseEntity<ApiResponse<Void>> unbind(@PathVariable Long id, @PathVariable Long providerChannelId,
+                                                      @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        service.unbind(id, providerChannelId, user, auth);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_UPDATE')")
     public ResponseEntity<ApiResponse<ProviderCredentialSummary>> update(
@@ -129,4 +162,7 @@ public class ProviderCredentialController {
             @AuthenticationPrincipal UserAccount user, Authentication auth) {
         return ResponseEntity.ok(ApiResponse.success(service.importCredentials(req, user, auth)));
     }
+
+    /** 绑定请求仅传目标通道 ID；服务层负责租户、Provider 一致性与现有绑定检查。 */
+    public record CredentialBindingRequest(Long providerChannelId) {}
 }

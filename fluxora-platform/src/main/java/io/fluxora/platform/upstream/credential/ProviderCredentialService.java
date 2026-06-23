@@ -27,10 +27,13 @@ import io.fluxora.platform.upstream.credential.dto.ProviderCredentialStats;
 import io.fluxora.platform.upstream.credential.dto.ProviderCredentialSummary;
 import io.fluxora.platform.upstream.dto.UpstreamPage;
 import io.fluxora.platform.upstream.provider.ProviderException;
+import io.fluxora.platform.upstream.provider.ProviderBaseUrl;
+import io.fluxora.platform.upstream.provider.ProviderMapper;
 import io.fluxora.platform.upstream.security.CredentialCryptoService;
 import io.fluxora.platform.upstream.security.CredentialSecurityProperties;
 import io.fluxora.platform.upstream.security.EncryptedCredential;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 
 /**
  * 上游凭证服务。
@@ -57,15 +60,20 @@ public class ProviderCredentialService {
     private final CredentialCryptoService cryptoService;
     private final CredentialSecurityProperties securityProperties;
     private final UpstreamTenantGuard tenantGuard;
+    private final RuntimeOutboxService runtimeOutboxService;
+    private final ProviderMapper providerMapper;
 
     public ProviderCredentialService(ProviderCredentialMapper mapper, ProviderChannelService channelService,
             CredentialCryptoService cryptoService, CredentialSecurityProperties securityProperties,
-            UpstreamTenantGuard tenantGuard) {
+            UpstreamTenantGuard tenantGuard, RuntimeOutboxService runtimeOutboxService,
+            ProviderMapper providerMapper) {
         this.mapper = mapper;
         this.channelService = channelService;
         this.cryptoService = cryptoService;
         this.securityProperties = securityProperties;
         this.tenantGuard = tenantGuard;
+        this.runtimeOutboxService = runtimeOutboxService;
+        this.providerMapper = providerMapper;
     }
 
     // ==================== 列表 / 详情 / 统计 ====================
@@ -103,24 +111,86 @@ public class ProviderCredentialService {
         tenantGuard.assertWritable(channel.getTenantId());
         String plaintext = requirePlaintext(fields.plaintext());
 
-        ProviderCredential credential = buildCredential(channel.getTenantId(), channel.getId(),
+        ProviderCredential credential = buildCredential(channel.getTenantId(),
                 resolveName(fields.name(), plaintext), fields.priority(), fields.weight(), fields.remark());
         EncryptedCredential encrypted = cryptoService.encrypt(plaintext);
         String fingerprint = cryptoService.fingerprint(plaintext);
         applySecret(credential, cryptoService.mask(plaintext), fingerprint, encrypted);
 
         // 预检当前租户未删除指纹，避免依赖唯一索引报错返回 500；并发冲突由 catch 兜底。
-        if (fingerprintExists(channel.getTenantId(), channel.getId(), fingerprint, null)) {
-            throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "凭证已存在");
+        ProviderCredential reusable = mapper.findActiveByFingerprint(channel.getTenantId(), fingerprint).orElse(null);
+        if (reusable != null) {
+            assertSameProvider(channel, reusable, user, auth);
+            if (mapper.hasActiveBinding(channel.getId(), reusable.getId())) {
+                throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "凭证已存在");
+            }
+            mapper.bindCredential(channel.getTenantId(), channel.getId(), reusable.getId());
+            runtimeOutboxService.record(channel.getTenantId(), "PROVIDER_CHANNEL", channel.getId(),
+                    "CREDENTIAL_POOL_CHANGED", null);
+            return detail(reusable.getId(), user, auth);
         }
         try {
             mapper.insert(credential);
+            mapper.bindCredential(channel.getTenantId(), channel.getId(), credential.getId());
         } catch (DataIntegrityViolationException ex) {
             // 并发写入同一指纹命中部分唯一索引（tenant + channel + fingerprint）
             throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "凭证已存在");
         }
+        runtimeOutboxService.record(channel.getTenantId(), "PROVIDER_CREDENTIAL", credential.getId(), "CREATED", null);
         log.info("上游凭证已创建：channelId={}, credentialId={}", channel.getId(), credential.getId());
         return detail(credential.getId(), user, auth);
+    }
+
+    /** 显式复用已有凭证到同租户、同 Provider 的另一通道，不复制密文，也不向 Gateway 下发凭证内容。 */
+    @Transactional
+    public void bindExisting(Long credentialId, Long providerChannelId, UserAccount user, Authentication auth) {
+        ProviderCredential credential = loadMetadataOrThrow(credentialId);
+        ProviderChannel targetChannel = channelService.requireVisible(providerChannelId, user, auth);
+        tenantGuard.assertWritable(targetChannel.getTenantId());
+        if (!targetChannel.getTenantId().equals(credential.getTenantId())) {
+            throw new ProviderException(BusinessErrorCode.ACCESS_DENIED, "当前账号没有此操作权限");
+        }
+        assertSameProvider(targetChannel, credential, user, auth);
+        if (mapper.hasActiveBinding(targetChannel.getId(), credentialId)) {
+            throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "凭证已绑定到当前通道");
+        }
+        mapper.bindCredential(targetChannel.getTenantId(), targetChannel.getId(), credentialId);
+        runtimeOutboxService.record(targetChannel.getTenantId(), "PROVIDER_CHANNEL", targetChannel.getId(),
+                "CREDENTIAL_POOL_CHANGED", null);
+    }
+
+    /** 绑定启停只影响目标通道的凭证池，不改变凭证实体本身。 */
+    @Transactional
+    public void setBindingEnabled(Long credentialId, Long providerChannelId, boolean enabled,
+                                  UserAccount user, Authentication auth) {
+        ProviderCredential credential = loadMetadataOrThrow(credentialId);
+        ProviderChannel targetChannel = channelService.requireVisible(providerChannelId, user, auth);
+        tenantGuard.assertWritable(targetChannel.getTenantId());
+        if (!targetChannel.getTenantId().equals(credential.getTenantId())
+                || !mapper.hasActiveBinding(targetChannel.getId(), credentialId)) {
+            throw new ProviderException(BusinessErrorCode.RESOURCE_NOT_FOUND, "凭证绑定不存在");
+        }
+        mapper.setBindingEnabled(targetChannel.getId(), credentialId, enabled);
+        runtimeOutboxService.record(targetChannel.getTenantId(), "PROVIDER_CHANNEL", targetChannel.getId(),
+                enabled ? "CREDENTIAL_BINDING_ENABLED" : "CREDENTIAL_BINDING_DISABLED", null);
+    }
+
+    /** 解除通道绑定；最后一个绑定被移除时软删凭证实体，避免遗留不可达的加密数据。 */
+    @Transactional
+    public void unbind(Long credentialId, Long providerChannelId, UserAccount user, Authentication auth) {
+        ProviderCredential credential = loadMetadataOrThrow(credentialId);
+        ProviderChannel targetChannel = channelService.requireVisible(providerChannelId, user, auth);
+        tenantGuard.assertWritable(targetChannel.getTenantId());
+        if (!targetChannel.getTenantId().equals(credential.getTenantId())
+                || !mapper.hasActiveBinding(targetChannel.getId(), credentialId)) {
+            throw new ProviderException(BusinessErrorCode.RESOURCE_NOT_FOUND, "凭证绑定不存在");
+        }
+        mapper.softDeleteBinding(targetChannel.getId(), credentialId);
+        if (mapper.countActiveBindings(credentialId) == 0) {
+            mapper.softDelete(credentialId);
+        }
+        runtimeOutboxService.record(targetChannel.getTenantId(), "PROVIDER_CHANNEL", targetChannel.getId(),
+                "CREDENTIAL_POOL_CHANGED", null);
     }
 
     @Transactional
@@ -159,6 +229,7 @@ public class ProviderCredentialService {
         } catch (DataIntegrityViolationException ex) {
             throw new ProviderException(BusinessErrorCode.CREDENTIAL_REPLACE_FAILED, "凭证替换冲突");
         }
+        runtimeOutboxService.record(channel.getTenantId(), "PROVIDER_CREDENTIAL", id, "ROTATED", null);
         log.info("上游凭证已替换密文：credentialId={}", id);
         return detail(id, user, auth);
     }
@@ -169,6 +240,8 @@ public class ProviderCredentialService {
         ProviderChannel channel = channelService.requireVisible(credential.getProviderChannelId(), user, auth);
         tenantGuard.assertWritable(channel.getTenantId());
         mapper.setEnabled(id, enabled);
+        runtimeOutboxService.record(channel.getTenantId(), "PROVIDER_CREDENTIAL", id,
+                enabled ? "ENABLED" : "DISABLED", null);
     }
 
     @Transactional
@@ -177,6 +250,7 @@ public class ProviderCredentialService {
         ProviderChannel channel = channelService.requireVisible(credential.getProviderChannelId(), user, auth);
         tenantGuard.assertWritable(channel.getTenantId());
         mapper.softDelete(id);
+        runtimeOutboxService.record(channel.getTenantId(), "PROVIDER_CREDENTIAL", id, "DELETED", null);
         log.info("上游凭证已软删除：credentialId={}", id);
     }
 
@@ -244,7 +318,7 @@ public class ProviderCredentialService {
                 // 结果项在写入完成后统一归位，避免重复添加。
                 continue;
             }
-            ProviderCredential credential = buildCredential(channel.getTenantId(), channel.getId(),
+            ProviderCredential credential = buildCredential(channel.getTenantId(),
                     resolveName(req.namePrefix(), c.plaintext), priority, weight, remark);
             EncryptedCredential encrypted = cryptoService.encrypt(c.plaintext);
             applySecret(credential, c.maskedValue, c.fingerprint, encrypted);
@@ -254,7 +328,16 @@ public class ProviderCredentialService {
         // 一次批量写入；RETURNING 返回实际插入行的指纹，用于区分并发冲突。
         Set<String> inserted = new HashSet<>();
         if (!toInsert.isEmpty()) {
-            inserted.addAll(mapper.insertBatchReturningFingerprints(toInsert));
+            List<ProviderCredential> insertedCredentials = mapper.insertBatchReturningCredentials(toInsert);
+            mapper.bindBatch(channel.getTenantId(), channel.getId(), insertedCredentials);
+            for (ProviderCredential insertedCredential : insertedCredentials) {
+                inserted.add(insertedCredential.getCredentialFingerprint());
+            }
+            if (!insertedCredentials.isEmpty()) {
+                // 批量导入只写一条通道级 Outbox，避免逐凭证 N+1 写入；Scope 仍由 Resolver 精准收敛。
+                runtimeOutboxService.record(channel.getTenantId(), "PROVIDER_CHANNEL", channel.getId(),
+                        "CREDENTIAL_POOL_CHANGED", null);
+            }
         }
 
         int imported = 0;
@@ -320,6 +403,22 @@ public class ProviderCredentialService {
                 .orElseThrow(() -> new ProviderException(BusinessErrorCode.RESOURCE_NOT_FOUND, "凭证不存在或已删除"));
     }
 
+    /** 凭证可复用的边界：同租户且同 Provider；不能借由共享凭证跨 Provider 传播认证材料。 */
+    private void assertSameProvider(ProviderChannel targetChannel, ProviderCredential credential,
+                                    UserAccount user, Authentication auth) {
+        if (credential.getProviderChannelId() == null) {
+            throw new ProviderException(BusinessErrorCode.RESOURCE_NOT_FOUND, "凭证绑定不存在");
+        }
+        ProviderChannel sourceChannel = channelService.requireVisible(credential.getProviderChannelId(), user, auth);
+        ProviderBaseUrl targetBaseUrl = providerMapper.findBaseUrlById(targetChannel.getProviderBaseUrlId())
+                .orElseThrow(() -> new ProviderException(BusinessErrorCode.RESOURCE_NOT_FOUND, "接入地址不存在"));
+        ProviderBaseUrl sourceBaseUrl = providerMapper.findBaseUrlById(sourceChannel.getProviderBaseUrlId())
+                .orElseThrow(() -> new ProviderException(BusinessErrorCode.RESOURCE_NOT_FOUND, "接入地址不存在"));
+        if (!targetBaseUrl.getProviderId().equals(sourceBaseUrl.getProviderId())) {
+            throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "凭证不可绑定到当前通道");
+        }
+    }
+
     private void applySecret(ProviderCredential credential, String maskedValue, String fingerprint,
             EncryptedCredential encrypted) {
         credential.setMaskedValue(maskedValue);
@@ -329,11 +428,10 @@ public class ProviderCredentialService {
         credential.setEncryptionVersion(encrypted.encryptionVersion());
     }
 
-    private ProviderCredential buildCredential(Long tenantId, Long channelId, String name, Integer priority,
+    private ProviderCredential buildCredential(Long tenantId, String name, Integer priority,
             Integer weight, String remark) {
         ProviderCredential credential = new ProviderCredential();
         credential.setTenantId(tenantId);
-        credential.setProviderChannelId(channelId);
         credential.setName(name);
         credential.setCredentialType(CREDENTIAL_TYPE);
         credential.setEnabled(true);

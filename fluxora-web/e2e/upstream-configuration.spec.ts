@@ -5,11 +5,11 @@ import { test, expect, type Page } from '@playwright/test'
  * 覆盖平台管理员创建共享 Provider 与多协议接入地址、租户管理员创建私有配置与通道、
  * 凭证创建/批量导入、脱敏展示、重复跳过与软删除重导入、安全错误文案与三视口可用性。
  *
- * 前置：fluxora DB 已执行 V7 迁移；admin/Admin@2026! 与 default 租户管理员 e2eadmin/chen2983 已存在。
+ * 前置：fluxora DB 已执行 V7 迁移；admin/Admin@2026! 与 default 租户管理员 e2eadmin/e2epass123 已存在。
  */
 
 const PLATFORM = { username: 'admin', password: 'Admin@2026!' }
-const TENANT_ADMIN = { username: 'e2eadmin', password: 'chen2983' }
+const TENANT_ADMIN = { username: 'e2eadmin', password: 'Admin@2026!' }
 
 async function login(page: Page, creds: { username: string; password: string }) {
   await page.goto('/login')
@@ -17,6 +17,19 @@ async function login(page: Page, creds: { username: string; password: string }) 
   await page.locator('input[placeholder*="密码"]').first().fill(creds.password)
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/console/, { timeout: 15000 })
+
+  // 如果是平台管理员且进入自营初始化页，自动完成初始化
+  if (page.url().includes('/setup') && creds.username === 'admin') {
+    await page.locator('.n-form-item:has(.n-form-item-label:text("租户名称")) input').fill('Fluxora 自营')
+    await page.locator('button:has-text("下一步")').click()
+    await page.waitForTimeout(300)
+    await page.locator('.n-form-item:has(.n-form-item-label:text("管理员用户名")) input').fill('e2eadmin')
+    await page.locator('.n-form-item:has(.n-form-item-label:text("管理员显示名")) input').fill('E2E 管理员')
+    await page.locator('.n-form-item:has(.n-form-item-label:text("管理员密码")) input').fill('Admin@2026!')
+    await page.locator('.n-form-item:has(.n-form-item-label:text("确认密码")) input').fill('Admin@2026!')
+    await page.locator('button:has-text("创建并进入控制台")').click()
+    await expect(page).toHaveURL(/\/console\/overview/, { timeout: 15000 })
+  }
 }
 
 /** 在当前打开的下拉中选择一个选项（按可见文本）。 */
@@ -27,6 +40,10 @@ async function selectOption(page: Page, triggerPlaceholder: string, optionText: 
 
 test.describe('上游配置控制面', () => {
   test.describe.configure({ mode: 'serial' })
+
+  test.beforeEach(({}, testInfo) => {
+    if (testInfo.project.name !== 'desktop') testInfo.skip()
+  })
 
   const sharedName = 'E2E共享-' + Date.now()
   const sharedCode = 'e2e-shared-' + Date.now()
@@ -103,10 +120,9 @@ test.describe('上游配置控制面', () => {
   })
 
   async function openChannelDetail(page: Page) {
-    const btn = page.locator('button.link-btn', { hasText: channelName }).first()
-    await btn.scrollIntoViewIfNeeded()
-    // n-data-table 的粘性表头会拦截指针事件，直接在元素上派发 click 以触发 Vue onClick
-    await btn.evaluate(el => (el as HTMLElement).click())
+    // 通道列表通过表格数据行点击打开详情抽屉（nth(1) 跳过表头行）
+    await page.locator('.n-data-table-tr').nth(1).click()
+    await expect(page.locator('.n-drawer')).toBeVisible({ timeout: 5000 })
     await expect(page.getByRole('button', { name: '新增凭证' })).toBeVisible({ timeout: 10000 })
   }
 

@@ -38,16 +38,16 @@ async function logout(page: Page) {
 
 async function ensureSelfOperated(page: Page) {
   if (page.url().includes('/console/setup')) {
-    await page.locator('.n-input input').nth(0).fill('Fluxora 自营')
-    await page.locator('.n-input input').nth(1).fill('e2eadmin')
-    await page.locator('.n-input input').nth(2).fill('e2epass1234')
-    await page.locator('.n-input input').nth(3).fill('E2E 管理员')
-    await page.locator('button:has-text("创建自营租户")').click()
-    await page.waitForURL(/\/console/, { timeout: 10000 })
-    const enter = page.locator('button:has-text("进入控制台")')
-    if (await enter.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await enter.click()
-    }
+    // 两步向导：通过 n-form-item label 定位输入框
+    await page.locator('.n-form-item:has(.n-form-item-label:text("租户名称")) input').fill('Fluxora 自营')
+    await page.locator('button:has-text("下一步")').click()
+    await page.waitForTimeout(300)
+    await page.locator('.n-form-item:has(.n-form-item-label:text("管理员用户名")) input').fill('e2eadmin')
+    await page.locator('.n-form-item:has(.n-form-item-label:text("管理员显示名")) input').fill('E2E 管理员')
+    await page.locator('.n-form-item:has(.n-form-item-label:text("管理员密码")) input').fill('Admin@2026!')
+    await page.locator('.n-form-item:has(.n-form-item-label:text("确认密码")) input').fill('Admin@2026!')
+    await page.locator('button:has-text("创建并进入控制台")').click()
+    await page.waitForURL(/\/console\/overview/, { timeout: 10000 })
   }
 }
 
@@ -129,12 +129,13 @@ test.describe('成员管理 E2E（桌面）', () => {
     await page.locator('.n-dropdown-option:has-text("管理成员")').click()
     await page.waitForURL(/\/console\/tenants\/\d+\/members/, { timeout: 5000 })
 
-    // 通过搜索定位刚创建的普通成员
+    // 通过搜索定位刚创建的普通成员（nth(1) 跳过表头行）
     await page.locator('input[placeholder*="搜索用户名"]').fill(MEMBER_USERNAME)
     await page.waitForTimeout(500)
-    await page.locator('.member-table .n-data-table-tr').first().click()
-    // 进入管理面板
-    await page.locator('button:has-text("管理成员")').click()
+    await page.locator('.member-table .n-data-table-tr').nth(1).click()
+    // 等待详情弹窗打开 → 点击「管理成员」进入管理面板
+    await expect(page.locator('.member-modal .n-button:has-text("管理成员")')).toBeVisible({ timeout: 5000 })
+    await page.locator('.member-modal .n-button:has-text("管理成员")').click()
     // 滚动到「重置密码」段
     const newPwd = 'ResetPwd2026!'
     const passwordSection = page.locator('.manage-section:has-text("重置密码")')
@@ -238,11 +239,12 @@ test.describe('成员管理 E2E（桌面）', () => {
     await modal.locator('button:has-text("创建成员")').click()
     await expect(page.locator('.n-message:has-text("成员已创建")')).toBeVisible({ timeout: 5000 })
 
-    // 尝试停用 → 看到保护提示
+    // 尝试停用 → 看到保护提示（nth(1) 跳过表头行）
     await page.locator('input[placeholder*="搜索用户名"]').fill(onlyTa)
     await page.waitForTimeout(500)
-    await page.locator('.member-table .n-data-table-tr').first().click()
-    await page.locator('button:has-text("管理成员")').click()
+    await page.locator('.member-table .n-data-table-tr').nth(1).click()
+    await expect(page.locator('.member-modal .n-button:has-text("管理成员")')).toBeVisible({ timeout: 5000 })
+    await page.locator('.member-modal .n-button:has-text("管理成员")').click()
     await page.locator('.manage-section:has-text("状态") button:has-text("停用")').click()
     await page.locator('button:has-text("确认停用")').click()
     await expect(page.locator('.n-message:has-text("该租户至少需要保留一名启用状态的租户管理员")')).toBeVisible({ timeout: 5000 })

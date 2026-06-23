@@ -15,9 +15,6 @@ spring:
       password: ${REDIS_PASSWORD:}
   flyway:
     enabled: true
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
 
 mybatis:
   mapper-locations: classpath*:mapper/**/*.xml
@@ -35,10 +32,9 @@ fluxora:
       secret: ${JWT_SECRET:fluxora-jwt-secret-key-for-local-development-only}
       expiration-ms: ${JWT_EXPIRATION:86400000}
     apikey:
-      # API Key HMAC Pepper：服务器端密钥，参与所有 API Key 哈希计算
-      # 生产环境必须通过 APIKEY_PEPPER 环境变量覆盖；建议至少 32 字符随机字符串
-      # 该值绝不可写入日志、堆栈、响应或前端；仅用于后端校验
-      pepper: ${APIKEY_PEPPER:fluxora-apikey-pepper-for-local-development-only-please-override}
+      # API Key Lookup Secret：对完整 canonical API Key 做 HMAC，供 Gateway 以摘要定位 Redis 快照。
+      # 生产环境必须通过 APIKEY_LOOKUP_SECRET 覆盖；该值绝不可进入 PostgreSQL、Redis、日志或响应。
+      lookup-secret: ${APIKEY_LOOKUP_SECRET:fluxora-apikey-lookup-secret-for-local-development-only-please-override}
     card:
       # 卡密 HMAC Pepper：与 API Key Pepper 独立，提供防御纵深
       # 生产环境必须通过 CARD_PEPPER 环境变量覆盖；建议至少 32 字符随机字符串
@@ -57,6 +53,14 @@ fluxora:
     admin:
       username: ${INIT_ADMIN_USERNAME:admin}
       password: ${INIT_ADMIN_PASSWORD:Admin@2026!}
+  runtime:
+    # Redis 为派生运行时层；关闭时仅停用后台轮询，Gateway 仍必须按 Redis 快照失败关闭。
+    enabled: ${RUNTIME_PROJECTOR_ENABLED:true}
+    projector-batch-size: ${RUNTIME_PROJECTOR_BATCH_SIZE:100}
+    projector-delay-ms: ${RUNTIME_PROJECTOR_DELAY_MS:500}
+    time-scan-delay-ms: ${RUNTIME_TIME_SCAN_DELAY_MS:30000}
+    recovery-delay-ms: ${RUNTIME_RECOVERY_DELAY_MS:30000}
+    invalidation-channel: ${RUNTIME_INVALIDATION_CHANNEL:fluxora:runtime:v1:invalidation}
 
 management:
   endpoints:

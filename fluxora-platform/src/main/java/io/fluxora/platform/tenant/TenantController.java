@@ -80,11 +80,7 @@ public class TenantController {
     @PostMapping
     @PreAuthorize("hasAuthority('PERM_TENANT_CREATE')")
     public ResponseEntity<ApiResponse<Tenant>> create(@RequestBody TenantCreateRequest request) {
-        if (tenantMapper.existsByCode(request.tenantCode())) {
-            throw new TenantException(BusinessErrorCode.TENANT_CODE_DUPLICATE);
-        }
         String type = request.type() != null ? request.type() : TenantService.STANDARD;
-        tenantService.assertNotSelfOperatedType(type);
 
         Tenant tenant = new Tenant();
         tenant.setTenantCode(request.tenantCode());
@@ -92,9 +88,7 @@ public class TenantController {
         tenant.setDescription(request.description());
         tenant.setType(type);
         tenant.setEnabled(request.enabled() != null ? request.enabled() : true);
-        tenantMapper.insert(tenant);
-
-        return ResponseEntity.ok(ApiResponse.success(tenant));
+        return ResponseEntity.ok(ApiResponse.success(tenantService.createTenant(tenant)));
     }
 
     /**
@@ -108,26 +102,14 @@ public class TenantController {
     @PreAuthorize("hasAuthority('PERM_TENANT_UPDATE')")
     public ResponseEntity<ApiResponse<Tenant>> update(@PathVariable Long id,
                                                        @RequestBody TenantUpdateRequest request) {
-        Tenant tenant = tenantMapper.findById(id)
-                .orElseThrow(() -> new TenantException(BusinessErrorCode.RESOURCE_NOT_FOUND, "租户不存在"));
-
-        tenant.setName(request.name());
-        if (request.description() != null) {
-            tenant.setDescription(request.description());
-        }
-        tenantMapper.update(tenant);
-
-        return ResponseEntity.ok(ApiResponse.success(tenant));
+        return ResponseEntity.ok(ApiResponse.success(
+                tenantService.updateTenantBasic(id, request.name(), request.description())));
     }
 
     @PutMapping("/{id}/enable")
     @PreAuthorize("hasAuthority('PERM_TENANT_ENABLE')")
     public ResponseEntity<ApiResponse<Tenant>> enable(@PathVariable Long id) {
-        tenantService.assertSelfOperatedProtected(id);
-        tenantMapper.enableTenant(id);
-        Tenant tenant = tenantMapper.findById(id)
-                .orElseThrow(() -> new TenantException(BusinessErrorCode.RESOURCE_NOT_FOUND, "租户不存在"));
-        return ResponseEntity.ok(ApiResponse.success(tenant));
+        return ResponseEntity.ok(ApiResponse.success(tenantService.enableTenant(id)));
     }
 
     /**
@@ -138,33 +120,24 @@ public class TenantController {
     @PutMapping("/{id}/disable")
     @PreAuthorize("hasAuthority('PERM_TENANT_DISABLE')")
     public ResponseEntity<ApiResponse<Tenant>> disable(@PathVariable Long id) {
-        tenantService.assertSelfOperatedProtected(id);
-        tenantMapper.disableTenant(id);
-        Tenant tenant = tenantMapper.findById(id)
-                .orElseThrow(() -> new TenantException(BusinessErrorCode.RESOURCE_NOT_FOUND, "租户不存在"));
-        return ResponseEntity.ok(ApiResponse.success(tenant));
+        return ResponseEntity.ok(ApiResponse.success(tenantService.disableTenant(id)));
     }
 
     @PutMapping("/{id}/expire")
     @PreAuthorize("hasAuthority('PERM_TENANT_EXPIRE_SET')")
     public ResponseEntity<ApiResponse<Tenant>> setExpire(@PathVariable Long id,
                                                           @RequestBody SetTenantExpireRequest request) {
-        tenantService.assertSelfOperatedProtected(id);
         Instant expireAt = null;
         if (request.expireAt() != null && !request.expireAt().isBlank()) {
             expireAt = Instant.parse(request.expireAt());
         }
-        tenantMapper.setExpireAt(id, expireAt);
-        Tenant tenant = tenantMapper.findById(id)
-                .orElseThrow(() -> new TenantException(BusinessErrorCode.RESOURCE_NOT_FOUND, "租户不存在"));
-        return ResponseEntity.ok(ApiResponse.success(tenant));
+        return ResponseEntity.ok(ApiResponse.success(tenantService.setTenantExpireAt(id, expireAt)));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_TENANT_DELETE')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
-        tenantService.assertSelfOperatedProtected(id);
-        tenantMapper.softDelete(id);
+        tenantService.deleteTenant(id);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 
