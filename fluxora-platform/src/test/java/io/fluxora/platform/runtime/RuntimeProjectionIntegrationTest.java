@@ -170,6 +170,45 @@ class RuntimeProjectionIntegrationTest {
         assertThat(manifestAfter.path("activeRuntimeVersion").asLong()).isEqualTo(2L);
     }
 
+    @Autowired private RuntimeRedisSnapshotStore snapshotStore;
+
+    @Test
+    void redisNamespaceHealthMustBeDetectableAndRecoverable() {
+        // 初始未标记健康
+        redisTemplate.delete("fluxora:runtime:v1:namespace-health");
+        assertThat(snapshotStore.namespaceHealthy()).as("清理后命名空间应不健康").isFalse();
+
+        // 标记健康
+        snapshotStore.markNamespaceHealthy();
+        assertThat(snapshotStore.namespaceHealthy()).as("标记后应为健康").isTrue();
+
+        // 模拟 Redis 清空重启后再次检测
+        redisTemplate.delete("fluxora:runtime:v1:namespace-health");
+        assertThat(snapshotStore.namespaceHealthy()).as("删除后应再次不健康").isFalse();
+    }
+
+    @Test
+    void outboxRetryMustPersistErrorAndRetryAfterProjectionFailure() {
+        // 验证 RuntimeMapper.markRetry 能正确写入重试信息
+        long tenantId = insertTenant();
+        outboxService.record(tenantId, "TENANT", tenantId, "CREATED", null);
+        RuntimeOutboxEvent event = claimSingle("runtime-retry-verify");
+
+        // 模拟严重故障后的退避重试写入
+        runtimeMapper.markRetry(event.id(),
+                java.time.Instant.now().plus(java.time.Duration.ofSeconds(2)),
+                "Redis 不可达，投影失败");
+
+        // 验证重试记录已写入
+        Integer retryCount = jdbc.queryForObject(
+                "SELECT attempt_count FROM runtime_outbox WHERE id = ?", Integer.class, event.id());
+        assertThat(retryCount).as("重试次数应增加").isGreaterThanOrEqualTo(1);
+
+        String error = jdbc.queryForObject(
+                "SELECT last_error_summary FROM runtime_outbox WHERE id = ?", String.class, event.id());
+        assertThat(error).as("错误摘要应持久化").contains("Redis");
+    }
+
     private RuntimeOutboxEvent claimSingle(String workerId) {
         List<RuntimeOutboxEvent> events = runtimeMapper.claimDueBatch(workerId, 10);
         assertThat(events).hasSize(1);
