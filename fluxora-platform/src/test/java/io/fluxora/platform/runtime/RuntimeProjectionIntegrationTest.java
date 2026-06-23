@@ -210,18 +210,23 @@ class RuntimeProjectionIntegrationTest {
     }
 
     @Test
-    void outboxAndBusinessWriteMustBeSameTransaction() {
-        // 业务写入（INSERT tenant）与 Outbox 写入共享同一数据库事务。
-        // 验证方法：单个 tenant INSERT 后不提交事务无法被 Outbox 读取。
+    void outboxEventMustBeImmediatelyClaimableAfterSameTransactionCommit() {
+        // 业务写入后，Spring 默认自动提交；Outbox 记录在同一事务中持久化并立即可被领取。
         long tenantId = insertTenant();
         outboxService.record(tenantId, "TENANT", tenantId, "CREATED", null);
 
-        // 同事务内 Outbox 记录可被立即领取
-        String worker = "tx-verify-" + System.nanoTime();
+        // 验证：同事务已提交，Projector 的 claimDueBatch 可立即领到
+        String worker = "tx-claim-" + System.nanoTime();
         List<RuntimeOutboxEvent> events = runtimeMapper.claimDueBatch(worker, 5);
         boolean found = events.stream().anyMatch(
                 e -> "TENANT".equals(e.aggregateType()) && tenantId == e.aggregateId());
-        assertThat(found).as("同一事务内的 Outbox 记录必须可被领取").isTrue();
+        assertThat(found).as("提交后的 Outbox 记录必须可被立即领取").isTrue();
+
+        // 验证：重复领取同一批不会返回已锁定的记录
+        List<RuntimeOutboxEvent> secondClaim = runtimeMapper.claimDueBatch("tx-claim-2-" + System.nanoTime(), 5);
+        boolean stillFound = secondClaim.stream().anyMatch(
+                e -> "TENANT".equals(e.aggregateType()) && tenantId == e.aggregateId());
+        assertThat(stillFound).as("已被领取的记录不应被第二 worker 再领到（FOR UPDATE SKIP LOCKED）").isFalse();
 
         // 清理
         events.forEach(e -> runtimeMapper.markCompleted(e.id()));

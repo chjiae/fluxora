@@ -165,15 +165,18 @@ class GatewayRuntimeBehaviorTest {
     }
 
     @Test
-    void malformedApiKeyMustNotAccessRedis() {
+    void malformedApiKeyMustBeRejectedBeforeAccessingRedis() {
         MemorySource source = new MemorySource();
         GatewayAuthenticator authenticator = authenticator(source);
 
-        // 格式非法（不以 flx_ 开头）→ 格式校验直接拒绝，不查 Redis
+        // 格式非法 → canonicalize 返回 Optional.empty() → 直接失败，不调用 hasher 和 L1
         assertThrows(Exception.class, () -> await(authenticator.authenticate("not-a-flx-key")));
         assertThrows(Exception.class, () -> await(authenticator.authenticate("sk-1234567890")));
         assertThrows(Exception.class, () -> await(authenticator.authenticate("")));
-        assertThrows(Exception.class, () -> await(authenticator.authenticate((String) null)));
+        assertThrows(Exception.class, () -> await(authenticator.authenticate("   ")));
+
+        // 验证：4 次格式预校验均未触发任何 Redis 加载（source 是全新的，loadCount 全部为 0）
+        assertEquals(0, source.totalLoads());
     }
 
     @Test
@@ -385,6 +388,7 @@ class GatewayRuntimeBehaviorTest {
         }
 
         int loads(RuntimeScopeType type, String key) { return readCounts.getOrDefault(key(type, key), new AtomicInteger()).get(); }
+        int totalLoads() { return readCounts.values().stream().mapToInt(AtomicInteger::get).sum(); }
 
         @Override
         public Future<RuntimeSnapshot> load(RuntimeScopeType type, String key) {
