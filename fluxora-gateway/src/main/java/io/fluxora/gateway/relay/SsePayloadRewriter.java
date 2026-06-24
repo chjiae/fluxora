@@ -2,6 +2,7 @@ package io.fluxora.gateway.relay;
 
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonObject;
+import java.util.function.Consumer;
 
 /**
  * 按 SSE 行边界改写 JSON data 事件，避免将上游模型标识暴露给客户端。
@@ -10,11 +11,22 @@ import io.vertx.core.json.JsonObject;
 final class SsePayloadRewriter {
     private final RelayHandler handler;
     private final String tenantModelCode;
+    private final Consumer<JsonObject> eventConsumer;
     private Buffer pending = Buffer.buffer();
+    private boolean terminalEvent;
 
     SsePayloadRewriter(RelayHandler handler, String tenantModelCode) {
+        this(handler, tenantModelCode, ignored -> { });
+    }
+
+    /**
+     * 观察回调只接收单个已解析 data JSON，用于提取 usage；它不会保存文本内容，
+     * 因而即使带有长文本或工具参数，也不会成为请求级聚合缓冲。
+     */
+    SsePayloadRewriter(RelayHandler handler, String tenantModelCode, Consumer<JsonObject> eventConsumer) {
         this.handler = handler;
         this.tenantModelCode = tenantModelCode;
+        this.eventConsumer = eventConsumer;
     }
 
     Buffer rewrite(Buffer chunk) {
@@ -39,6 +51,10 @@ final class SsePayloadRewriter {
         return rewritten;
     }
 
+    boolean hasTerminalEvent() {
+        return terminalEvent;
+    }
+
     private void appendLine(Buffer target, Buffer rawLine, boolean terminated) {
         boolean crlf = rawLine.length() > 0 && rawLine.getByte(rawLine.length() - 1) == '\r';
         String line = rawLine.getString(0, crlf ? rawLine.length() - 1 : rawLine.length());
@@ -61,11 +77,18 @@ final class SsePayloadRewriter {
             data = data.substring(1);
             prefix = "data: ";
         }
-        if (data.isEmpty() || "[DONE]".equals(data)) {
+        if (data.isEmpty()) {
+            return line;
+        }
+        if ("[DONE]".equals(data)) {
+            terminalEvent = true;
             return line;
         }
         try {
-            return prefix + handler.clientSseData(new JsonObject(data), tenantModelCode).encode();
+            JsonObject event = new JsonObject(data);
+            eventConsumer.accept(event);
+            terminalEvent = terminalEvent || handler.isTerminalSseEvent(event);
+            return prefix + handler.clientSseData(event, tenantModelCode).encode();
         } catch (RuntimeException ignored) {
             return line;
         }

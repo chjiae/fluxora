@@ -30,7 +30,7 @@ public final class GatewayRouteResolver {
             }
             RouteSelection selection = selector.select(route.getJsonArray("targets"), inboundProtocol);
             if (selection == null) throw GatewayFailure.modelUnavailable();
-            return selection;
+            return selection.withRouteSnapshot(route);
         }).recover(error -> Future.failedFuture(error instanceof GatewayFailure
                 ? error : GatewayFailure.runtimeUnavailable()));
     }

@@ -6,7 +6,10 @@ import java.time.Duration;
 public record GatewayRuntimeConfig(String redisConnectionString, String invalidationChannel, String apiKeyLookupSecret,
                                    Duration apiKeyTtl, Duration userTtl, Duration tenantTtl, Duration routeTtl,
                                    Duration invalidApiKeyTtl, int maxCacheEntries, Duration credentialTtl,
-                                   String runtimeCredentialKey, String profile, int maxRequestBodyBytes) {
+                                   String runtimeCredentialKey, String profile, int maxRequestBodyBytes,
+                                   String relayEventStreamKey, int relayEventStreamMaxLength,
+                                   int relayEventRetryQueueSize, int relayEventRetryMaxAttempts,
+                                   Duration relayEventRetryDelay) {
     private static final String LOCAL_RUNTIME_CREDENTIAL_KEY = "cnVudGltZS1jcmVkZW50aWFsLWtleS0wMTIzNDU2Nzg=";
 
     /** 保持已有测试和调用方的构造契约，新增安全配置使用本地开发默认值。 */
@@ -15,7 +18,7 @@ public record GatewayRuntimeConfig(String redisConnectionString, String invalida
                                 Duration invalidApiKeyTtl, int maxCacheEntries) {
         this(redisConnectionString, invalidationChannel, apiKeyLookupSecret, apiKeyTtl, userTtl, tenantTtl, routeTtl,
                 invalidApiKeyTtl, maxCacheEntries, Duration.ofMillis(5_000), LOCAL_RUNTIME_CREDENTIAL_KEY,
-                "local", 1_048_576);
+                "local", 1_048_576, "fluxora:relay-events:v1", 10_000, 1_000, 5, Duration.ofSeconds(1));
     }
 
     public static GatewayRuntimeConfig fromEnvironment() {
@@ -38,7 +41,12 @@ public record GatewayRuntimeConfig(String redisConnectionString, String invalida
                 duration("GATEWAY_CREDENTIAL_CACHE_TTL_MS", 5_000),
                 env("FLUXORA_RUNTIME_CREDENTIAL_KEY", LOCAL_RUNTIME_CREDENTIAL_KEY),
                 env("FLUXORA_PROFILE", "local"),
-                integer("GATEWAY_MAX_REQUEST_BODY_BYTES", 1_048_576));
+                integer("GATEWAY_MAX_REQUEST_BODY_BYTES", 1_048_576),
+                env("GATEWAY_RELAY_EVENT_STREAM", "fluxora:relay-events:v1"),
+                integer("GATEWAY_RELAY_EVENT_STREAM_MAX_LENGTH", 10_000),
+                integer("GATEWAY_RELAY_EVENT_RETRY_QUEUE_SIZE", 1_000),
+                integer("GATEWAY_RELAY_EVENT_RETRY_MAX_ATTEMPTS", 5),
+                duration("GATEWAY_RELAY_EVENT_RETRY_DELAY_MS", 1_000));
     }
 
     private static Duration duration(String key, long defaultMs) {

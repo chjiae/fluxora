@@ -16,4 +16,16 @@ public final class GatewayMetrics {
     public final AtomicLong invalidationReceived = new AtomicLong();
     public final AtomicLong invalidationIgnoredOld = new AtomicLong();
     public final AtomicLong failClosed = new AtomicLong();
+    /** 中继观测指标不携带 API Key、模型文本、租户或 Redis Key 等高基数/敏感标签。 */
+    public final AtomicLong relayEventsProduced = new AtomicLong();
+    public final AtomicLong relayEventsPublishFailed = new AtomicLong();
+    public final AtomicLong relayEventsRetry = new AtomicLong();
+    public final AtomicLong relayEventsDropped = new AtomicLong();
+    public final AtomicLong relayEventsPendingRetry = new AtomicLong();
+    public final AtomicLong relayUsageReported = new AtomicLong();
+    public final AtomicLong relayUsagePartial = new AtomicLong();
+    public final AtomicLong relayUsageUnknown = new AtomicLong();
+    public final AtomicLong relayPricingCalculated = new AtomicLong();
+    public final AtomicLong relayPricingPartial = new AtomicLong();
+    public final AtomicLong relayPricingUnavailable = new AtomicLong();
 }

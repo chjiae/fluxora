@@ -41,4 +41,16 @@ class SsePayloadRewriterTest {
                         + "data: {\"type\":\"message_stop\"}\n\n",
                 new AnthropicRelayHandler().streamError("当前模型暂不可用，请稍后重试").toString());
     }
+
+    @Test
+    void shouldRecognizeProtocolTerminalEventsWithoutRetainingSseBody() {
+        SsePayloadRewriter openAi = new SsePayloadRewriter(new OpenAiRelayHandler(), "tenant-qwen");
+        openAi.rewrite(Buffer.buffer("data: [DONE]\n\n"));
+        assertEquals(true, openAi.hasTerminalEvent());
+
+        SsePayloadRewriter anthropic = new SsePayloadRewriter(new AnthropicRelayHandler(), "tenant-claude");
+        anthropic.rewrite(Buffer.buffer("event: message_stop\n"
+                + "data: {\"type\":\"message_stop\"}\n\n"));
+        assertEquals(true, anthropic.hasTerminalEvent());
+    }
 }
