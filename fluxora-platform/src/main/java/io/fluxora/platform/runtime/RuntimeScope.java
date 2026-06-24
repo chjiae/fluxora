@@ -33,4 +33,12 @@ public record RuntimeScope(RuntimeScopeType type, String scopeKey, Long tenantId
                 tenantId + ":" + inboundProtocol + ":" + encodedCode,
                 tenantId, inboundProtocol, tenantModelCode);
     }
+
+    /**
+     * 上游凭证的独立敏感 Scope。逻辑键只包含内部数值 ID，避免任何认证材料参与 Redis Key。
+     */
+    public static RuntimeScope upstreamCredential(Long tenantId, Long providerCredentialId) {
+        return new RuntimeScope(RuntimeScopeType.UPSTREAM_CREDENTIAL, tenantId + ":" + providerCredentialId,
+                tenantId, null, null);
+    }
 }

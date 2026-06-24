@@ -1,6 +1,7 @@
 package io.fluxora.platform.runtime;
 
 import io.fluxora.platform.runtime.mapper.RuntimeMapper;
+import io.fluxora.platform.runtime.mapper.RuntimeCredentialScopeRow;
 import io.fluxora.platform.runtime.mapper.RuntimeScopeRow;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -45,8 +46,8 @@ public class RuntimeImpactResolver {
             case "ROUTE_TARGET" -> routeScopes(runtimeMapper.findRouteScopesByTarget(aggregateId));
             case "TENANT_MODEL_CANDIDATE_MAPPING" -> routeScopes(runtimeMapper.findRouteScopesByMapping(aggregateId));
             case "PROVIDER_CHANNEL_MODEL" -> routeScopes(runtimeMapper.findRouteScopesByCandidate(aggregateId));
-            case "PROVIDER_CHANNEL", "PROVIDER_CHANNEL_CREDENTIAL" -> routeScopes(runtimeMapper.findRouteScopesByChannel(aggregateId));
-            case "PROVIDER_CREDENTIAL" -> routeScopes(runtimeMapper.findRouteScopesByCredential(aggregateId));
+            case "PROVIDER_CHANNEL", "PROVIDER_CHANNEL_CREDENTIAL" -> channelScopes(aggregateId);
+            case "PROVIDER_CREDENTIAL" -> credentialScopes(event, aggregateId);
             case "PROVIDER" -> routeScopes(runtimeMapper.findRouteScopesByProvider(aggregateId));
             case "PROVIDER_BASE_URL" -> routeScopes(runtimeMapper.findRouteScopesByBaseUrl(aggregateId));
             default -> Set.of();
@@ -59,6 +60,8 @@ public class RuntimeImpactResolver {
         runtimeMapper.findAllAuthUserScopes().forEach(row -> scopes.add(RuntimeScope.user(row.tenantId(), row.userId())));
         runtimeMapper.findAllAuthTenantScopes().forEach(row -> scopes.add(RuntimeScope.tenant(row.tenantId())));
         scopes.addAll(routeScopes(runtimeMapper.findAllRouteScopes()));
+        runtimeMapper.findAllCredentialScopes().forEach(row ->
+                scopes.add(RuntimeScope.upstreamCredential(row.tenantId(), row.credentialId())));
         return scopes;
     }
 
@@ -79,6 +82,22 @@ public class RuntimeImpactResolver {
             return scopes;
         }
         rows.forEach(row -> scopes.add(RuntimeScope.route(row.tenantId(), row.inboundProtocol(), previousCode)));
+        return scopes;
+    }
+
+    /** 通道凭证池变化同时失效本通道引用的路由与所有可用凭证敏感快照。 */
+    private Set<RuntimeScope> channelScopes(Long channelId) {
+        Set<RuntimeScope> scopes = routeScopes(runtimeMapper.findRouteScopesByChannel(channelId));
+        runtimeMapper.findCredentialScopesByChannel(channelId).forEach(row ->
+                scopes.add(RuntimeScope.upstreamCredential(row.tenantId(), row.credentialId())));
+        return scopes;
+    }
+
+    /** 单凭证轮换、认证方式或状态变化必须同时刷新敏感 Scope 与所有引用路由。 */
+    private Set<RuntimeScope> credentialScopes(RuntimeOutboxEvent event, Long credentialId) {
+        Set<RuntimeScope> scopes = routeScopes(runtimeMapper.findRouteScopesByCredential(credentialId));
+        runtimeMapper.findRuntimeCredentialSnapshot(event.tenantId(), credentialId)
+                .ifPresent(row -> scopes.add(RuntimeScope.upstreamCredential(row.tenantId(), credentialId)));
         return scopes;
     }
 }

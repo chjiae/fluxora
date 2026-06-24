@@ -61,6 +61,9 @@ fluxora:
     time-scan-delay-ms: ${RUNTIME_TIME_SCAN_DELAY_MS:30000}
     recovery-delay-ms: ${RUNTIME_RECOVERY_DELAY_MS:30000}
     invalidation-channel: ${RUNTIME_INVALIDATION_CHANNEL:fluxora:runtime:v1:invalidation}
+    credential:
+      # Gateway 与 Platform 共享的运行时密钥，仅用于 Redis 敏感快照重加密；不可与数据库主密钥复用。
+      encryption-key: ${FLUXORA_RUNTIME_CREDENTIAL_KEY:cnVudGltZS1jcmVkZW50aWFsLWtleS0wMTIzNDU2Nzg=}
 
 management:
   endpoints:

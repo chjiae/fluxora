@@ -3,6 +3,9 @@ package io.fluxora.platform.runtime;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.fluxora.platform.runtime.mapper.RuntimeMapper;
+import io.fluxora.platform.upstream.security.CredentialCryptoService;
+import io.fluxora.platform.upstream.security.EncryptedCredential;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -52,6 +55,7 @@ class RuntimeProjectionIntegrationTest {
     @Autowired private RuntimeImpactResolver impactResolver;
     @Autowired private StringRedisTemplate redisTemplate;
     @Autowired private ObjectMapper objectMapper;
+    @Autowired private CredentialCryptoService credentialCryptoService;
 
     @Test
     void shouldWriteImmutableApiKeySnapshotsAndOnlyAdvanceManifestVersion() throws Exception {
@@ -101,9 +105,9 @@ class RuntimeProjectionIntegrationTest {
     void routeSnapshotMustBeOneCompleteExecutionPackageWithoutSecrets() throws Exception {
         long tenantId = insertTenant();
         String modelCode = "runtime-model-" + System.nanoTime();
-        long modelId = insertExecutableRouteFixture(tenantId, modelCode);
+        RuntimeFixture fixture = insertExecutableRouteFixture(tenantId, modelCode);
 
-        outboxService.record(tenantId, "TENANT_MODEL", modelId, "ENABLED", null);
+        outboxService.record(tenantId, "TENANT_MODEL", fixture.modelId(), "ENABLED", null);
         projector.project(claimSingle("runtime-route"));
 
         RuntimeScope scope = RuntimeScope.route(tenantId, "OPENAI", modelCode);
@@ -116,8 +120,45 @@ class RuntimeProjectionIntegrationTest {
         assertThat(snapshot.path("outputPricePerMillion").asText()).isEqualTo("0.30000000");
         assertThat(target.path("hasUsableCredential").asBoolean()).isTrue();
         assertThat(target.path("outboundProtocol").asText()).isEqualTo("OPENAI");
-        assertThat(snapshot.toString()).doesNotContain("baseUrl", "ciphertext", "initializationVector",
-                "credentialFingerprint", "runtime-secret");
+        assertThat(target.path("baseUrl").asText()).isEqualTo("https://runtime-secret.example/v1");
+        assertThat(target.path("connectTimeoutMs").asInt()).isEqualTo(5000);
+        assertThat(target.path("readTimeoutMs").asInt()).isEqualTo(60000);
+        assertThat(target.path("credentialRefs").isArray()).isTrue();
+        assertThat(snapshot.toString()).doesNotContain("ciphertext", "initializationVector",
+                "credentialFingerprint", fixture.plaintext());
+    }
+
+    @Test
+    void credentialRuntimeSnapshotMustBeSeparatedFromRouteAndNeverContainPlaintext() throws Exception {
+        long tenantId = insertTenant();
+        String modelCode = "credential-runtime-model-" + System.nanoTime();
+        RuntimeFixture fixture = insertExecutableRouteFixture(tenantId, modelCode);
+
+        outboxService.record(tenantId, "TENANT_MODEL", fixture.modelId(), "ENABLED", null);
+        projector.project(claimSingle("runtime-credential-route"));
+
+        RuntimeScope routeScope = RuntimeScope.route(tenantId, "OPENAI", modelCode);
+        JsonNode routeSnapshot = objectMapper.readTree(redisTemplate.opsForValue().get(
+                RuntimeRedisSnapshotStore.snapshotKey(routeScope, 1L)));
+        assertThat(routeSnapshot.toString()).doesNotContain("encryptedCredentialPayload", "ciphertext",
+                "initializationVector", fixture.plaintext());
+        assertThat(routeSnapshot.path("targets").get(0).path("credentialRefs").get(0)
+                .path("providerCredentialId").asLong()).isEqualTo(fixture.credentialId());
+
+        outboxService.record(tenantId, "PROVIDER_CREDENTIAL", fixture.credentialId(), "CREATED", null);
+        RuntimeOutboxEvent credentialEvent = claimSingle("runtime-credential-sensitive");
+        assertThat(Arrays.stream(RuntimeScopeType.values()).map(Enum::name))
+                .contains("UPSTREAM_CREDENTIAL");
+        projector.project(credentialEvent);
+
+        RuntimeScope credentialScope = (RuntimeScope) RuntimeScope.class
+                .getMethod("upstreamCredential", Long.class, Long.class)
+                .invoke(null, tenantId, fixture.credentialId());
+        JsonNode credentialSnapshot = objectMapper.readTree(redisTemplate.opsForValue().get(
+                RuntimeRedisSnapshotStore.snapshotKey(credentialScope, 1L)));
+        assertThat(credentialSnapshot.path("providerCredentialId").asLong()).isEqualTo(fixture.credentialId());
+        assertThat(credentialSnapshot.path("encryptedCredentialPayload").isObject()).isTrue();
+        assertThat(credentialSnapshot.toString()).doesNotContain(fixture.plaintext(), "credentialFingerprint", "masterKey");
     }
 
     @Test
@@ -333,7 +374,7 @@ class RuntimeProjectionIntegrationTest {
     }
 
     /** 仅用于运行时集成测试：直接构造满足关联约束的一条可执行模型路由。 */
-    private long insertExecutableRouteFixture(long tenantId, String modelCode) {
+    private RuntimeFixture insertExecutableRouteFixture(long tenantId, String modelCode) {
         String suffix = Long.toUnsignedString(System.nanoTime());
         long providerId = jdbc.queryForObject("""
                 INSERT INTO provider(name, code, scope_type, enabled)
@@ -375,16 +416,23 @@ class RuntimeProjectionIntegrationTest {
                                          provider_channel_id, upstream_model_id_snapshot, enabled, priority, weight)
                 VALUES (?, ?, ?, ?, 'runtime-upstream-model', TRUE, 10, 100)
                 """, tenantId, routeId, mappingId, channelId);
+        String plaintext = "runtime-credential-plaintext-" + suffix;
+        EncryptedCredential encrypted = credentialCryptoService.encrypt(plaintext);
         long credentialId = jdbc.queryForObject("""
                 INSERT INTO provider_credential(tenant_id, name, credential_type, masked_value, credential_fingerprint,
                                                 ciphertext, initialization_vector, encryption_version, enabled, priority, weight)
-                VALUES (?, '运行时凭证', 'API_KEY', '***', ?, 'runtime-secret', 'runtime-iv', 'v1', TRUE, 10, 100)
+                VALUES (?, '运行时凭证', 'API_KEY', '***', ?, ?, ?, ?, TRUE, 10, 100)
                 RETURNING id
-                """, Long.class, tenantId, "f".repeat(64));
+                """, Long.class, tenantId, "f".repeat(64), encrypted.ciphertext(),
+                encrypted.initializationVector(), encrypted.encryptionVersion());
         jdbc.update("""
                 INSERT INTO provider_channel_credential(tenant_id, provider_channel_id, provider_credential_id, enabled)
                 VALUES (?, ?, ?, TRUE)
                 """, tenantId, channelId, credentialId);
-        return modelId;
+        return new RuntimeFixture(modelId, credentialId, plaintext);
+    }
+
+    /** 运行时夹具返回模型与凭证 ID，便于验证两个快照 Scope 的隔离。 */
+    private record RuntimeFixture(long modelId, long credentialId, String plaintext) {
     }
 }

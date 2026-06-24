@@ -68,6 +68,16 @@
   <select id="findRouteScopesByProvider" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id JOIN provider_channel channel ON channel.id=candidate.provider_channel_id JOIN provider_base_url baseUrl ON baseUrl.id=channel.provider_base_url_id WHERE baseUrl.provider_id=#{providerId}</select>
   <select id="findRouteScopesByBaseUrl" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id JOIN provider_channel channel ON channel.id=candidate.provider_channel_id WHERE channel.provider_base_url_id=#{baseUrlId}</select>
   <select id="findAllRouteScopes" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/></select>
+  <!-- 敏感 Scope 影响范围只查询 tenantId 与 credentialId，不把密文带入 Resolver，避免循环 Mapper 查询。 -->
+  <select id="findCredentialScopesByChannel" resultType="io.fluxora.platform.runtime.mapper.RuntimeCredentialScopeRow">
+    SELECT credential.tenant_id AS tenantId,credential.id AS credentialId
+    FROM provider_channel_credential binding
+    JOIN provider_credential credential ON credential.id=binding.provider_credential_id
+    WHERE binding.provider_channel_id=#{channelId} AND binding.deleted_at IS NULL AND credential.deleted_at IS NULL
+  </select>
+  <select id="findAllCredentialScopes" resultType="io.fluxora.platform.runtime.mapper.RuntimeCredentialScopeRow">
+    SELECT tenant_id AS tenantId,id AS credentialId FROM provider_credential WHERE deleted_at IS NULL
+  </select>
   <select id="findAllApiKeyLookupHashes" resultType="string">SELECT lookup_hash FROM api_key WHERE lookup_hash_version=1</select>
   <!-- 全量恢复用户快照时必须显式取 userId，禁止复用路由 Scope 的 modelCode 列。 -->
   <select id="findAllAuthUserScopes" resultType="io.fluxora.platform.runtime.mapper.RuntimeAuthUserScopeRow">SELECT tenant_id AS tenantId,id AS userId FROM user_account WHERE tenant_id IS NOT NULL</select>
@@ -84,6 +94,15 @@
   <select id="findAuthTenantSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeAuthTenantRow">
     SELECT id AS tenantId,enabled,expire_at AS expireAt,deleted_at AS deletedAt,settlement_currency_code AS settlementCurrencyCode FROM tenant WHERE id=#{tenantId}
   </select>
+  <!-- 敏感凭证快照的唯一密文读取；只允许 RuntimeSnapshotBuilder 调用，禁止普通 DTO 与 Controller 使用。 -->
+  <select id="findRuntimeCredentialSnapshot" resultType="io.fluxora.platform.runtime.RuntimeCredentialRow">
+    SELECT tenant_id AS tenantId,id AS providerCredentialId,credential_version AS credentialVersion,
+           auth_type AS authType,enabled,(deleted_at IS NOT NULL) AS deleted,
+           ciphertext,initialization_vector AS initializationVector,encryption_version AS encryptionVersion
+    FROM provider_credential
+    WHERE id=#{credentialId}
+      <if test="tenantId != null">AND tenant_id=#{tenantId}</if>
+  </select>
   <!-- 强关联模型/价格/路由/目标/候选/通道/凭证池一次读取，供单个 TENANT_MODEL_ROUTE 原子快照使用。 -->
   <select id="findRouteSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeRouteRow">
     SELECT tm.tenant_id AS tenantId,tm.id AS tenantModelId,tm.model_code AS tenantModelCode,tm.enabled AS tenantModelEnabled,
@@ -99,6 +118,10 @@
       COALESCE(candidate.enabled AND candidate.deleted_at IS NULL,FALSE) AS candidateEnabled,
       COALESCE(channel.enabled AND baseUrl.enabled AND provider.enabled AND channel.deleted_at IS NULL AND baseUrl.deleted_at IS NULL AND provider.deleted_at IS NULL,FALSE) AS channelEnabled,
       baseUrl.protocol AS outboundProtocol,candidate.upstream_model_id AS upstreamModelId,
+      baseUrl.normalized_base_url AS normalizedBaseUrl,channel.connect_timeout_ms AS connectTimeoutMs,channel.read_timeout_ms AS readTimeoutMs,
+      credential.id AS providerCredentialId,credential.credential_version AS credentialVersion,credential.auth_type AS credentialAuthType,
+      COALESCE(binding.enabled AND binding.deleted_at IS NULL,FALSE) AS credentialBindingEnabled,
+      COALESCE(credential.enabled AND credential.deleted_at IS NULL,FALSE) AS credentialEnabled,
       EXISTS(SELECT 1 FROM provider_channel_credential binding JOIN provider_credential credential ON credential.id=binding.provider_credential_id
              WHERE binding.provider_channel_id=channel.id AND binding.enabled=TRUE AND binding.deleted_at IS NULL AND credential.enabled=TRUE AND credential.deleted_at IS NULL) AS hasUsableCredential,
       COALESCE((SELECT MAX(EXTRACT(EPOCH FROM GREATEST(binding.updated_at,credential.updated_at))*1000)::BIGINT
@@ -112,6 +135,8 @@
       LEFT JOIN provider_channel channel ON channel.id=candidate.provider_channel_id
       LEFT JOIN provider_base_url baseUrl ON baseUrl.id=channel.provider_base_url_id
       LEFT JOIN provider ON provider.id=baseUrl.provider_id
+      LEFT JOIN provider_channel_credential binding ON binding.provider_channel_id=channel.id AND binding.deleted_at IS NULL
+      LEFT JOIN provider_credential credential ON credential.id=binding.provider_credential_id AND credential.deleted_at IS NULL
     WHERE tm.tenant_id=#{tenantId} AND tm.model_code=#{tenantModelCode} AND route.inbound_protocol=#{inboundProtocol}
       AND tm.deleted_at IS NULL AND route.deleted_at IS NULL
   </select>

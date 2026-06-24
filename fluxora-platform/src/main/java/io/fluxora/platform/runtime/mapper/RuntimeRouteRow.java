@@ -19,5 +19,8 @@ public record RuntimeRouteRow(Long tenantId, Long tenantModelId, String tenantMo
                               Long providerChannelModelId, Integer priority, Integer weight,
                               boolean targetEnabled, boolean mappingEnabled, boolean candidateEnabled,
                               boolean channelEnabled, String outboundProtocol, String upstreamModelId,
+                              String normalizedBaseUrl, Integer connectTimeoutMs, Integer readTimeoutMs,
+                              Long providerCredentialId, Long credentialVersion, String credentialAuthType,
+                              boolean credentialBindingEnabled, boolean credentialEnabled,
                               boolean hasUsableCredential, Long credentialPoolVersion) {
 }

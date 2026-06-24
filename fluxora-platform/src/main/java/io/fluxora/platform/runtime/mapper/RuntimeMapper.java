@@ -1,6 +1,7 @@
 package io.fluxora.platform.runtime.mapper;
 
 import io.fluxora.platform.runtime.RuntimeOutboxEvent;
+import io.fluxora.platform.runtime.RuntimeCredentialRow;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +35,8 @@ public interface RuntimeMapper {
     List<RuntimeScopeRow> findRouteScopesByProvider(@Param("providerId") Long providerId);
     List<RuntimeScopeRow> findRouteScopesByBaseUrl(@Param("baseUrlId") Long baseUrlId);
     List<RuntimeScopeRow> findAllRouteScopes();
+    List<RuntimeCredentialScopeRow> findCredentialScopesByChannel(@Param("channelId") Long channelId);
+    List<RuntimeCredentialScopeRow> findAllCredentialScopes();
     List<String> findAllApiKeyLookupHashes();
     List<RuntimeAuthUserScopeRow> findAllAuthUserScopes();
     List<RuntimeScopeRow> findAllAuthTenantScopes();
@@ -41,6 +44,8 @@ public interface RuntimeMapper {
     Optional<RuntimeAuthApiKeyRow> findAuthApiKeySnapshot(@Param("lookupHash") String lookupHash);
     Optional<RuntimeAuthUserRow> findAuthUserSnapshot(@Param("tenantId") Long tenantId, @Param("userId") Long userId);
     Optional<RuntimeAuthTenantRow> findAuthTenantSnapshot(@Param("tenantId") Long tenantId);
+    Optional<RuntimeCredentialRow> findRuntimeCredentialSnapshot(@Param("tenantId") Long tenantId,
+                                                                  @Param("credentialId") Long credentialId);
     List<RuntimeRouteRow> findRouteSnapshot(@Param("tenantId") Long tenantId,
                                             @Param("inboundProtocol") String inboundProtocol,
                                             @Param("tenantModelCode") String tenantModelCode);

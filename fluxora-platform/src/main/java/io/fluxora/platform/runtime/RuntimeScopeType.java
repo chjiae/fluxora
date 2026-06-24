@@ -8,5 +8,7 @@ public enum RuntimeScopeType {
     AUTH_API_KEY,
     AUTH_USER,
     AUTH_TENANT,
-    TENANT_MODEL_ROUTE
+    TENANT_MODEL_ROUTE,
+    /** Gateway 专用敏感快照，保存运行时重加密密文，禁止作为普通路由或管理接口响应。 */
+    UPSTREAM_CREDENTIAL
 }

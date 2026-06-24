@@ -3,6 +3,7 @@ package io.fluxora.platform.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.fluxora.common.security.RuntimeCredentialCipher;
 import io.fluxora.platform.runtime.mapper.RuntimeAuthApiKeyRow;
 import io.fluxora.platform.runtime.mapper.RuntimeAuthTenantRow;
 import io.fluxora.platform.runtime.mapper.RuntimeAuthUserRow;
@@ -11,6 +12,8 @@ import io.fluxora.platform.runtime.mapper.RuntimeRouteRow;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 
 /**
@@ -23,10 +26,13 @@ public class RuntimeSnapshotBuilder {
 
     private final RuntimeMapper runtimeMapper;
     private final ObjectMapper objectMapper;
+    private final RuntimeCredentialCryptoService credentialCryptoService;
 
-    public RuntimeSnapshotBuilder(RuntimeMapper runtimeMapper, ObjectMapper objectMapper) {
+    public RuntimeSnapshotBuilder(RuntimeMapper runtimeMapper, ObjectMapper objectMapper,
+                                  RuntimeCredentialCryptoService credentialCryptoService) {
         this.runtimeMapper = runtimeMapper;
         this.objectMapper = objectMapper;
+        this.credentialCryptoService = credentialCryptoService;
     }
 
     public ObjectNode build(RuntimeScope scope, long runtimeVersion, RuntimeOutboxEvent event) {
@@ -35,6 +41,7 @@ public class RuntimeSnapshotBuilder {
             case AUTH_USER -> userSnapshot(scope, runtimeVersion, event);
             case AUTH_TENANT -> tenantSnapshot(scope, runtimeVersion, event);
             case TENANT_MODEL_ROUTE -> routeSnapshot(scope, runtimeVersion, event);
+            case UPSTREAM_CREDENTIAL -> upstreamCredentialSnapshot(scope, runtimeVersion, event);
         };
     }
 
@@ -92,26 +99,71 @@ public class RuntimeSnapshotBuilder {
         snapshot.put("routeEnabled", first.routeEnabled());
         writePrice(snapshot, first);
 
+        Map<Long, ObjectNode> targetsById = new LinkedHashMap<>();
         for (RuntimeRouteRow row : rows) {
             if (row.routeTargetId() == null) {
                 continue;
             }
-            ObjectNode target = targets.addObject();
-            target.put("routeTargetId", row.routeTargetId());
-            target.put("tenantModelCandidateMappingId", row.mappingId());
-            target.put("providerChannelId", row.providerChannelId());
-            target.put("providerChannelModelId", row.providerChannelModelId());
-            target.put("priority", row.priority());
-            target.put("weight", row.weight());
-            target.put("targetStatus", enabledStatus(row.targetEnabled(), "ENABLED", "DISABLED"));
-            target.put("mappingStatus", enabledStatus(row.mappingEnabled(), "ENABLED", "DISABLED"));
-            target.put("candidateStatus", enabledStatus(row.candidateEnabled(), "ENABLED", "DISABLED"));
-            target.put("channelStatus", enabledStatus(row.channelEnabled(), "ENABLED", "DISABLED"));
-            target.put("outboundProtocol", row.outboundProtocol());
-            target.put("upstreamModelId", row.upstreamModelId());
-            target.put("hasUsableCredential", row.hasUsableCredential());
-            target.put("credentialPoolVersion", row.credentialPoolVersion());
+            ObjectNode target = targetsById.get(row.routeTargetId());
+            if (target == null) {
+                target = targets.addObject();
+                targetsById.put(row.routeTargetId(), target);
+                target.put("routeTargetId", row.routeTargetId());
+                target.put("tenantModelCandidateMappingId", row.mappingId());
+                target.put("providerChannelId", row.providerChannelId());
+                target.put("providerChannelModelId", row.providerChannelModelId());
+                target.put("priority", row.priority());
+                target.put("weight", row.weight());
+                target.put("targetStatus", enabledStatus(row.targetEnabled(), "ENABLED", "DISABLED"));
+                target.put("mappingStatus", enabledStatus(row.mappingEnabled(), "ENABLED", "DISABLED"));
+                target.put("candidateStatus", enabledStatus(row.candidateEnabled(), "ENABLED", "DISABLED"));
+                target.put("channelStatus", enabledStatus(row.channelEnabled(), "ENABLED", "DISABLED"));
+                target.put("outboundProtocol", row.outboundProtocol());
+                target.put("upstreamModelId", row.upstreamModelId());
+                target.put("baseUrl", row.normalizedBaseUrl());
+                target.put("connectTimeoutMs", row.connectTimeoutMs());
+                target.put("readTimeoutMs", row.readTimeoutMs());
+                target.put("hasUsableCredential", row.hasUsableCredential());
+                target.put("credentialPoolVersion", row.credentialPoolVersion());
+                target.putArray("credentialRefs");
+            }
+            if (row.providerCredentialId() != null) {
+                ObjectNode credentialRef = target.withArray("credentialRefs").addObject();
+                credentialRef.put("providerCredentialId", row.providerCredentialId());
+                credentialRef.put("credentialVersion", row.credentialVersion());
+                credentialRef.put("authType", row.credentialAuthType());
+                credentialRef.put("bindingStatus", enabledStatus(row.credentialBindingEnabled(), "ENABLED", "DISABLED"));
+                credentialRef.put("credentialStatus", enabledStatus(row.credentialEnabled(), "ENABLED", "DISABLED"));
+            }
         }
+        return snapshot;
+    }
+
+    /** 敏感 Scope 只在 Platform 投影时生成，普通路由快照永远不会经过本方法。 */
+    private ObjectNode upstreamCredentialSnapshot(RuntimeScope scope, long runtimeVersion, RuntimeOutboxEvent event) {
+        ObjectNode snapshot = common(scope, runtimeVersion, event);
+        String[] ids = scope.scopeKey().split(":", 2);
+        long tenantId = Long.parseLong(ids[0]);
+        long credentialId = Long.parseLong(ids[1]);
+        runtimeMapper.findRuntimeCredentialSnapshot(tenantId, credentialId).ifPresentOrElse(row -> {
+            snapshot.put("tenantId", row.tenantId());
+            snapshot.put("providerCredentialId", row.providerCredentialId());
+            snapshot.put("credentialVersion", row.credentialVersion());
+            snapshot.put("authType", row.authType());
+            boolean active = row.enabled() && !row.deleted();
+            snapshot.put("credentialStatus", active ? "ENABLED" : row.deleted() ? "DELETED" : "DISABLED");
+            snapshot.put("enabled", active);
+            if (active && !"NONE".equals(row.authType())) {
+                RuntimeCredentialCipher.EncryptedPayload payload = credentialCryptoService.reencrypt(
+                        row.ciphertext(), row.initializationVector(), row.encryptionVersion(), row.tenantId(),
+                        row.providerCredentialId(), row.credentialVersion());
+                ObjectNode encrypted = snapshot.putObject("encryptedCredentialPayload");
+                encrypted.put("ciphertext", payload.ciphertext());
+                encrypted.put("initializationVector", payload.initializationVector());
+                encrypted.put("encryptionVersion", payload.encryptionVersion());
+            }
+        }, () -> snapshot.put("tenantId", tenantId).put("providerCredentialId", credentialId)
+                .put("credentialStatus", "MISSING").put("enabled", false));
         return snapshot;
     }
 
