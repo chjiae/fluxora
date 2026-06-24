@@ -65,6 +65,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/tenant-models/**").authenticated()
                 .requestMatchers("/api/routes/**").authenticated()
                 .requestMatchers("/api/models/**").authenticated()
+                .requestMatchers("/api/request-logs/**").authenticated()
                 .requestMatchers("/api/admin/api-keys/**").authenticated()
                 .requestMatchers("/api/admin/credit/**").authenticated()
                 .requestMatchers("/api/admin/cards/**").authenticated()

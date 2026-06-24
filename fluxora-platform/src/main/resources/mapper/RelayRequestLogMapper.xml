@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  请求观测 SQL：所有读写先按 tenant_id 收缩；事件收据在同一事务内保障 At-Least-Once Stream 的幂等落库。
+  此文件严禁选择 request/response body、API Key、凭证、BaseUrl 或上游模型字段。
+-->
+<mapper namespace="io.fluxora.platform.observability.RelayRequestLogMapper">
+  <insert id="insertReceipt">
+    INSERT INTO relay_event_receipt(event_id,request_id,event_type) VALUES(#{eventId},#{requestId},#{eventType})
+    ON CONFLICT (event_id) DO NOTHING
+  </insert>
+
+  <insert id="insertStarted">
+    INSERT INTO relay_request_log(request_id,tenant_id,user_id,api_key_id,inbound_protocol,outbound_protocol,endpoint,
+      tenant_model_id,tenant_model_code,route_target_id,provider_channel_id,provider_channel_model_id,stream,request_status,
+      started_at,usage_status,currency_code,price_version,input_price_per_million,output_price_per_million,
+      cache_write_price_per_million,cache_read_price_per_million,pricing_status,source_event_id,created_at,updated_at)
+    VALUES(#{requestId},#{tenantId},#{userId},#{apiKeyId},#{inboundProtocol},#{outboundProtocol},#{endpoint},
+      #{tenantModelId},#{tenantModelCode},#{routeTargetId},#{providerChannelId},#{providerChannelModelId},#{stream},'STARTED',
+      #{requestStartedAt},#{usageStatus},#{currencyCode},#{priceVersion},#{inputPricePerMillion},#{outputPricePerMillion},
+      #{cacheWritePricePerMillion},#{cacheReadPricePerMillion},#{pricingStatus},#{eventId},NOW(),NOW())
+    ON CONFLICT (request_id) DO NOTHING
+  </insert>
+
+  <!-- 终态先到可补建；已终态记录不再被其他不同 event_id 覆盖，防止重复终态重复写金额。 -->
+  <insert id="upsertTerminal">
+    INSERT INTO relay_request_log(request_id,tenant_id,user_id,api_key_id,inbound_protocol,outbound_protocol,endpoint,
+      tenant_model_id,tenant_model_code,route_target_id,provider_channel_id,provider_channel_model_id,stream,request_status,
+      error_category,safe_http_status,started_at,finished_at,duration_ms,usage_status,input_tokens,output_tokens,
+      cache_write_tokens,cache_read_tokens,currency_code,price_version,input_price_per_million,output_price_per_million,
+      cache_write_price_per_million,cache_read_price_per_million,theoretical_amount,pricing_status,source_event_id,created_at,updated_at)
+    VALUES(#{event.requestId},#{event.tenantId},#{event.userId},#{event.apiKeyId},#{event.inboundProtocol},#{event.outboundProtocol},#{event.endpoint},
+      #{event.tenantModelId},#{event.tenantModelCode},#{event.routeTargetId},#{event.providerChannelId},#{event.providerChannelModelId},#{event.streaming},#{event.requestStatus},
+      #{event.errorCategory},#{event.safeHttpStatus},#{event.requestStartedAt},#{event.requestFinishedAt},#{event.durationMs},#{event.usageStatus},#{event.inputTokens},#{event.outputTokens},
+      #{event.cacheWriteTokens},#{event.cacheReadTokens},#{event.currencyCode},#{event.priceVersion},#{event.inputPricePerMillion},#{event.outputPricePerMillion},
+      #{event.cacheWritePricePerMillion},#{event.cacheReadPricePerMillion},#{theoreticalAmount},#{pricingStatus},#{event.eventId},NOW(),NOW())
+    ON CONFLICT (request_id) DO UPDATE SET
+      request_status=EXCLUDED.request_status,error_category=EXCLUDED.error_category,safe_http_status=EXCLUDED.safe_http_status,
+      finished_at=EXCLUDED.finished_at,duration_ms=EXCLUDED.duration_ms,usage_status=EXCLUDED.usage_status,
+      input_tokens=EXCLUDED.input_tokens,output_tokens=EXCLUDED.output_tokens,cache_write_tokens=EXCLUDED.cache_write_tokens,
+      cache_read_tokens=EXCLUDED.cache_read_tokens,theoretical_amount=EXCLUDED.theoretical_amount,
+      pricing_status=EXCLUDED.pricing_status,source_event_id=EXCLUDED.source_event_id,updated_at=NOW()
+    WHERE relay_request_log.request_status='STARTED'
+  </insert>
+
+  <sql id="filter">
+    WHERE tenant_id=#{tenantId}
+    <if test="userId != null">AND user_id=#{userId}</if>
+    <if test="requestId != null and requestId != ''">AND request_id=#{requestId}</if>
+    <if test="tenantModelCode != null and tenantModelCode != ''">AND tenant_model_code=#{tenantModelCode}</if>
+    <if test="protocol != null and protocol != ''">AND inbound_protocol=#{protocol}</if>
+    <if test="apiKeyId != null">AND api_key_id=#{apiKeyId}</if>
+    <if test="filterUserId != null">AND user_id=#{filterUserId}</if>
+    <if test="requestStatus != null and requestStatus != ''">AND request_status=#{requestStatus}</if>
+    <if test="startAt != null">AND started_at &gt;= #{startAt}</if>
+    <if test="endAt != null">AND started_at &lt;= #{endAt}</if>
+  </sql>
+
+  <select id="findPage" resultType="io.fluxora.platform.observability.RelayRequestLogSummary">
+    SELECT request_id AS requestId,tenant_model_code AS tenantModelCode,inbound_protocol AS inboundProtocol,stream,
+      request_status AS requestStatus,duration_ms AS durationMs,input_tokens AS inputTokens,output_tokens AS outputTokens,
+      cache_write_tokens AS cacheWriteTokens,cache_read_tokens AS cacheReadTokens,usage_status AS usageStatus,
+      theoretical_amount AS theoreticalAmount,pricing_status AS pricingStatus,started_at AS startedAt
+    FROM relay_request_log <include refid="filter"/> ORDER BY started_at DESC,id DESC LIMIT #{limit} OFFSET #{offset}
+  </select>
+  <select id="countPage" resultType="long">SELECT COUNT(*) FROM relay_request_log <include refid="filter"/></select>
+  <select id="findDetail" resultType="io.fluxora.platform.observability.RelayRequestLogDetail">
+    SELECT request_id AS requestId,tenant_model_code AS tenantModelCode,inbound_protocol AS inboundProtocol,
+      outbound_protocol AS outboundProtocol,endpoint,stream,request_status AS requestStatus,error_category AS errorCategory,
+      safe_http_status AS safeHttpStatus,started_at AS startedAt,finished_at AS finishedAt,duration_ms AS durationMs,
+      input_tokens AS inputTokens,output_tokens AS outputTokens,cache_write_tokens AS cacheWriteTokens,
+      cache_read_tokens AS cacheReadTokens,usage_status AS usageStatus,currency_code AS currencyCode,price_version AS priceVersion,
+      input_price_per_million AS inputPricePerMillion,output_price_per_million AS outputPricePerMillion,
+      cache_write_price_per_million AS cacheWritePricePerMillion,cache_read_price_per_million AS cacheReadPricePerMillion,
+      theoretical_amount AS theoreticalAmount,pricing_status AS pricingStatus
+    FROM relay_request_log WHERE request_id=#{requestId} AND tenant_id=#{tenantId}
+    <if test="userId != null">AND user_id=#{userId}</if>
+  </select>
+
+  <select id="stats" resultType="io.fluxora.platform.observability.RelayRequestLogStats">
+    SELECT COUNT(*) AS total,COUNT(*) FILTER (WHERE request_status='SUCCESS') AS success,
+      COUNT(*) FILTER (WHERE request_status='FAILED') AS failed,COUNT(*) FILTER (WHERE request_status='CANCELLED') AS cancelled,
+      SUM(input_tokens) AS inputTokens,SUM(output_tokens) AS outputTokens,SUM(cache_write_tokens) AS cacheWriteTokens,
+      SUM(cache_read_tokens) AS cacheReadTokens,SUM(theoretical_amount) FILTER (WHERE pricing_status='CALCULATED') AS theoreticalAmount,
+      COUNT(*) FILTER (WHERE usage_status='UNKNOWN') AS usageUnknown,COUNT(*) FILTER (WHERE usage_status='PARTIAL') AS usagePartial,
+      COUNT(*) FILTER (WHERE pricing_status='UNAVAILABLE') AS pricingUnavailable,COUNT(*) FILTER (WHERE pricing_status='PARTIAL') AS pricingPartial
+    FROM relay_request_log <include refid="filter"/>
+  </select>
+
+  <select id="trends" resultType="io.fluxora.platform.observability.RelayTrendBucket">
+    <bind name="tenantId" value="query.tenantId"/><bind name="userId" value="query.userId"/>
+    <bind name="requestId" value="query.requestId"/><bind name="tenantModelCode" value="query.tenantModelCode"/>
+    <bind name="protocol" value="query.protocol"/><bind name="apiKeyId" value="query.apiKeyId"/>
+    <bind name="filterUserId" value="query.filterUserId"/><bind name="requestStatus" value="query.requestStatus"/>
+    <bind name="startAt" value="query.startAt"/><bind name="endAt" value="query.endAt"/>
+    SELECT date_trunc(#{bucketUnit}, started_at AT TIME ZONE #{timeZone}) AS bucketStart,COUNT(*) AS requestCount,
+      COUNT(*) FILTER (WHERE request_status='SUCCESS') AS successCount,COUNT(*) FILTER (WHERE request_status='FAILED') AS failedCount,
+      COUNT(*) FILTER (WHERE request_status='CANCELLED') AS cancelledCount,SUM(input_tokens) AS inputTokens,SUM(output_tokens) AS outputTokens,
+      SUM(cache_write_tokens) AS cacheWriteTokens,SUM(cache_read_tokens) AS cacheReadTokens,
+      CASE WHEN COUNT(*) FILTER (WHERE input_tokens IS NOT NULL)=0 THEN 'UNKNOWN' WHEN COUNT(*) FILTER (WHERE input_tokens IS NOT NULL)=COUNT(*) THEN 'REPORTED' ELSE 'PARTIAL' END AS inputTokensDataStatus,
+      CASE WHEN COUNT(*) FILTER (WHERE output_tokens IS NOT NULL)=0 THEN 'UNKNOWN' WHEN COUNT(*) FILTER (WHERE output_tokens IS NOT NULL)=COUNT(*) THEN 'REPORTED' ELSE 'PARTIAL' END AS outputTokensDataStatus,
+      CASE WHEN COUNT(*) FILTER (WHERE cache_write_tokens IS NOT NULL)=0 THEN 'UNKNOWN' WHEN COUNT(*) FILTER (WHERE cache_write_tokens IS NOT NULL)=COUNT(*) THEN 'REPORTED' ELSE 'PARTIAL' END AS cacheWriteTokensDataStatus,
+      CASE WHEN COUNT(*) FILTER (WHERE cache_read_tokens IS NOT NULL)=0 THEN 'UNKNOWN' WHEN COUNT(*) FILTER (WHERE cache_read_tokens IS NOT NULL)=COUNT(*) THEN 'REPORTED' ELSE 'PARTIAL' END AS cacheReadTokensDataStatus,
+      SUM(theoretical_amount) FILTER (WHERE pricing_status='CALCULATED') AS calculatedTheoreticalAmount,
+      CASE WHEN COUNT(*) FILTER (WHERE pricing_status='CALCULATED')=0 THEN 'UNKNOWN' WHEN COUNT(*) FILTER (WHERE pricing_status='CALCULATED')=COUNT(*) THEN 'CALCULATED' ELSE 'PARTIAL' END AS pricingDataStatus
+    FROM relay_request_log <include refid="filter"/> GROUP BY date_trunc(#{bucketUnit}, started_at AT TIME ZONE #{timeZone}) ORDER BY bucketStart
+  </select>
+</mapper>

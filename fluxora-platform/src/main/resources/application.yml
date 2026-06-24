@@ -64,6 +64,12 @@ fluxora:
     credential:
       # Gateway 与 Platform 共享的运行时密钥，仅用于 Redis 敏感快照重加密；不可与数据库主密钥复用。
       encryption-key: ${FLUXORA_RUNTIME_CREDENTIAL_KEY:cnVudGltZS1jcmVkZW50aWFsLWtleS0wMTIzNDU2Nzg=}
+  observability:
+    # 统一业务时区决定时间范围边界与趋势粒度，禁止混用浏览器或服务器默认时区。
+    business-time-zone: ${OBSERVABILITY_BUSINESS_TIME_ZONE:Asia/Shanghai}
+    stream-key: ${RELAY_EVENT_STREAM:fluxora:relay-events:v1}
+    consumer-group: ${RELAY_EVENT_CONSUMER_GROUP:fluxora-platform-v1}
+    stream-poll-delay-ms: ${RELAY_EVENT_POLL_DELAY_MS:500}
 
 management:
   endpoints:
