@@ -104,6 +104,11 @@ public class RuntimeSnapshotBuilder {
             if (row.routeTargetId() == null) {
                 continue;
             }
+            // 路由快照是 Gateway 的执行包，停用或软删除的关联只用于影响范围解析，不下发为候选目标。
+            if (!row.targetEnabled() || !row.mappingEnabled() || !row.candidateEnabled()
+                    || !row.channelEnabled() || !row.hasUsableCredential()) {
+                continue;
+            }
             ObjectNode target = targetsById.get(row.routeTargetId());
             if (target == null) {
                 target = targets.addObject();

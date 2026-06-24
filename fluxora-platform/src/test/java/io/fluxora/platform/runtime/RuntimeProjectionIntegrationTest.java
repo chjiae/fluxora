@@ -8,6 +8,7 @@ import io.fluxora.platform.upstream.security.EncryptedCredential;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -102,6 +103,57 @@ class RuntimeProjectionIntegrationTest {
     }
 
     @Test
+    void fullRebuildMustOnlyEnumerateActiveRuntimeScopes() {
+        long tenantId = insertTenant();
+        long activeUserId = insertTenantUser(tenantId);
+        String activeLookupHash = "c".repeat(64);
+        insertApiKey(tenantId, activeUserId, activeLookupHash);
+        String activeModelCode = "runtime-full-active-" + System.nanoTime();
+        RuntimeFixture activeRoute = insertExecutableRouteFixture(tenantId, activeModelCode);
+
+        long disabledUserId = insertTenantUser(tenantId);
+        jdbc.update("UPDATE user_account SET enabled=FALSE, updated_at=NOW() WHERE id=?", disabledUserId);
+        String disabledLookupHash = "d".repeat(64);
+        insertApiKey(tenantId, activeUserId, disabledLookupHash);
+        jdbc.update("UPDATE api_key SET enabled=FALSE, updated_at=NOW() WHERE lookup_hash=?", disabledLookupHash);
+        String disabledModelCode = "runtime-full-disabled-route-" + System.nanoTime();
+        RuntimeFixture disabledRoute = insertExecutableRouteFixture(tenantId, disabledModelCode);
+        jdbc.update("UPDATE model_route SET enabled=FALSE, updated_at=NOW() WHERE id=?", disabledRoute.routeId());
+        RuntimeFixture disabledCredential = insertExecutableRouteFixture(
+                tenantId, "runtime-full-disabled-credential-" + System.nanoTime());
+        jdbc.update("UPDATE provider_credential SET enabled=FALSE, updated_at=NOW() WHERE id=?",
+                disabledCredential.credentialId());
+        long disabledTenantId = insertTenant();
+        long disabledTenantUserId = insertTenantUser(disabledTenantId);
+        String disabledTenantLookupHash = "e".repeat(64);
+        insertApiKey(disabledTenantId, disabledTenantUserId, disabledTenantLookupHash);
+        String disabledTenantModelCode = "runtime-full-disabled-tenant-" + System.nanoTime();
+        RuntimeFixture disabledTenantRoute = insertExecutableRouteFixture(disabledTenantId, disabledTenantModelCode);
+        jdbc.update("UPDATE tenant SET enabled=FALSE, updated_at=NOW() WHERE id=?", disabledTenantId);
+
+        Set<RuntimeScope> scopes = impactResolver.resolve(new RuntimeOutboxEvent(
+                100L, null, "RUNTIME_NAMESPACE", null, "FULL_REBUILD", "NAMESPACE_MISSING", 1,
+                java.time.Instant.now()));
+
+        assertThat(scopes).contains(
+                RuntimeScope.apiKey(activeLookupHash, null),
+                RuntimeScope.user(tenantId, activeUserId),
+                RuntimeScope.tenant(tenantId),
+                RuntimeScope.route(tenantId, "OPENAI", activeModelCode),
+                RuntimeScope.upstreamCredential(tenantId, activeRoute.credentialId()));
+        assertThat(scopes).doesNotContain(
+                RuntimeScope.apiKey(disabledLookupHash, null),
+                RuntimeScope.user(tenantId, disabledUserId),
+                RuntimeScope.route(tenantId, "OPENAI", disabledModelCode),
+                RuntimeScope.upstreamCredential(tenantId, disabledCredential.credentialId()),
+                RuntimeScope.apiKey(disabledTenantLookupHash, null),
+                RuntimeScope.user(disabledTenantId, disabledTenantUserId),
+                RuntimeScope.tenant(disabledTenantId),
+                RuntimeScope.route(disabledTenantId, "OPENAI", disabledTenantModelCode),
+                RuntimeScope.upstreamCredential(disabledTenantId, disabledTenantRoute.credentialId()));
+    }
+
+    @Test
     void routeSnapshotMustBeOneCompleteExecutionPackageWithoutSecrets() throws Exception {
         long tenantId = insertTenant();
         String modelCode = "runtime-model-" + System.nanoTime();
@@ -154,6 +206,67 @@ class RuntimeProjectionIntegrationTest {
                 RuntimeRedisSnapshotStore.snapshotKey(scope, 1L))).path("targets").get(0).path("credentialRefs");
         assertThat(refs).hasSize(1);
         assertThat(refs.get(0).path("providerCredentialId").asLong()).isEqualTo(fixture.credentialId());
+    }
+
+    @Test
+    void routeSnapshotMustExcludeInactiveExecutionDependencies() throws Exception {
+        assertNoRouteTargetsAfterRuntimeDependencyChange("target-disabled",
+                fixture -> jdbc.update("UPDATE route_target SET enabled=FALSE, updated_at=NOW() WHERE id=?",
+                        fixture.routeTargetId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("target-deleted",
+                fixture -> jdbc.update("UPDATE route_target SET deleted_at=NOW(), updated_at=NOW() WHERE id=?",
+                        fixture.routeTargetId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("mapping-disabled",
+                fixture -> jdbc.update("""
+                        UPDATE tenant_model_candidate_mapping SET enabled=FALSE, updated_at=NOW() WHERE id=?
+                        """, fixture.mappingId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("mapping-deleted",
+                fixture -> jdbc.update("""
+                        UPDATE tenant_model_candidate_mapping SET deleted_at=NOW(), updated_at=NOW() WHERE id=?
+                        """, fixture.mappingId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("candidate-disabled",
+                fixture -> jdbc.update("""
+                        UPDATE provider_channel_model SET enabled=FALSE, updated_at=NOW() WHERE id=?
+                        """, fixture.candidateId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("candidate-deleted",
+                fixture -> jdbc.update("""
+                        UPDATE provider_channel_model SET deleted_at=NOW(), updated_at=NOW() WHERE id=?
+                        """, fixture.candidateId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("channel-disabled",
+                fixture -> jdbc.update("UPDATE provider_channel SET enabled=FALSE, updated_at=NOW() WHERE id=?",
+                        fixture.channelId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("channel-deleted",
+                fixture -> jdbc.update("UPDATE provider_channel SET deleted_at=NOW(), updated_at=NOW() WHERE id=?",
+                        fixture.channelId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("base-url-disabled",
+                fixture -> jdbc.update("UPDATE provider_base_url SET enabled=FALSE, updated_at=NOW() WHERE id=?",
+                        fixture.baseUrlId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("base-url-deleted",
+                fixture -> jdbc.update("UPDATE provider_base_url SET deleted_at=NOW(), updated_at=NOW() WHERE id=?",
+                        fixture.baseUrlId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("provider-disabled",
+                fixture -> jdbc.update("UPDATE provider SET enabled=FALSE, updated_at=NOW() WHERE id=?",
+                        fixture.providerId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("provider-deleted",
+                fixture -> jdbc.update("UPDATE provider SET deleted_at=NOW(), updated_at=NOW() WHERE id=?",
+                        fixture.providerId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("credential-binding-disabled",
+                fixture -> jdbc.update("""
+                        UPDATE provider_channel_credential SET enabled=FALSE, updated_at=NOW()
+                        WHERE provider_channel_id=? AND provider_credential_id=?
+                        """, fixture.channelId(), fixture.credentialId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("credential-binding-deleted",
+                fixture -> jdbc.update("""
+                        UPDATE provider_channel_credential SET deleted_at=NOW(), enabled=FALSE, updated_at=NOW()
+                        WHERE provider_channel_id=? AND provider_credential_id=?
+                        """, fixture.channelId(), fixture.credentialId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("credential-disabled",
+                fixture -> jdbc.update("UPDATE provider_credential SET enabled=FALSE, updated_at=NOW() WHERE id=?",
+                        fixture.credentialId()));
+        assertNoRouteTargetsAfterRuntimeDependencyChange("credential-deleted",
+                fixture -> jdbc.update("""
+                        UPDATE provider_credential SET deleted_at=NOW(), enabled=FALSE, updated_at=NOW() WHERE id=?
+                        """, fixture.credentialId()));
     }
 
     @Test
@@ -401,6 +514,24 @@ class RuntimeProjectionIntegrationTest {
                 """, Long.class, tenantId, userId, "flx_" + System.nanoTime(), lookupHash);
     }
 
+    private void assertNoRouteTargetsAfterRuntimeDependencyChange(String caseName, Consumer<RuntimeFixture> mutation)
+            throws Exception {
+        long tenantId = insertTenant();
+        String modelCode = "runtime-inactive-" + caseName + "-" + System.nanoTime();
+        RuntimeFixture fixture = insertExecutableRouteFixture(tenantId, modelCode);
+
+        mutation.accept(fixture);
+        outboxService.record(tenantId, "TENANT_MODEL", fixture.modelId(), "ENABLED", null);
+        projector.project(claimSingle("runtime-inactive-" + caseName + "-" + System.nanoTime()));
+
+        RuntimeScope scope = RuntimeScope.route(tenantId, "OPENAI", modelCode);
+        JsonNode snapshot = objectMapper.readTree(redisTemplate.opsForValue().get(
+                RuntimeRedisSnapshotStore.snapshotKey(scope, 1L)));
+        assertThat(snapshot.path("targets")).as(caseName + " 不应进入路由执行快照").isEmpty();
+        assertThat(snapshot.toString()).as(caseName + " 不应留下停用或软删除关联状态")
+                .doesNotContain("DISABLED", "DELETED");
+    }
+
     /** 仅用于运行时集成测试：直接构造满足关联约束的一条可执行模型路由。 */
     private RuntimeFixture insertExecutableRouteFixture(long tenantId, String modelCode) {
         String suffix = Long.toUnsignedString(System.nanoTime());
@@ -439,28 +570,33 @@ class RuntimeProjectionIntegrationTest {
                 INSERT INTO model_route(tenant_id, tenant_model_id, inbound_protocol, enabled)
                 VALUES (?, ?, 'OPENAI', TRUE) RETURNING id
                 """, Long.class, tenantId, modelId);
-        jdbc.update("""
+        long routeTargetId = jdbc.queryForObject("""
                 INSERT INTO route_target(tenant_id, model_route_id, tenant_model_candidate_mapping_id,
                                          provider_channel_id, upstream_model_id_snapshot, enabled, priority, weight)
                 VALUES (?, ?, ?, ?, 'runtime-upstream-model', TRUE, 10, 100)
-                """, tenantId, routeId, mappingId, channelId);
+                RETURNING id
+                """, Long.class, tenantId, routeId, mappingId, channelId);
         String plaintext = "runtime-credential-plaintext-" + suffix;
         EncryptedCredential encrypted = credentialCryptoService.encrypt(plaintext);
+        String credentialFingerprint = ("f".repeat(64) + suffix).substring(suffix.length());
         long credentialId = jdbc.queryForObject("""
                 INSERT INTO provider_credential(tenant_id, name, credential_type, masked_value, credential_fingerprint,
                                                 ciphertext, initialization_vector, encryption_version, enabled, priority, weight)
                 VALUES (?, '运行时凭证', 'API_KEY', '***', ?, ?, ?, ?, TRUE, 10, 100)
                 RETURNING id
-                """, Long.class, tenantId, "f".repeat(64), encrypted.ciphertext(),
+                """, Long.class, tenantId, credentialFingerprint, encrypted.ciphertext(),
                 encrypted.initializationVector(), encrypted.encryptionVersion());
         jdbc.update("""
                 INSERT INTO provider_channel_credential(tenant_id, provider_channel_id, provider_credential_id, enabled)
                 VALUES (?, ?, ?, TRUE)
                 """, tenantId, channelId, credentialId);
-        return new RuntimeFixture(modelId, channelId, credentialId, plaintext);
+        return new RuntimeFixture(providerId, baseUrlId, channelId, candidateId, modelId, mappingId, routeId,
+                routeTargetId, credentialId, plaintext);
     }
 
-    /** 运行时夹具返回模型与凭证 ID，便于验证两个快照 Scope 的隔离。 */
-    private record RuntimeFixture(long modelId, long channelId, long credentialId, String plaintext) {
+    /** 运行时夹具返回执行链路关键 ID，便于逐项验证停用或软删除后的快照边界。 */
+    private record RuntimeFixture(long providerId, long baseUrlId, long channelId, long candidateId, long modelId,
+                                  long mappingId, long routeId, long routeTargetId, long credentialId,
+                                  String plaintext) {
     }
 }
