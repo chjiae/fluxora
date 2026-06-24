@@ -8,5 +8,6 @@ public record UpdateCredentialRequest(
         String name,
         Integer priority,
         Integer weight,
-        String remark) {
+        String remark,
+        String authType) {
 }

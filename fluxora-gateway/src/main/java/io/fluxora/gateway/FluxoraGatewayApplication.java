@@ -3,7 +3,7 @@ package io.fluxora.gateway;
 import io.vertx.core.Vertx;
 
 /**
- * Fluxora 网关进程入口：仅连接 Redis 派生快照，不连接 PostgreSQL，也不调用真实上游。
+ * Fluxora 网关进程入口：仅连接 Redis 派生快照，不连接 PostgreSQL；上游请求由非阻塞中继模块处理。
  */
 public final class FluxoraGatewayApplication {
 

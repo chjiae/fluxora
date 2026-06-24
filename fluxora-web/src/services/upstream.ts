@@ -6,6 +6,7 @@ import http from './http'
 export type ScopeType = 'PLATFORM_SHARED' | 'TENANT_PRIVATE'
 export type Protocol = 'OPENAI' | 'ANTHROPIC'
 export type Status = 'ENABLED' | 'DISABLED' | 'DELETED'
+export type CredentialAuthType = 'BEARER' | 'X_API_KEY' | 'NONE'
 
 export interface ProviderSummary {
   id: number; name: string; code: string; scopeType: ScopeType
@@ -33,7 +34,7 @@ export interface ProviderChannelStats { total: number; enabled: number; disabled
 
 export interface ProviderCredentialSummary {
   id: number; tenantId: number; providerChannelId: number
-  name: string; credentialType: 'API_KEY'; maskedValue: string; status: Status
+  name: string; credentialType: 'API_KEY'; authType: CredentialAuthType; maskedValue: string; status: Status
   priority: number; weight: number; remark: string | null; createdAt: string; updatedAt: string
 }
 export interface ProviderCredentialStats { total: number; enabled: number; disabled: number }
@@ -47,8 +48,8 @@ export interface CredentialQuery { keyword?: string; maskedValue?: string; enabl
 export interface ProviderPayload { name: string; code: string; scopeType: ScopeType; description?: string; enabled?: boolean; tenantId?: number | null }
 export interface BaseUrlPayload { providerId: number; protocol: Protocol; baseUrl: string; displayName?: string; remark?: string }
 export interface ChannelPayload { tenantId?: number | null; providerBaseUrlId: number; name: string; enabled?: boolean; priority?: number; weight?: number; connectTimeoutMs?: number; readTimeoutMs?: number; remark?: string }
-export interface CredentialPayload { providerChannelId: number; plaintext: string; name?: string; priority?: number; weight?: number; remark?: string }
-export interface CredentialMetadataPayload { name: string; priority: number; weight: number; remark?: string }
+export interface CredentialPayload { providerChannelId: number; plaintext?: string; name?: string; priority?: number; weight?: number; remark?: string; authType?: CredentialAuthType }
+export interface CredentialMetadataPayload { name: string; priority: number; weight: number; remark?: string; authType?: CredentialAuthType }
 export interface CredentialImportPayload { providerChannelId: number; lines: string[]; namePrefix?: string; priority?: number; weight?: number; remark?: string }
 
 export type CredentialImportItemResult = 'IMPORTED' | 'SKIPPED_BATCH_DUPLICATE' | 'SKIPPED_EXISTING' | 'INVALID' | 'OVER_LIMIT' | 'SKIPPED_CONCURRENT'

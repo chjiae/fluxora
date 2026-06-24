@@ -127,7 +127,8 @@ public class RuntimeSnapshotBuilder {
                 target.put("credentialPoolVersion", row.credentialPoolVersion());
                 target.putArray("credentialRefs");
             }
-            if (row.providerCredentialId() != null) {
+            // 只下发当前可选的有效凭证，Gateway 稳定取首项时不会误选已停用绑定或凭证。
+            if (row.providerCredentialId() != null && row.credentialBindingEnabled() && row.credentialEnabled()) {
                 ObjectNode credentialRef = target.withArray("credentialRefs").addObject();
                 credentialRef.put("providerCredentialId", row.providerCredentialId());
                 credentialRef.put("credentialVersion", row.credentialVersion());

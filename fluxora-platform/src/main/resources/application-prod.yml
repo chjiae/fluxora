@@ -4,3 +4,7 @@ fluxora:
     credential:
       master-key: ${FLUXORA_CREDENTIAL_MASTER_KEY}
       fingerprint-key: ${FLUXORA_CREDENTIAL_FINGERPRINT_KEY}
+  runtime:
+    credential:
+      # Redis 敏感快照的独立运行时密钥，必须与数据库凭证主密钥不同。
+      encryption-key: ${FLUXORA_RUNTIME_CREDENTIAL_KEY}

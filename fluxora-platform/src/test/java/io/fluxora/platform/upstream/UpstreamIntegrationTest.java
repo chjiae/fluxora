@@ -168,6 +168,42 @@ class UpstreamIntegrationTest {
         return om.readTree(r.getBody()).get("data").get("id").asLong();
     }
 
+    @Test void credentialAuthenticationTypeMustBePersistedAsSafeMetadata() throws Exception {
+        HttpHeaders ah = adminAuth();
+        long tenantId = ensureDefaultTenant(ah);
+        long providerId = createProvider(ah, "认证方式厂商", "auth-type-" + System.nanoTime(), "TENANT_PRIVATE", tenantId);
+        long baseUrlId = createBaseUrl(ah, providerId, "OPENAI", "https://auth-type.example/v1");
+        long channelId = createChannel(ah, tenantId, baseUrlId, "认证方式通道");
+        String createJson = om.writeValueAsString(Map.of(
+                "providerChannelId", channelId, "plaintext", "credential-auth-type-secret",
+                "name", "认证方式凭证", "authType", "X_API_KEY"));
+
+        ResponseEntity<String> created = restTemplate.exchange(base + "/api/provider-credentials", HttpMethod.POST,
+                new HttpEntity<>(createJson, ah), String.class);
+        JsonNode data = om.readTree(created.getBody()).get("data");
+        long credentialId = data.get("id").asLong();
+        assertThat(data.path("authType").asText()).isEqualTo("X_API_KEY");
+        assertThat(created.getBody()).doesNotContain("credential-auth-type-secret");
+
+        String updateJson = om.writeValueAsString(Map.of("name", "认证方式凭证", "priority", 100,
+                "weight", 100, "authType", "BEARER"));
+        ResponseEntity<String> updated = restTemplate.exchange(base + "/api/provider-credentials/" + credentialId,
+                HttpMethod.PUT, new HttpEntity<>(updateJson, ah), String.class);
+        assertThat(om.readTree(updated.getBody()).get("data").path("authType").asText()).isEqualTo("BEARER");
+        Integer refreshEvents = new JdbcTemplate(dataSource).queryForObject("""
+                SELECT COUNT(*) FROM runtime_outbox
+                WHERE aggregate_type='PROVIDER_CREDENTIAL' AND aggregate_id=? AND mutation_type='AUTH_TYPE_CHANGED'
+                """, Integer.class, credentialId);
+        assertThat(refreshEvents).isEqualTo(1);
+
+        String invalidJson = om.writeValueAsString(Map.of("name", "认证方式凭证", "priority", 100,
+                "weight", 100, "authType", "BASIC"));
+        ResponseEntity<String> invalid = restTemplate.exchange(base + "/api/provider-credentials/" + credentialId,
+                HttpMethod.PUT, new HttpEntity<>(invalidJson, ah), String.class);
+        assertThat(invalid.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(invalid.getBody()).doesNotContain("ProviderCredential", "exception", "BASIC");
+    }
+
     private JsonNode importCredentials(HttpHeaders ah, long channelId, List<String> lines) throws Exception {
         String j = om.writeValueAsString(Map.of("providerChannelId", channelId, "lines", lines, "namePrefix", "批量"));
         ResponseEntity<String> r = restTemplate.exchange(base + "/api/provider-credentials/import", HttpMethod.POST, new HttpEntity<>(j, ah), String.class);
@@ -446,7 +482,7 @@ class UpstreamIntegrationTest {
 
     @Test void concurrentImportAllowsAtMostOneActiveFingerprint() throws Exception {
         HttpHeaders ah = adminAuth();
-        long tid = defaultTenantId(ah);
+        long tid = ensureDefaultTenant(ah);
         String ta = createTenantAdmin(ah, tid);
         HttpHeaders tah = login(ta, "TaPass2026!");
         long pid = createProvider(tah, "P", "conc-" + System.nanoTime(), "TENANT_PRIVATE", null);
@@ -458,13 +494,22 @@ class UpstreamIntegrationTest {
         CountDownLatch start = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(threads);
         AtomicInteger importedTotal = new AtomicInteger();
+        AtomicInteger internalFailures = new AtomicInteger();
         for (int i = 0; i < threads; i++) {
             pool.submit(() -> {
                 try {
                     start.await();
-                    JsonNode r = importCredentials(tah, channel, List.of("sk-CONCURRENT-005"));
-                    importedTotal.addAndGet(r.get("summary").get("imported").asInt());
-                } catch (Exception ignored) {
+                    String request = om.writeValueAsString(Map.of("providerChannelId", channel,
+                            "lines", List.of("sk-CONCURRENT-005"), "namePrefix", "并发"));
+                    ResponseEntity<String> response = restTemplate.exchange(base + "/api/provider-credentials/import",
+                            HttpMethod.POST, new HttpEntity<>(request, tah), String.class);
+                    if (response.getStatusCode().is2xxSuccessful()) {
+                        importedTotal.addAndGet(om.readTree(response.getBody()).get("data").get("summary").get("imported").asInt());
+                    } else {
+                        internalFailures.incrementAndGet();
+                    }
+                } catch (Exception error) {
+                    internalFailures.incrementAndGet();
                 } finally {
                     done.countDown();
                 }
@@ -476,6 +521,7 @@ class UpstreamIntegrationTest {
 
         // 四个并发请求中，最多一个真正写入；其余跳过（已存在或并发）
         assertThat(importedTotal.get()).isLessThanOrEqualTo(1);
+        assertThat(internalFailures.get()).isZero();
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         Integer active = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM provider_channel_credential WHERE provider_channel_id=? AND deleted_at IS NULL AND enabled = TRUE",

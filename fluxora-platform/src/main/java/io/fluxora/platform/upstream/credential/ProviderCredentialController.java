@@ -77,7 +77,7 @@ public class ProviderCredentialController {
             @AuthenticationPrincipal UserAccount user, Authentication auth) {
         return ResponseEntity.ok(ApiResponse.success(service.create(
                 new ProviderCredentialService.CreateFields(req.providerChannelId(), req.plaintext(),
-                        req.name(), req.priority(), req.weight(), req.remark()), user, auth)));
+                        req.name(), req.priority(), req.weight(), req.remark(), req.authType()), user, auth)));
     }
 
     /** 把已有凭证绑定到同租户同 Provider 的另一通道；响应不返回密文、指纹或上游认证材料。 */
@@ -119,7 +119,7 @@ public class ProviderCredentialController {
             @PathVariable Long id, @RequestBody UpdateCredentialRequest req,
             @AuthenticationPrincipal UserAccount user, Authentication auth) {
         return ResponseEntity.ok(ApiResponse.success(service.updateMetadata(id,
-                new ProviderCredentialService.UpdateFields(req.name(), req.priority(), req.weight(), req.remark()),
+                new ProviderCredentialService.UpdateFields(req.name(), req.priority(), req.weight(), req.remark(), req.authType()),
                 user, auth)));
     }
 

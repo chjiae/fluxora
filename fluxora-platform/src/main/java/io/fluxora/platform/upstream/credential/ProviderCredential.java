@@ -12,6 +12,8 @@ public class ProviderCredential {
     private Long providerChannelId;
     private String name;
     private String credentialType;
+    /** 上游认证注入方式；仅作为元数据下发，不包含认证材料。 */
+    private String authType;
     /** 面向管理界面的安全脱敏展示值。 */
     private String maskedValue;
     /** HMAC 指纹只用于当前租户去重，不可返回至接口。 */
@@ -31,6 +33,7 @@ public class ProviderCredential {
     public Long getProviderChannelId(){return providerChannelId;} public void setProviderChannelId(Long value){providerChannelId=value;}
     public String getName(){return name;} public void setName(String value){name=value;}
     public String getCredentialType(){return credentialType;} public void setCredentialType(String value){credentialType=value;}
+    public String getAuthType(){return authType;} public void setAuthType(String value){authType=value;}
     public String getMaskedValue(){return maskedValue;} public void setMaskedValue(String value){maskedValue=value;}
     public String getCredentialFingerprint(){return credentialFingerprint;} public void setCredentialFingerprint(String value){credentialFingerprint=value;}
     public String getCiphertext(){return ciphertext;} public void setCiphertext(String value){ciphertext=value;}

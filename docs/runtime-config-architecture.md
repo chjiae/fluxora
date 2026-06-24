@@ -2,9 +2,9 @@
 
 ## 边界
 
-PostgreSQL 是 Fluxora 控制面配置的唯一事实来源。Redis 是完全可重建的派生运行时层；Gateway 只连接 Redis，绝不配置 JDBC、绝不访问 Platform HTTP，也不解密或选择 `ProviderCredential`。
+PostgreSQL 是 Fluxora 控制面配置的唯一事实来源。Redis 是完全可重建的派生运行时层；Gateway 只连接 Redis，绝不配置 JDBC 或访问 Platform HTTP。Gateway 只从独立敏感 Scope 临时解密当前请求选中的凭证，绝不缓存明文。
 
-本轮 Gateway 只做 API Key 鉴权、用户/租户状态校验、租户模型价格和路由解析、RouteTarget 内存选择。它在选出内部目标后返回安全的“尚未开放转发”结果。本轮刻意不实现真实上游 HTTP、SSE、协议转换、重试、熔断、Token 统计或计费。
+本轮 Gateway 完成 API Key 鉴权、用户/租户状态校验、租户模型价格和路由解析、RouteTarget 选择，以及 OpenAI / Anthropic 同协议原生 HTTP 和 SSE 中继。不实现跨协议转换、重试、熔断、Token 统计或计费。
 
 ## Scope 与快照
 
@@ -14,10 +14,11 @@ PostgreSQL 是 Fluxora 控制面配置的唯一事实来源。Redis 是完全可
 | `AUTH_USER` | `tenantId:userId` | 用户状态 |
 | `AUTH_TENANT` | `tenantId` | 租户状态、到期时间、结算币种 |
 | `TENANT_MODEL_ROUTE` | `tenantId:protocol:base64url(modelCode)` | 模型能力、当前价格字符串、路由与全部 Target 可用性 |
+| `UPSTREAM_CREDENTIAL` | `tenantId:credentialId` | Gateway 专用运行时密文、凭证版本、认证方式与状态 |
 
 每个快照都有 `schemaVersion`、`runtimeVersion`、`generatedAt`、`sourceOutboxId`、`sourceChangedAt`。金额使用 `BigDecimal.toPlainString()` 写入 JSON，绝不使用浮点数。
 
-`TENANT_MODEL_ROUTE` 是模型执行的最小一致性单元，因此 Gateway 从不分别拼接模型、价格、候选、通道或凭证池快照。Target 只带状态、协议、内部 ID、权重和“是否存在可用凭证”，不含 Base URL、密文、明文或认证 Header。
+`TENANT_MODEL_ROUTE` 是模型执行的最小一致性单元，因此 Gateway 从不分别拼接模型、价格、候选、通道或凭证池快照。Target 含 Gateway 执行所需的 Base URL、超时和已排序的有效凭证引用，但不含密文、明文或认证 Header；这些敏感材料只在 `UPSTREAM_CREDENTIAL` Scope 中存在。
 
 ## Redis 不可变版本与 Manifest
 
@@ -40,16 +41,16 @@ Projector 以 `FOR UPDATE SKIP LOCKED` 领取任务，超时 `PROCESSING` 任务
 
 ## Gateway L1 与失败关闭
 
-Gateway 先对 `flx_<8>_<32>` API Key 做格式检查，再对完整 canonical Key 做一次 HMAC-SHA-256。L1 缓存分别保存 API Key、用户、租户、路由快照；无效 Key 使用独立短 TTL 负缓存。Caffeine AsyncCache 合并同 Scope 的并发未命中，热路径不访问 Redis。
+Gateway 先对 `flx_<8>_<32>` API Key 做格式检查，再对完整 canonical Key 做一次 HMAC-SHA-256。L1 缓存分别保存 API Key、用户、租户、路由与运行时凭证密文；无效 Key 使用独立短 TTL 负缓存。Caffeine AsyncCache 合并同 Scope 的并发未命中，热路径不访问 PostgreSQL。
 
 快照未命中时 Gateway 异步读取 Manifest 和 Snapshot。Manifest/快照版本不一致、schema 不兼容、快照缺失、Redis 故障或 L1 过期一律失败关闭。Pub/Sub 重连成功时清空本机 L1；漏消息由硬 TTL 与后续 Manifest 读取收敛。
 
-不会进入 Redis、L1 或 Gateway 的数据：API Key 明文、密码、邮箱、余额、ProviderCredential 明文/密文/指纹、加密主密钥、IV、AAD、认证 Header、Base URL、数据库连接信息。
+不会进入普通路由快照、普通 L1 或 Gateway 日志的资料：API Key 明文、密码、邮箱、余额、ProviderCredential 明文、数据库凭证密文、指纹、加密主密钥、认证 Header、数据库连接信息。Gateway 专用敏感 Redis Scope 与短 TTL L1 可保存运行时重加密密文、IV 和版本，但绝不保存明文或密钥。
 
 ## 本地验证
 
 1. 启动 PostgreSQL 与 Redis，设置相同的 `APIKEY_LOOKUP_SECRET` 给 Platform 和 Gateway。
 2. 启动 Platform；它会投影 Outbox 到 Redis。Gateway 启动后订阅 `fluxora:runtime:v1:invalidation`。
 3. 创建 API Key、用户、模型/价格/路由/Target 和至少一个有效凭证绑定。确认 `runtime_outbox` 变为 `COMPLETED`，Redis 中存在 Snapshot 与 Manifest。
-4. 对 `POST /v1/chat/completions` 或 `POST /v1/messages` 提供 Bearer 或 `x-api-key` 与 `model`。鉴权和选路成功后会安全返回“模型请求转发暂未开放”；本轮不会联系上游。
+4. 对 `POST /v1/chat/completions` 或 `POST /v1/messages` 提供 Fluxora API Key 与租户模型编码。鉴权和选路成功后，Gateway 从敏感 Scope 临时解密上游凭证并发起同协议请求；JSON 与 SSE 响应中的模型名均改回租户模型编码。
 5. 停用 API Key、用户、租户、Target 或解绑唯一凭证后，下一请求会因失效通知或硬 TTL 被拒绝/判为模型不可用。

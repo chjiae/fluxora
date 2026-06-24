@@ -2,7 +2,7 @@ package io.fluxora.gateway;
 
 /** 仅在 Gateway 内部流转的失败分类；HTTP 层只映射为安全中文文案。 */
 public final class GatewayFailure extends RuntimeException {
-    public enum Type { INVALID_API_KEY, ACCOUNT_UNAVAILABLE, RUNTIME_UNAVAILABLE, MODEL_UNAVAILABLE, UNSUPPORTED }
+    public enum Type { INVALID_REQUEST, INVALID_API_KEY, ACCOUNT_UNAVAILABLE, RUNTIME_UNAVAILABLE, MODEL_UNAVAILABLE, UNSUPPORTED }
 
     private final Type type;
 
@@ -12,6 +12,7 @@ public final class GatewayFailure extends RuntimeException {
     }
 
     public Type type() { return type; }
+    public static GatewayFailure invalidRequest() { return new GatewayFailure(Type.INVALID_REQUEST); }
     public static GatewayFailure invalidApiKey() { return new GatewayFailure(Type.INVALID_API_KEY); }
     public static GatewayFailure accountUnavailable() { return new GatewayFailure(Type.ACCOUNT_UNAVAILABLE); }
     public static GatewayFailure runtimeUnavailable() { return new GatewayFailure(Type.RUNTIME_UNAVAILABLE); }

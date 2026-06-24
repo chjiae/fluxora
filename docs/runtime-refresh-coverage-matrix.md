@@ -14,8 +14,8 @@
 | RouteTarget | 创建、启停、删除、priority、weight、映射 | 对应 `TENANT_MODEL_ROUTE` | 模型路由 | 否 | `TenantModelIntegrationTest`、`GatewayRuntimeBehaviorTest` |
 | ProviderChannelModel | 创建、启停、删除、能力、上游模型 | 所有引用候选的 `TENANT_MODEL_ROUTE` | 模型路由 | 否 | `TenantModelIntegrationTest` |
 | ProviderChannel | 创建、启停、删除、BaseUrl、超时 | 所有引用通道的 `TENANT_MODEL_ROUTE` | 模型路由 | 否 | `UpstreamIntegrationTest` |
-| ProviderChannelCredential | 绑定、解绑、绑定启停 | 所有引用通道的 `TENANT_MODEL_ROUTE` | 模型路由 | 否 | `UpstreamIntegrationTest` |
-| ProviderCredential | 创建、启停、删除、轮换、认证材料变更 | 所有关联通道的 `TENANT_MODEL_ROUTE` | 模型路由 | 否 | `UpstreamIntegrationTest` |
+| ProviderChannelCredential | 绑定、解绑、绑定启停 | 所有引用通道的 `TENANT_MODEL_ROUTE` 与关联 `UPSTREAM_CREDENTIAL` | 模型路由 + 凭证密文 | 否 | `UpstreamIntegrationTest`、`RuntimeProjectionIntegrationTest` |
+| ProviderCredential | 创建、启停、删除、轮换、认证方式变更 | 所有关联通道的 `TENANT_MODEL_ROUTE` 与自身 `UPSTREAM_CREDENTIAL` | 模型路由 + 凭证密文 | 否 | `UpstreamIntegrationTest`、`RuntimeProjectionIntegrationTest`、`RuntimeCredentialResolverTest` |
 | Provider | 创建、启停、删除 | 实际引用其地址的 `TENANT_MODEL_ROUTE` | 模型路由 | 否 | `UpstreamIntegrationTest` |
 | ProviderBaseUrl | 创建、启停、删除、URL、协议 | 实际引用该地址的 `TENANT_MODEL_ROUTE` | 模型路由 | 否 | `UpstreamIntegrationTest` |
 

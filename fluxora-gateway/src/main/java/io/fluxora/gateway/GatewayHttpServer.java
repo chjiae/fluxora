@@ -1,6 +1,5 @@
 package io.fluxora.gateway;
 
-import io.fluxora.gateway.auth.AuthenticatedPrincipal;
 import io.fluxora.gateway.relay.RelayService;
 import io.fluxora.gateway.transport.UpstreamHttpClient;
 import io.vertx.core.Future;
@@ -12,19 +11,21 @@ import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.json.JsonObject;
 
 /**
- * Gateway C 端入口：完成 API Key / 用户 / 租户鉴权和模型内部选路，随后明确停止于“不转发”。
- * 本轮没有 JDBC、上游 HTTP、SSE、协议转换、Token 统计或扣费代码。
+ * Gateway C 端入口：完成协议识别、请求体上限、鉴权、选路和同协议原生中继。
+ * 不包含跨协议转换、计费、重试或熔断等后续能力。
  */
 public final class GatewayHttpServer {
     private final Vertx vertx;
     private final GatewayRuntime runtime;
     private final RelayService relayService;
+    private final GatewayRuntimeConfig runtimeConfig;
     private HttpServer server;
 
     public GatewayHttpServer(Vertx vertx, GatewayRuntime runtime) {
         this.vertx = vertx;
         this.runtime = runtime;
-        this.relayService = new RelayService(runtime, new UpstreamHttpClient(vertx), GatewayRuntimeConfig.fromEnvironment().profile());
+        this.runtimeConfig = GatewayRuntimeConfig.fromEnvironment();
+        this.relayService = new RelayService(runtime, new UpstreamHttpClient(vertx), runtimeConfig.profile());
     }
 
     public Future<Integer> start(int port) {
@@ -46,8 +47,14 @@ public final class GatewayHttpServer {
             safeError(request, 404, "请求地址不存在");
             return;
         }
-        request.body().compose(body -> relayService.relay(request, protocol, body))
-                .onFailure(error -> writeFailure(request, error));
+        if (contentLengthExceedsLimit(request)) {
+            writeFailure(request, protocol, GatewayFailure.invalidRequest());
+            return;
+        }
+        request.body().compose(body -> body.length() > runtimeConfig.maxRequestBodyBytes()
+                        ? Future.failedFuture(GatewayFailure.invalidRequest())
+                        : relayService.relay(request, protocol, body))
+                .onFailure(error -> writeFailure(request, protocol, error));
     }
 
     private String protocolFor(HttpServerRequest request) {
@@ -59,15 +66,27 @@ public final class GatewayHttpServer {
         };
     }
 
-    private void writeFailure(HttpServerRequest request, Throwable error) {
+    private void writeFailure(HttpServerRequest request, String protocol, Throwable error) {
         GatewayFailure failure = error instanceof GatewayFailure known ? known : GatewayFailure.runtimeUnavailable();
         switch (failure.type()) {
-            case INVALID_API_KEY -> safeError(request, 401, "API Key 无效或已失效");
-            case ACCOUNT_UNAVAILABLE -> safeError(request, 403, "当前账号或租户不可用");
-            case MODEL_UNAVAILABLE -> safeError(request, 503, "当前模型暂不可用，请稍后重试");
-            case RUNTIME_UNAVAILABLE -> safeError(request, 503, "服务配置暂不可用，请稍后重试");
-            case UNSUPPORTED -> safeError(request, 501, "当前服务暂不支持该请求");
+            case INVALID_REQUEST -> protocolError(request, protocol, 400, "请求内容不符合要求");
+            case INVALID_API_KEY -> protocolError(request, protocol, 401, "API Key 无效或已失效");
+            case ACCOUNT_UNAVAILABLE -> protocolError(request, protocol, 403, "当前账号或租户不可用");
+            case MODEL_UNAVAILABLE -> protocolError(request, protocol, 503, "当前模型暂不可用，请稍后重试");
+            case RUNTIME_UNAVAILABLE -> protocolError(request, protocol, 503, "服务配置暂不可用，请稍后重试");
+            case UNSUPPORTED -> protocolError(request, protocol, 501, "当前服务暂不支持该请求");
         }
+    }
+
+    private boolean contentLengthExceedsLimit(HttpServerRequest request) {
+        String header = request.getHeader("content-length");
+        if (header == null) return false;
+        try { return Long.parseLong(header) > runtimeConfig.maxRequestBodyBytes(); }
+        catch (NumberFormatException ignored) { return false; }
+    }
+
+    private void protocolError(HttpServerRequest request, String protocol, int status, String message) {
+        json(request, status, relayService.error(protocol, message));
     }
 
     private void safeError(HttpServerRequest request, int status, String message) {

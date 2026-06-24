@@ -129,6 +129,34 @@ class RuntimeProjectionIntegrationTest {
     }
 
     @Test
+    void routeSnapshotMustOnlyExposeEnabledCredentialReferences() throws Exception {
+        long tenantId = insertTenant();
+        String modelCode = "runtime-active-credential-model-" + System.nanoTime();
+        RuntimeFixture fixture = insertExecutableRouteFixture(tenantId, modelCode);
+        EncryptedCredential disabledSecret = credentialCryptoService.encrypt("disabled-credential-" + System.nanoTime());
+        long disabledCredentialId = jdbc.queryForObject("""
+                INSERT INTO provider_credential(tenant_id, name, credential_type, masked_value, credential_fingerprint,
+                                                ciphertext, initialization_vector, encryption_version, enabled, priority, weight)
+                VALUES (?, '已停用运行时凭证', 'API_KEY', '***', ?, ?, ?, ?, FALSE, 10, 100)
+                RETURNING id
+                """, Long.class, tenantId, "e".repeat(64), disabledSecret.ciphertext(),
+                disabledSecret.initializationVector(), disabledSecret.encryptionVersion());
+        jdbc.update("""
+                INSERT INTO provider_channel_credential(tenant_id, provider_channel_id, provider_credential_id, enabled)
+                VALUES (?, ?, ?, TRUE)
+                """, tenantId, fixture.channelId(), disabledCredentialId);
+
+        outboxService.record(tenantId, "TENANT_MODEL", fixture.modelId(), "ENABLED", null);
+        projector.project(claimSingle("runtime-active-credential"));
+
+        RuntimeScope scope = RuntimeScope.route(tenantId, "OPENAI", modelCode);
+        JsonNode refs = objectMapper.readTree(redisTemplate.opsForValue().get(
+                RuntimeRedisSnapshotStore.snapshotKey(scope, 1L))).path("targets").get(0).path("credentialRefs");
+        assertThat(refs).hasSize(1);
+        assertThat(refs.get(0).path("providerCredentialId").asLong()).isEqualTo(fixture.credentialId());
+    }
+
+    @Test
     void credentialRuntimeSnapshotMustBeSeparatedFromRouteAndNeverContainPlaintext() throws Exception {
         long tenantId = insertTenant();
         String modelCode = "credential-runtime-model-" + System.nanoTime();
@@ -429,10 +457,10 @@ class RuntimeProjectionIntegrationTest {
                 INSERT INTO provider_channel_credential(tenant_id, provider_channel_id, provider_credential_id, enabled)
                 VALUES (?, ?, ?, TRUE)
                 """, tenantId, channelId, credentialId);
-        return new RuntimeFixture(modelId, credentialId, plaintext);
+        return new RuntimeFixture(modelId, channelId, credentialId, plaintext);
     }
 
     /** 运行时夹具返回模型与凭证 ID，便于验证两个快照 Scope 的隔离。 */
-    private record RuntimeFixture(long modelId, long credentialId, String plaintext) {
+    private record RuntimeFixture(long modelId, long channelId, long credentialId, String plaintext) {
     }
 }

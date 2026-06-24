@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +53,8 @@ public class ProviderCredentialService {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderCredentialService.class);
     private static final String CREDENTIAL_TYPE = "API_KEY";
+    private static final String DEFAULT_AUTH_TYPE = "BEARER";
+    private static final Set<String> AUTH_TYPES = Set.of("BEARER", "X_API_KEY", "NONE");
     private static final int DEFAULT_PRIORITY = 100;
     private static final int DEFAULT_WEIGHT = 100;
 
@@ -109,17 +112,24 @@ public class ProviderCredentialService {
     public ProviderCredentialSummary create(CreateFields fields, UserAccount user, Authentication auth) {
         ProviderChannel channel = channelService.requireVisible(fields.providerChannelId(), user, auth);
         tenantGuard.assertWritable(channel.getTenantId());
-        String plaintext = requirePlaintext(fields.plaintext());
+        String authType = normalizeAuthType(fields.authType());
+        String plaintext = "NONE".equals(authType) ? null : requirePlaintext(fields.plaintext());
 
         ProviderCredential credential = buildCredential(channel.getTenantId(),
-                resolveName(fields.name(), plaintext), fields.priority(), fields.weight(), fields.remark());
-        EncryptedCredential encrypted = cryptoService.encrypt(plaintext);
-        String fingerprint = cryptoService.fingerprint(plaintext);
-        applySecret(credential, cryptoService.mask(plaintext), fingerprint, encrypted);
+                resolveName(fields.name(), plaintext), fields.priority(), fields.weight(), fields.remark(), authType);
+        if ("NONE".equals(authType)) {
+            applyNoAuthenticationMarker(credential);
+        } else {
+            EncryptedCredential encrypted = cryptoService.encrypt(plaintext);
+            applySecret(credential, cryptoService.mask(plaintext), cryptoService.fingerprint(plaintext), encrypted);
+        }
 
         // 预检当前租户未删除指纹，避免依赖唯一索引报错返回 500；并发冲突由 catch 兜底。
-        ProviderCredential reusable = mapper.findActiveByFingerprint(channel.getTenantId(), fingerprint).orElse(null);
+        ProviderCredential reusable = mapper.findActiveByFingerprint(channel.getTenantId(), credential.getCredentialFingerprint()).orElse(null);
         if (reusable != null) {
+            if (!authType.equals(reusable.getAuthType())) {
+                throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "相同凭证不能使用不同认证方式");
+            }
             assertSameProvider(channel, reusable, user, auth);
             if (mapper.hasActiveBinding(channel.getId(), reusable.getId())) {
                 throw new ProviderException(BusinessErrorCode.CREDENTIAL_DUPLICATE, "凭证已存在");
@@ -203,8 +213,18 @@ public class ProviderCredentialService {
         credential.setPriority(fields.priority() == null ? credential.getPriority() : fields.priority());
         credential.setWeight(fields.weight() == null ? credential.getWeight() : fields.weight());
         credential.setRemark(blankToNull(fields.remark()));
+        String previousAuthType = credential.getAuthType();
+        String requestedAuthType = fields.authType() == null ? previousAuthType : normalizeAuthType(fields.authType());
+        if (!requestedAuthType.equals(credential.getAuthType())
+                && ("NONE".equals(requestedAuthType) || "NONE".equals(credential.getAuthType()))) {
+            throw new ProviderException(BusinessErrorCode.VALIDATION_ERROR, "无认证凭证请重新创建");
+        }
+        credential.setAuthType(requestedAuthType);
         validateMetadata(credential);
         mapper.updateMetadata(credential);
+        if (!requestedAuthType.equals(previousAuthType)) {
+            runtimeOutboxService.record(channel.getTenantId(), "PROVIDER_CREDENTIAL", id, "AUTH_TYPE_CHANGED", null);
+        }
         return detail(id, user, auth);
     }
 
@@ -319,7 +339,7 @@ public class ProviderCredentialService {
                 continue;
             }
             ProviderCredential credential = buildCredential(channel.getTenantId(),
-                    resolveName(req.namePrefix(), c.plaintext), priority, weight, remark);
+                    resolveName(req.namePrefix(), c.plaintext), priority, weight, remark, DEFAULT_AUTH_TYPE);
             EncryptedCredential encrypted = cryptoService.encrypt(c.plaintext);
             applySecret(credential, c.maskedValue, c.fingerprint, encrypted);
             toInsert.add(credential);
@@ -329,11 +349,11 @@ public class ProviderCredentialService {
         Set<String> inserted = new HashSet<>();
         if (!toInsert.isEmpty()) {
             List<ProviderCredential> insertedCredentials = mapper.insertBatchReturningCredentials(toInsert);
-            mapper.bindBatch(channel.getTenantId(), channel.getId(), insertedCredentials);
-            for (ProviderCredential insertedCredential : insertedCredentials) {
-                inserted.add(insertedCredential.getCredentialFingerprint());
-            }
             if (!insertedCredentials.isEmpty()) {
+                mapper.bindBatch(channel.getTenantId(), channel.getId(), insertedCredentials);
+                for (ProviderCredential insertedCredential : insertedCredentials) {
+                    inserted.add(insertedCredential.getCredentialFingerprint());
+                }
                 // 批量导入只写一条通道级 Outbox，避免逐凭证 N+1 写入；Scope 仍由 Resolver 精准收敛。
                 runtimeOutboxService.record(channel.getTenantId(), "PROVIDER_CHANNEL", channel.getId(),
                         "CREDENTIAL_POOL_CHANGED", null);
@@ -428,12 +448,20 @@ public class ProviderCredentialService {
         credential.setEncryptionVersion(encrypted.encryptionVersion());
     }
 
+    /** NONE 使用随机内部标记满足既有密文字段约束，标记永不进入 Gateway 运行时快照。 */
+    private void applyNoAuthenticationMarker(ProviderCredential credential) {
+        String marker = "none:" + UUID.randomUUID();
+        EncryptedCredential encrypted = cryptoService.encrypt(marker);
+        applySecret(credential, "无认证", cryptoService.fingerprint(marker), encrypted);
+    }
+
     private ProviderCredential buildCredential(Long tenantId, String name, Integer priority,
-            Integer weight, String remark) {
+            Integer weight, String remark, String authType) {
         ProviderCredential credential = new ProviderCredential();
         credential.setTenantId(tenantId);
         credential.setName(name);
         credential.setCredentialType(CREDENTIAL_TYPE);
+        credential.setAuthType(authType);
         credential.setEnabled(true);
         credential.setPriority(priority == null ? DEFAULT_PRIORITY : priority);
         credential.setWeight(weight == null ? DEFAULT_WEIGHT : weight);
@@ -461,14 +489,14 @@ public class ProviderCredentialService {
     private void validateMetadata(ProviderCredential c) {
         if (c.getName() == null || c.getName().isBlank() || c.getName().length() > 128
                 || c.getPriority() < 0 || c.getPriority() > 100000
-                || c.getWeight() < 1 || c.getWeight() > 100000) {
+                || c.getWeight() < 1 || c.getWeight() > 100000 || !AUTH_TYPES.contains(c.getAuthType())) {
             throw new ProviderException(BusinessErrorCode.VALIDATION_ERROR, "凭证元数据不合法");
         }
     }
 
     private ProviderCredentialSummary toSummary(ProviderCredential c) {
         return new ProviderCredentialSummary(c.getId(), c.getTenantId(), c.getProviderChannelId(),
-                c.getName(), c.getCredentialType(), c.getMaskedValue(),
+                c.getName(), c.getCredentialType(), c.getAuthType(), c.getMaskedValue(),
                 c.isEnabled() ? "ENABLED" : "DISABLED", c.getPriority(), c.getWeight(),
                 c.getRemark(), c.getCreatedAt(), c.getUpdatedAt());
     }
@@ -477,15 +505,23 @@ public class ProviderCredentialService {
         return s == null || s.isBlank() ? null : s.trim();
     }
 
+    private String normalizeAuthType(String authType) {
+        String normalized = authType == null || authType.isBlank() ? DEFAULT_AUTH_TYPE : authType.trim().toUpperCase();
+        if (!AUTH_TYPES.contains(normalized)) {
+            throw new ProviderException(BusinessErrorCode.VALIDATION_ERROR, "凭证认证方式不合法");
+        }
+        return normalized;
+    }
+
     /** 导入候选行：保留原始明文仅用于加密，处理完成后随方法栈释放。 */
     private record Candidate(int lineNumber, String plaintext, String fingerprint, String maskedValue) {
     }
 
     /** 创建请求字段。 */
-    public record CreateFields(Long providerChannelId, String plaintext, String name, Integer priority, Integer weight, String remark) {
+    public record CreateFields(Long providerChannelId, String plaintext, String name, Integer priority, Integer weight, String remark, String authType) {
     }
 
     /** 元数据编辑字段。 */
-    public record UpdateFields(String name, Integer priority, Integer weight, String remark) {
+    public record UpdateFields(String name, Integer priority, Integer weight, String remark, String authType) {
     }
 }

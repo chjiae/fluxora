@@ -13,6 +13,7 @@ public record ProviderCredentialSummary(
         Long providerChannelId,
         String name,
         String credentialType,
+        String authType,
         String maskedValue,
         String status,
         int priority,

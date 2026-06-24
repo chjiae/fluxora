@@ -10,5 +10,6 @@ public record CreateCredentialRequest(
         String name,
         Integer priority,
         Integer weight,
-        String remark) {
+        String remark,
+        String authType) {
 }
