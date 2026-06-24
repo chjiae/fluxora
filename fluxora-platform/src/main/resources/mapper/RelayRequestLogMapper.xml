@@ -16,7 +16,7 @@
       started_at,usage_status,currency_code,price_version,input_price_per_million,output_price_per_million,
       cache_write_price_per_million,cache_read_price_per_million,pricing_status,source_event_id,created_at,updated_at)
     VALUES(#{requestId},#{tenantId},#{userId},#{apiKeyId},#{inboundProtocol},#{outboundProtocol},#{endpoint},
-      #{tenantModelId},#{tenantModelCode},#{routeTargetId},#{providerChannelId},#{providerChannelModelId},#{stream},'STARTED',
+      #{tenantModelId},#{tenantModelCode},#{routeTargetId},#{providerChannelId},#{providerChannelModelId},#{streaming},'STARTED',
       #{requestStartedAt},#{usageStatus},#{currencyCode},#{priceVersion},#{inputPricePerMillion},#{outputPricePerMillion},
       #{cacheWritePricePerMillion},#{cacheReadPricePerMillion},#{pricingStatus},#{eventId},NOW(),NOW())
     ON CONFLICT (request_id) DO NOTHING
@@ -93,7 +93,8 @@
     <bind name="protocol" value="query.protocol"/><bind name="apiKeyId" value="query.apiKeyId"/>
     <bind name="filterUserId" value="query.filterUserId"/><bind name="requestStatus" value="query.requestStatus"/>
     <bind name="startAt" value="query.startAt"/><bind name="endAt" value="query.endAt"/>
-    SELECT date_trunc(#{bucketUnit}, started_at AT TIME ZONE #{timeZone}) AS bucketStart,COUNT(*) AS requestCount,
+    <!-- date_trunc 第一参数必须为字面量（非绑定参数），bucketUnit 由服务端 TimeRange.resolve 控制，仅 'hour'/'day' -->
+    SELECT date_trunc('${bucketUnit}', started_at AT TIME ZONE #{timeZone}) AS bucketStart,COUNT(*) AS requestCount,
       COUNT(*) FILTER (WHERE request_status='SUCCESS') AS successCount,COUNT(*) FILTER (WHERE request_status='FAILED') AS failedCount,
       COUNT(*) FILTER (WHERE request_status='CANCELLED') AS cancelledCount,SUM(input_tokens) AS inputTokens,SUM(output_tokens) AS outputTokens,
       SUM(cache_write_tokens) AS cacheWriteTokens,SUM(cache_read_tokens) AS cacheReadTokens,
@@ -103,6 +104,6 @@
       CASE WHEN COUNT(*) FILTER (WHERE cache_read_tokens IS NOT NULL)=0 THEN 'UNKNOWN' WHEN COUNT(*) FILTER (WHERE cache_read_tokens IS NOT NULL)=COUNT(*) THEN 'REPORTED' ELSE 'PARTIAL' END AS cacheReadTokensDataStatus,
       SUM(theoretical_amount) FILTER (WHERE pricing_status='CALCULATED') AS calculatedTheoreticalAmount,
       CASE WHEN COUNT(*) FILTER (WHERE pricing_status='CALCULATED')=0 THEN 'UNKNOWN' WHEN COUNT(*) FILTER (WHERE pricing_status='CALCULATED')=COUNT(*) THEN 'CALCULATED' ELSE 'PARTIAL' END AS pricingDataStatus
-    FROM relay_request_log <include refid="filter"/> GROUP BY date_trunc(#{bucketUnit}, started_at AT TIME ZONE #{timeZone}) ORDER BY bucketStart
+        FROM relay_request_log <include refid="filter"/> GROUP BY 1 ORDER BY bucketStart
   </select>
 </mapper>
