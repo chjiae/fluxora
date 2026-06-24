@@ -55,9 +55,12 @@ describe('tenant model management', () => {
   })
 
   it('provides the tenant-model view, public catalog and candidates panel', async () => {
-    await expect(import('@/views/TenantModelManagementView.vue')).resolves.toBeDefined()
-    await expect(import('@/views/PublicModelCatalogView.vue')).resolves.toBeDefined()
-    await expect(import('@/components/ChannelModelCandidatesPanel.vue')).resolves.toBeDefined()
+    const modules = await Promise.all([
+      import('@/views/TenantModelManagementView.vue'),
+      import('@/views/PublicModelCatalogView.vue'),
+      import('@/components/ChannelModelCandidatesPanel.vue'),
+    ])
+    modules.forEach((module) => expect(module).toBeDefined())
   })
 
   it('keeps the five-row Grid rhythm and MetricStrip reuse in TenantModelManagementView', async () => {

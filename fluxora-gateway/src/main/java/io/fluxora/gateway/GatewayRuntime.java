@@ -2,6 +2,7 @@ package io.fluxora.gateway;
 
 import io.fluxora.gateway.auth.ApiKeyLookupHasher;
 import io.fluxora.gateway.auth.GatewayAuthenticator;
+import io.fluxora.gateway.credential.RuntimeCredentialResolver;
 import io.fluxora.gateway.route.GatewayRouteResolver;
 import io.fluxora.gateway.route.RouteTargetSelector;
 import io.fluxora.gateway.runtime.RedisRuntimeSnapshotSource;
@@ -19,6 +20,7 @@ public final class GatewayRuntime {
     private final RuntimeInvalidationSubscriber subscriber;
     private final GatewayAuthenticator authenticator;
     private final GatewayRouteResolver routeResolver;
+    private final RuntimeCredentialResolver credentialResolver;
     private final GatewayMetrics metrics;
     private final RuntimeL1Caches caches;
     /** 受限热点版本核对定时器；关闭 Gateway 时必须取消，避免测试/优雅退出后继续访问 Redis。 */
@@ -31,11 +33,13 @@ public final class GatewayRuntime {
         this.caches = new RuntimeL1Caches(new RedisRuntimeSnapshotSource(redis), config, metrics);
         this.authenticator = new GatewayAuthenticator(new ApiKeyLookupHasher(config.apiKeyLookupSecret()), caches, metrics);
         this.routeResolver = new GatewayRouteResolver(caches, new RouteTargetSelector());
+        this.credentialResolver = new RuntimeCredentialResolver(caches, config.runtimeCredentialKey());
         this.subscriber = new RuntimeInvalidationSubscriber(vertx, redis, config.invalidationChannel(), caches, metrics);
     }
 
     public GatewayAuthenticator authenticator() { return authenticator; }
     public GatewayRouteResolver routeResolver() { return routeResolver; }
+    public RuntimeCredentialResolver credentialResolver() { return credentialResolver; }
     public GatewayMetrics metrics() { return metrics; }
 
     /** Redis 暂不可用时仍启动 HTTP Server 并失败关闭；后台订阅会自动重连。 */

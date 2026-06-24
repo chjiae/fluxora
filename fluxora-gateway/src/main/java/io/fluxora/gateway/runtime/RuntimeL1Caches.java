@@ -21,6 +21,7 @@ public final class RuntimeL1Caches {
     private final AsyncCache<String, RuntimeSnapshot> users;
     private final AsyncCache<String, RuntimeSnapshot> tenants;
     private final AsyncCache<String, RuntimeSnapshot> routes;
+    private final AsyncCache<String, RuntimeSnapshot> credentials;
     private final Cache<String, Boolean> invalidApiKeys;
 
     public RuntimeL1Caches(RuntimeSnapshotSource source, GatewayRuntimeConfig config, GatewayMetrics metrics) {
@@ -30,6 +31,7 @@ public final class RuntimeL1Caches {
         this.users = asyncCache(config.userTtl(), config.maxCacheEntries());
         this.tenants = asyncCache(config.tenantTtl(), config.maxCacheEntries());
         this.routes = asyncCache(config.routeTtl(), config.maxCacheEntries());
+        this.credentials = asyncCache(config.credentialTtl(), config.maxCacheEntries());
         this.invalidApiKeys = Caffeine.<String, Boolean>newBuilder()
                 .maximumSize(config.maxCacheEntries()).expireAfterWrite(config.invalidApiKeyTtl()).build();
     }
@@ -48,6 +50,12 @@ public final class RuntimeL1Caches {
 
     public Future<RuntimeSnapshot> route(String scopeKey) {
         return load(routes, RuntimeScopeType.TENANT_MODEL_ROUTE, scopeKey, metrics.routeL1Hit);
+    }
+
+    /** 只缓存 Redis 敏感快照密文；解密后的 String 绝不写入 Caffeine。 */
+    public Future<RuntimeSnapshot> credential(long tenantId, long credentialId) {
+        return load(credentials, RuntimeScopeType.UPSTREAM_CREDENTIAL, tenantId + ":" + credentialId,
+                metrics.credentialL1Hit);
     }
 
     public boolean isInvalidApiKey(String lookupHash) {
@@ -79,6 +87,7 @@ public final class RuntimeL1Caches {
         users.synchronous().invalidateAll();
         tenants.synchronous().invalidateAll();
         routes.synchronous().invalidateAll();
+        credentials.synchronous().invalidateAll();
         invalidApiKeys.invalidateAll();
     }
 
@@ -88,7 +97,8 @@ public final class RuntimeL1Caches {
      */
     public void verifyHotManifestVersions(int limit) {
         Stream.concat(Stream.concat(apiKeys.synchronous().asMap().values().stream(), users.synchronous().asMap().values().stream()),
-                        Stream.concat(tenants.synchronous().asMap().values().stream(), routes.synchronous().asMap().values().stream()))
+                        Stream.concat(tenants.synchronous().asMap().values().stream(),
+                                Stream.concat(routes.synchronous().asMap().values().stream(), credentials.synchronous().asMap().values().stream())))
                 .limit(limit)
                 .forEach(snapshot -> {
                     metrics.redisSnapshotRead.incrementAndGet();
@@ -126,6 +136,7 @@ public final class RuntimeL1Caches {
             case AUTH_USER -> users;
             case AUTH_TENANT -> tenants;
             case TENANT_MODEL_ROUTE -> routes;
+            case UPSTREAM_CREDENTIAL -> credentials;
         };
     }
 

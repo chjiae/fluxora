@@ -8,6 +8,7 @@ public final class GatewayMetrics {
     public final AtomicLong userL1Hit = new AtomicLong();
     public final AtomicLong tenantL1Hit = new AtomicLong();
     public final AtomicLong routeL1Hit = new AtomicLong();
+    public final AtomicLong credentialL1Hit = new AtomicLong();
     public final AtomicLong invalidKeyNegativeHit = new AtomicLong();
     public final AtomicLong redisSnapshotRead = new AtomicLong();
     public final AtomicLong redisReadFailure = new AtomicLong();

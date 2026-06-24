@@ -1,6 +1,8 @@
 package io.fluxora.gateway;
 
 import io.fluxora.gateway.auth.AuthenticatedPrincipal;
+import io.fluxora.gateway.relay.RelayService;
+import io.fluxora.gateway.transport.UpstreamHttpClient;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -16,11 +18,13 @@ import io.vertx.core.json.JsonObject;
 public final class GatewayHttpServer {
     private final Vertx vertx;
     private final GatewayRuntime runtime;
+    private final RelayService relayService;
     private HttpServer server;
 
     public GatewayHttpServer(Vertx vertx, GatewayRuntime runtime) {
         this.vertx = vertx;
         this.runtime = runtime;
+        this.relayService = new RelayService(runtime, new UpstreamHttpClient(vertx), GatewayRuntimeConfig.fromEnvironment().profile());
     }
 
     public Future<Integer> start(int port) {
@@ -42,23 +46,8 @@ public final class GatewayHttpServer {
             safeError(request, 404, "请求地址不存在");
             return;
         }
-        String rawApiKey = extractApiKey(request);
-        runtime.authenticator().authenticate(rawApiKey).compose(principal ->
-                request.body().compose(body -> resolveAndStop(principal, protocol, body)))
-                .onSuccess(ignored -> safeError(request, 501, "模型请求转发暂未开放"))
+        request.body().compose(body -> relayService.relay(request, protocol, body))
                 .onFailure(error -> writeFailure(request, error));
-    }
-
-    private Future<Void> resolveAndStop(AuthenticatedPrincipal principal, String protocol, Buffer body) {
-        JsonObject request;
-        try {
-            request = new JsonObject(body);
-        } catch (RuntimeException error) {
-            return Future.failedFuture(GatewayFailure.modelUnavailable());
-        }
-        String model = request.getString("model");
-        boolean stream = request.getBoolean("stream", false);
-        return runtime.routeResolver().resolve(principal.tenantId(), protocol, model, stream).mapEmpty();
     }
 
     private String protocolFor(HttpServerRequest request) {
@@ -68,14 +57,6 @@ public final class GatewayHttpServer {
             case "/v1/messages" -> "ANTHROPIC";
             default -> null;
         };
-    }
-
-    private String extractApiKey(HttpServerRequest request) {
-        String authorization = request.getHeader("Authorization");
-        if (authorization != null && authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            return authorization.substring(7);
-        }
-        return request.getHeader("x-api-key");
     }
 
     private void writeFailure(HttpServerRequest request, Throwable error) {

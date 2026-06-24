@@ -14,6 +14,7 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       APIKEY_LOOKUP_SECRET: ${APIKEY_LOOKUP_SECRET:-fluxora-apikey-lookup-secret-for-local-development-only-please-override}
+      FLUXORA_RUNTIME_CREDENTIAL_KEY: ${FLUXORA_RUNTIME_CREDENTIAL_KEY:-cnVudGltZS1jcmVkZW50aWFsLWtleS0wMTIzNDU2Nzg=}
     ports: ["${PLATFORM_PORT:-8080}:8080"]
   gateway:
     build:
@@ -25,6 +26,7 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       APIKEY_LOOKUP_SECRET: ${APIKEY_LOOKUP_SECRET:-fluxora-apikey-lookup-secret-for-local-development-only-please-override}
+      FLUXORA_RUNTIME_CREDENTIAL_KEY: ${FLUXORA_RUNTIME_CREDENTIAL_KEY:-cnVudGltZS1jcmVkZW50aWFsLWtleS0wMTIzNDU2Nzg=}
     ports: ["${GATEWAY_PORT:-8081}:8081"]
   web:
     build:

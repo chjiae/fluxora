@@ -51,7 +51,7 @@ public final class RouteTargetSelector {
     private RouteSelection selection(JsonObject target) {
         return new RouteSelection(target.getLong("routeTargetId"), target.getLong("providerChannelId"),
                 target.getLong("providerChannelModelId"), target.getString("outboundProtocol"),
-                target.getString("upstreamModelId"));
+                target.getString("upstreamModelId"), target.copy());
     }
 
     private boolean positive(Long value) { return value != null && value > 0; }
