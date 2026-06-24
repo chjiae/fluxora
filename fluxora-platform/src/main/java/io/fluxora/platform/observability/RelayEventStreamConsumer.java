@@ -31,7 +31,7 @@ public class RelayEventStreamConsumer {
     @Scheduled(fixedDelayString="${fluxora.observability.stream-poll-delay-ms:500}")
     public void poll() {
         try {
-            if (!groupReady) { try { redis.opsForStream().createGroup(stream, ReadOffset.latest(), group); } catch (RuntimeException ignored) { } groupReady=true; }
+            if (!groupReady && !ensureGroup()) return;
             List<MapRecord<String,Object,Object>> rows=redis.opsForStream().read(Consumer.from(group,consumer),StreamReadOptions.empty().count(50),StreamOffset.create(stream,ReadOffset.lastConsumed()));
             if(rows==null)return;
             for(MapRecord<String,Object,Object> row:rows){
@@ -39,6 +39,20 @@ public class RelayEventStreamConsumer {
                 // 每个 XACK 都严格落在对应 PostgreSQL 事务提交之后，不能因批次中其他消息失败提前确认。
                 service.consume(fields); redis.opsForStream().acknowledge(group,row);
             }
-        } catch(Exception ex) { log.warn("中继观测 Stream 暂时不可消费，将保留 Pending 后重试"); }
+        } catch(Exception ex) { groupReady=false; log.warn("中继观测 Stream 暂时不可消费，将保留 Pending 后重试"); }
+    }
+
+    /**
+     * Gateway 首条事件前 Stream 可能尚不存在；此时不进入 read，而是在下次轮询继续尝试。
+     * BUSYGROUP 表示另一实例已建组，可安全开始消费；其余错误都保持未就绪，避免永久 NOGROUP。
+     */
+    private boolean ensureGroup() {
+        try {
+            redis.opsForStream().createGroup(stream, ReadOffset.latest(), group);
+            groupReady=true;
+        } catch (RuntimeException ex) {
+            groupReady=ex.getMessage()!=null && ex.getMessage().contains("BUSYGROUP");
+        }
+        return groupReady;
     }
 }
