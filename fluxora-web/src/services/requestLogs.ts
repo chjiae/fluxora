@@ -1,0 +1,13 @@
+import http from './http'
+
+export interface RequestLogSummary { requestId:string; tenantModelCode:string; inboundProtocol:string; stream:boolean; requestStatus:string; durationMs:number|null; inputTokens:number|null; outputTokens:number|null; cacheWriteTokens:number|null; cacheReadTokens:number|null; usageStatus:string; theoreticalAmount:string|null; pricingStatus:string; startedAt:string }
+export interface RequestLogPage { items:RequestLogSummary[]; total:number; page:number; size:number }
+export interface RequestLogStats { total:number; success:number; failed:number; cancelled:number; inputTokens:number|null; outputTokens:number|null; cacheWriteTokens:number|null; cacheReadTokens:number|null; theoreticalAmount:string|null; usageUnknown:number; usagePartial:number; pricingUnavailable:number; pricingPartial:number }
+export interface TrendBucket { bucketStart:string; requestCount:number; successCount:number; failedCount:number; cancelledCount:number; inputTokens:number|null; outputTokens:number|null; cacheWriteTokens:number|null; cacheReadTokens:number|null; inputTokensDataStatus:string; outputTokensDataStatus:string; cacheWriteTokensDataStatus:string; cacheReadTokensDataStatus:string; calculatedTheoreticalAmount:string|null; pricingDataStatus:string }
+export interface TrendResponse { timeZone:string; range:string; granularity:string; stats:RequestLogStats; buckets:TrendBucket[] }
+export interface RequestLogDetail extends RequestLogSummary { outboundProtocol:string; endpoint:string; errorCategory:string|null; safeHttpStatus:number|null; finishedAt:string|null; currencyCode:string; priceVersion:number; inputPricePerMillion:string; outputPricePerMillion:string; cacheWritePricePerMillion:string|null; cacheReadPricePerMillion:string|null }
+export interface RequestLogQuery { tenantId?:number; tenantModelCode?:string; protocol?:string; apiKeyId?:number; userId?:number; requestStatus?:string; page?:number; size?:number }
+export async function listRequestLogs(params:RequestLogQuery):Promise<RequestLogPage>{return (await http.get('/api/request-logs',{params})).data.data}
+export async function requestLogStats(params:RequestLogQuery):Promise<RequestLogStats>{return (await http.get('/api/request-logs/stats',{params})).data.data}
+export async function requestLogTrends(params:RequestLogQuery & {range:string}):Promise<TrendResponse>{return (await http.get('/api/request-logs/trends',{params})).data.data}
+export async function requestLogDetail(requestId:string,tenantId?:number):Promise<RequestLogDetail>{return (await http.get(`/api/request-logs/${requestId}`,{params:{tenantId}})).data.data}

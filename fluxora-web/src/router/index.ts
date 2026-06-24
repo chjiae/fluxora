@@ -17,6 +17,7 @@ import ProviderBaseUrlManagementView from '../views/ProviderBaseUrlManagementVie
 import ProviderChannelManagementView from '../views/ProviderChannelManagementView.vue'
 import TenantModelManagementView from '../views/TenantModelManagementView.vue'
 import PublicModelCatalogView from '../views/PublicModelCatalogView.vue'
+import RequestLogsView from '../views/RequestLogsView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 export const router = createRouter({
@@ -88,6 +89,7 @@ export const router = createRouter({
         { path: 'provider-channels', component: ProviderChannelManagementView },
         { path: 'tenant-models', component: TenantModelManagementView },
         { path: 'models', component: PublicModelCatalogView },
+        { path: 'request-logs', component: RequestLogsView },
       ],
     },
   ],

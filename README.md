@@ -44,6 +44,15 @@ npm run dev
 
 详细设计见 [运行时配置架构](docs/runtime-config-architecture.md)、[原生中继架构](docs/native-relay-architecture.md) 和[本地 Ollama 验证](docs/local-ollama-upstream-testing.md)。逐实体刷新规则见[刷新覆盖矩阵](docs/runtime-refresh-coverage-matrix.md)。本地运行时需要让 Platform 与 Gateway 使用相同的 `APIKEY_LOOKUP_SECRET`、`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 与 `FLUXORA_RUNTIME_CREDENTIAL_KEY`。
 
+## 请求日志、Token 与理论金额
+
+- Gateway 在原生 OpenAI / Anthropic 中继成功完成鉴权和路由后，异步写入 Redis Stream；Platform 通过 Consumer Group 幂等落库并提供安全分页、详情和趋势查询。
+- 观测数据只保存内部引用、状态、耗时、Token 与价格快照，绝不保存 API Key、凭证、BaseUrl、上游模型、消息正文、工具参数或完整响应。
+- Redis 可用时是 At-Least-Once 投递加 Platform 幂等消费；Redis 不可用时 Gateway 仅进行有界内存重试，不会阻塞用户响应，进程崩溃仍可能丢失待重试事件。
+- 金额是请求开始价格快照下的理论预览，不是余额扣减；本轮不涉及钱包、额度、账单、结算或退款。
+
+详细规则见[请求观测架构](docs/request-observability-architecture.md)、[Token 用量与理论金额](docs/token-usage-and-pricing-preview.md)和[用量趋势聚合](docs/usage-trend-aggregation.md)。
+
 ## 初始账号
 
 首次启动后，平台管理员自动初始化（幂等，不会重置已有密码）：
