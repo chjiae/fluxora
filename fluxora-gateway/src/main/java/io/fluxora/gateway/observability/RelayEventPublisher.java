@@ -2,9 +2,11 @@ package io.fluxora.gateway.observability;
 
 import io.fluxora.gateway.GatewayMetrics;
 import io.fluxora.gateway.relay.RelayUsageStatus;
+import io.fluxora.gateway.relay.runtime.RuntimeFailureEvent;
 import io.vertx.redis.client.Redis;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Map;
 
 /**
  * Gateway 侧非阻塞事件投递器。Redis 可用时为 At-Least-Once；不可用时仅内存有界重试，
@@ -33,13 +35,23 @@ public final class RelayEventPublisher {
 
     /** 立即发起异步 XADD；失败只进入观测重试队列，绝不向调用者抛出 Redis 异常。 */
     public void publish(RelayObservationEvent event) {
-        client.append(event.toStreamFields()).onSuccess(ignored -> {
+        publishFields(event.toStreamFields(), event);
+    }
+
+    /** 运行时故障事件与请求日志事件共用同一可靠投递边界，但不会进入请求用量统计。 */
+    public void publishRuntimeFailure(RuntimeFailureEvent event) {
+        metrics.upstreamRuntimeFailureEvent.incrementAndGet();
+        publishFields(event.toStreamFields(), null);
+    }
+
+    private void publishFields(Map<String, String> fields, RelayObservationEvent observation) {
+        client.append(fields).onSuccess(ignored -> {
                     metrics.relayEventsProduced.incrementAndGet();
-                    recordObservationMetrics(event);
+                    if (observation != null) recordObservationMetrics(observation);
                 })
                 .onFailure(ignored -> {
                     metrics.relayEventsPublishFailed.incrementAndGet();
-                    enqueue(event);
+                    enqueue(fields, observation);
                 });
     }
 
@@ -53,10 +65,10 @@ public final class RelayEventPublisher {
             return;
         }
         metrics.relayEventsRetry.incrementAndGet();
-        client.append(next.event().toStreamFields()).onSuccess(ignored -> {
+        client.append(next.fields()).onSuccess(ignored -> {
             pending.removeFirstOccurrence(next);
             metrics.relayEventsProduced.incrementAndGet();
-            recordObservationMetrics(next.event());
+            if (next.observation() != null) recordObservationMetrics(next.observation());
             refreshPendingMetric();
         }).onFailure(ignored -> {
             metrics.relayEventsPublishFailed.incrementAndGet();
@@ -73,12 +85,12 @@ public final class RelayEventPublisher {
         return pending.size();
     }
 
-    private void enqueue(RelayObservationEvent event) {
+    private void enqueue(Map<String, String> fields, RelayObservationEvent observation) {
         if (pending.size() >= maxQueueSize) {
             metrics.relayEventsDropped.incrementAndGet();
             return;
         }
-        pending.addLast(new PendingEvent(event));
+        pending.addLast(new PendingEvent(fields, observation));
         refreshPendingMetric();
     }
 
@@ -101,14 +113,17 @@ public final class RelayEventPublisher {
     }
 
     private static final class PendingEvent {
-        private final RelayObservationEvent event;
+        private final Map<String, String> fields;
+        private final RelayObservationEvent observation;
         private int attempts;
 
-        private PendingEvent(RelayObservationEvent event) {
-            this.event = event;
+        private PendingEvent(Map<String, String> fields, RelayObservationEvent observation) {
+            this.fields = Map.copyOf(fields);
+            this.observation = observation;
         }
 
-        private RelayObservationEvent event() { return event; }
+        private Map<String, String> fields() { return fields; }
+        private RelayObservationEvent observation() { return observation; }
         private int attempts() { return attempts; }
         private void incrementAttempts() { attempts++; }
     }

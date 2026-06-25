@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  上游运行时故障状态 SQL。
+  仅写入 Gateway 已脱敏的资源 ID 与分类字段，不接收或查询 API Key、上游 Key、BaseUrl、正文或异常栈。
+-->
+<mapper namespace="io.fluxora.platform.runtime.availability.UpstreamRuntimeFailureMapper">
+  <insert id="insertEvent">
+    INSERT INTO upstream_runtime_failure_event(
+      event_id,tenant_id,request_id,attempt_id,attempt_no,occurred_at,
+      credential_id,provider_channel_credential_id,provider_channel_id,provider_channel_model_id,route_target_id,
+      billing_account_group,quota_scope,failure_kind,failure_scope,http_status,retry_after_ms,execution_certainty,created_at)
+    VALUES(
+      #{eventId},#{tenantId},#{requestId},#{attemptId},#{attemptNo},#{occurredAt},
+      #{credentialId},#{providerChannelCredentialId},#{providerChannelId},#{providerChannelModelId},#{routeTargetId},
+      #{billingAccountGroup},#{quotaScope},#{failureKind},#{failureScope},#{httpStatus},#{retryAfterMs},#{executionCertainty},NOW())
+    ON CONFLICT(event_id) DO NOTHING
+  </insert>
+
+  <insert id="upsertState">
+    INSERT INTO upstream_runtime_resource_state(
+      tenant_id,scope_type,scope_key,runtime_state,last_failure_kind,last_failed_at,cooldown_until,updated_at)
+    VALUES(
+      #{tenantId},#{scopeType},#{scopeKey},#{runtimeState},#{lastFailureKind},#{lastFailedAt},#{cooldownUntil},NOW())
+    ON CONFLICT(scope_type,scope_key) DO UPDATE SET
+      tenant_id=EXCLUDED.tenant_id,
+      runtime_state=EXCLUDED.runtime_state,
+      last_failure_kind=EXCLUDED.last_failure_kind,
+      last_failed_at=EXCLUDED.last_failed_at,
+      cooldown_until=EXCLUDED.cooldown_until,
+      updated_at=NOW()
+  </insert>
+
+  <update id="recoverState">
+    UPDATE upstream_runtime_resource_state
+    SET runtime_state='AVAILABLE', cooldown_until=NULL, updated_at=NOW()
+    WHERE scope_type=#{scopeType} AND scope_key=#{scopeKey}
+  </update>
+
+  <select id="findCredentialTenantId" resultType="long">
+    SELECT tenant_id FROM provider_credential WHERE id=#{credentialId} AND deleted_at IS NULL
+  </select>
+</mapper>

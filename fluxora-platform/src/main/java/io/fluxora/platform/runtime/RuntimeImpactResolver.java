@@ -50,6 +50,8 @@ public class RuntimeImpactResolver {
             case "PROVIDER_CREDENTIAL" -> credentialScopes(event, aggregateId);
             case "PROVIDER" -> routeScopes(runtimeMapper.findRouteScopesByProvider(aggregateId));
             case "PROVIDER_BASE_URL" -> routeScopes(runtimeMapper.findRouteScopesByBaseUrl(aggregateId));
+            case "UPSTREAM_RUNTIME_STATE" -> event.tenantId() == null
+                    ? Set.of() : routeScopes(runtimeMapper.findRouteScopesByTenant(event.tenantId()));
             default -> Set.of();
         };
         return withCatalogScopes(event, scopes);

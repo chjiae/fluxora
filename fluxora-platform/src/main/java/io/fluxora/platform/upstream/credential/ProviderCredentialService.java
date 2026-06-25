@@ -498,6 +498,12 @@ public class ProviderCredentialService {
         return new ProviderCredentialSummary(c.getId(), c.getTenantId(), c.getProviderChannelId(),
                 c.getName(), c.getCredentialType(), c.getAuthType(), c.getMaskedValue(),
                 c.isEnabled() ? "ENABLED" : "DISABLED", c.getPriority(), c.getWeight(),
+                c.getRuntimeState() == null ? "AVAILABLE" : c.getRuntimeState(),
+                c.getLastFailedAt(), c.getLastFailureKind(), c.getCooldownUntil(),
+                c.getBillingAccountGroup(), c.getQuotaScope(),
+                c.getTrafficWeight() == 0 ? 1 : c.getTrafficWeight(),
+                c.getMaxConcurrentStreams() == 0 ? Integer.MAX_VALUE : c.getMaxConcurrentStreams(),
+                c.getBoundChannelCount(),
                 c.getRemark(), c.getCreatedAt(), c.getUpdatedAt());
     }
 

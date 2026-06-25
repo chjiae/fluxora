@@ -24,6 +24,7 @@ import io.fluxora.platform.upstream.credential.dto.ProviderCredentialSummary;
 import io.fluxora.platform.upstream.credential.dto.ReplaceCredentialRequest;
 import io.fluxora.platform.upstream.credential.dto.UpdateCredentialRequest;
 import io.fluxora.platform.upstream.dto.UpstreamPage;
+import io.fluxora.platform.runtime.availability.UpstreamRuntimeFailureService;
 
 /**
  * 上游凭证 REST 接口。
@@ -36,9 +37,12 @@ import io.fluxora.platform.upstream.dto.UpstreamPage;
 public class ProviderCredentialController {
 
     private final ProviderCredentialService service;
+    private final UpstreamRuntimeFailureService runtimeFailureService;
 
-    public ProviderCredentialController(ProviderCredentialService service) {
+    public ProviderCredentialController(ProviderCredentialService service,
+                                        UpstreamRuntimeFailureService runtimeFailureService) {
         this.service = service;
+        this.runtimeFailureService = runtimeFailureService;
     }
 
     @GetMapping
@@ -136,6 +140,13 @@ public class ProviderCredentialController {
     public ResponseEntity<ApiResponse<Void>> enable(
             @PathVariable Long id, @AuthenticationPrincipal UserAccount user, Authentication auth) {
         service.setEnabled(id, true, user, auth);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PutMapping("/{id}/runtime/recover")
+    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
+    public ResponseEntity<ApiResponse<Void>> recoverRuntimeState(@PathVariable Long id) {
+        runtimeFailureService.recoverCredential(id);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 

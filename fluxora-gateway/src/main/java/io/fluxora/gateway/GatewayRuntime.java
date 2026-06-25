@@ -8,6 +8,12 @@ import io.fluxora.gateway.observability.RelayEventPublisher;
 import io.fluxora.gateway.model.GatewayModelCatalog;
 import io.fluxora.gateway.route.GatewayRouteResolver;
 import io.fluxora.gateway.route.RouteTargetSelector;
+import io.fluxora.gateway.relay.scheduling.RedisDispatchLeaseManager;
+import io.fluxora.gateway.relay.scheduling.UpstreamDispatchPlanner;
+import io.fluxora.gateway.relay.orchestration.RelayAttemptCoordinator;
+import io.fluxora.gateway.relay.runtime.LocalRuntimeQuarantine;
+import io.fluxora.gateway.relay.runtime.RuntimeFailureReporter;
+import io.fluxora.gateway.relay.runtime.RuntimeIncidentMapper;
 import io.fluxora.gateway.runtime.RedisRuntimeSnapshotSource;
 import io.fluxora.gateway.runtime.RuntimeInvalidationSubscriber;
 import io.fluxora.gateway.runtime.RuntimeL1Caches;
@@ -27,6 +33,9 @@ public final class GatewayRuntime {
     private final GatewayModelCatalog modelCatalog;
     private final PlatformBillingClient billingClient;
     private final RuntimeCredentialResolver credentialResolver;
+    private final LocalRuntimeQuarantine localRuntimeQuarantine;
+    private final UpstreamDispatchPlanner dispatchPlanner;
+    private final RelayAttemptCoordinator attemptCoordinator;
     private final GatewayMetrics metrics;
     private final RuntimeL1Caches caches;
     /** 中继审计只写 Redis Stream；该对象不接触 JDBC 或 Platform HTTP。 */
@@ -46,9 +55,14 @@ public final class GatewayRuntime {
         this.modelCatalog = new GatewayModelCatalog(caches);
         this.billingClient = new PlatformBillingClient(vertx, config);
         this.credentialResolver = new RuntimeCredentialResolver(caches, config.runtimeCredentialKey());
-        this.subscriber = new RuntimeInvalidationSubscriber(vertx, redis, config.invalidationChannel(), caches, metrics);
         this.relayEventPublisher = RelayEventPublisher.forRedis(redis, metrics, config.relayEventStreamKey(),
                 config.relayEventStreamMaxLength(), config.relayEventRetryQueueSize(), config.relayEventRetryMaxAttempts());
+        this.localRuntimeQuarantine = new LocalRuntimeQuarantine();
+        this.dispatchPlanner = new UpstreamDispatchPlanner(new RedisDispatchLeaseManager(redis, config), localRuntimeQuarantine);
+        this.attemptCoordinator = new RelayAttemptCoordinator(dispatchPlanner, io.fluxora.gateway.relay.failure.FailureClassifierRegistry.defaultRegistry(),
+                new io.fluxora.gateway.relay.retry.DefaultRetryPolicy(), new RuntimeIncidentMapper(),
+                localRuntimeQuarantine, new RuntimeFailureReporter(relayEventPublisher));
+        this.subscriber = new RuntimeInvalidationSubscriber(vertx, redis, config.invalidationChannel(), caches, metrics);
     }
 
     public GatewayAuthenticator authenticator() { return authenticator; }
@@ -56,6 +70,8 @@ public final class GatewayRuntime {
     public GatewayModelCatalog modelCatalog() { return modelCatalog; }
     public PlatformBillingClient billingClient() { return billingClient; }
     public RuntimeCredentialResolver credentialResolver() { return credentialResolver; }
+    public UpstreamDispatchPlanner dispatchPlanner() { return dispatchPlanner; }
+    public RelayAttemptCoordinator attemptCoordinator() { return attemptCoordinator; }
     public GatewayMetrics metrics() { return metrics; }
     public RelayEventPublisher relayEventPublisher() { return relayEventPublisher; }
 

@@ -108,13 +108,15 @@ public class RuntimeSnapshotBuilder {
         writePrice(snapshot, first);
 
         Map<Long, ObjectNode> targetsById = new LinkedHashMap<>();
+        Instant dispatchNow = Instant.now();
         for (RuntimeRouteRow row : rows) {
             if (row.routeTargetId() == null) {
                 continue;
             }
             // 路由快照是 Gateway 的执行包，停用或软删除的关联只用于影响范围解析，不下发为候选目标。
             if (!row.targetEnabled() || !row.mappingEnabled() || !row.candidateEnabled()
-                    || !row.channelEnabled() || !row.hasUsableCredential()) {
+                    || !row.channelEnabled() || !row.hasUsableCredential()
+                    || !targetRuntimeAvailable(row, dispatchNow)) {
                 continue;
             }
             ObjectNode target = targetsById.get(row.routeTargetId());
@@ -141,13 +143,21 @@ public class RuntimeSnapshotBuilder {
                 target.putArray("credentialRefs");
             }
             // 只下发当前可选的有效凭证，Gateway 稳定取首项时不会误选已停用绑定或凭证。
-            if (row.providerCredentialId() != null && row.credentialBindingEnabled() && row.credentialEnabled()) {
+            if (row.providerCredentialId() != null && row.credentialBindingEnabled() && row.credentialEnabled()
+                    && credentialRuntimeAvailable(row, dispatchNow)) {
                 ObjectNode credentialRef = target.withArray("credentialRefs").addObject();
+                credentialRef.put("providerChannelCredentialId", row.providerChannelCredentialId());
                 credentialRef.put("providerCredentialId", row.providerCredentialId());
                 credentialRef.put("credentialVersion", row.credentialVersion());
                 credentialRef.put("authType", row.credentialAuthType());
                 credentialRef.put("bindingStatus", enabledStatus(row.credentialBindingEnabled(), "ENABLED", "DISABLED"));
-                credentialRef.put("credentialStatus", enabledStatus(row.credentialEnabled(), "ENABLED", "DISABLED"));
+                credentialRef.put("credentialStatus", runtimeStatus(row.credentialRuntimeState(),
+                        row.credentialCooldownUntil(), enabledStatus(row.credentialEnabled(), "ENABLED", "DISABLED"), dispatchNow));
+                credentialRef.put("quotaScope", row.quotaScope());
+                credentialRef.put("billingAccountGroup", row.billingAccountGroup());
+                credentialRef.put("trafficWeight", row.credentialTrafficWeight() == null ? 1 : row.credentialTrafficWeight());
+                credentialRef.put("maxConcurrentStreams", row.credentialMaxConcurrentStreams() == null
+                        ? Integer.MAX_VALUE : row.credentialMaxConcurrentStreams());
             }
         }
         return snapshot;
@@ -171,7 +181,8 @@ public class RuntimeSnapshotBuilder {
                     || !RouteExecutionEligibility.targetCallable(row.targetEnabled(), row.mappingEnabled(),
                     row.candidateEnabled(), row.channelEnabled(), row.hasUsableCredential(), scope.inboundProtocol(),
                     row.outboundProtocol(), row.priority(), row.weight(), row.routeTargetId(), row.providerChannelId(),
-                    row.providerChannelModelId())) {
+                    row.providerChannelModelId())
+                    || runtimeBlocksCatalog(row)) {
                 continue;
             }
             callable.putIfAbsent(row.tenantModelCode(), row);
@@ -281,5 +292,45 @@ public class RuntimeSnapshotBuilder {
 
     private String enabledStatus(boolean enabled, String enabledStatus, String disabledStatus) {
         return enabled ? enabledStatus : disabledStatus;
+    }
+
+    private boolean targetRuntimeAvailable(RuntimeRouteRow row, Instant now) {
+        return runtimeAvailable(row.targetRuntimeState(), row.targetCooldownUntil(), now)
+                && runtimeAvailable(row.channelRuntimeState(), row.channelCooldownUntil(), now)
+                && runtimeAvailable(row.candidateRuntimeState(), row.candidateCooldownUntil(), now);
+    }
+
+    private boolean credentialRuntimeAvailable(RuntimeRouteRow row, Instant now) {
+        return runtimeAvailable(row.bindingRuntimeState(), row.bindingCooldownUntil(), now)
+                && runtimeAvailable(row.credentialRuntimeState(), row.credentialCooldownUntil(), now)
+                && runtimeAvailable(row.billingRuntimeState(), row.billingCooldownUntil(), now)
+                && runtimeAvailable(row.quotaRuntimeState(), row.quotaCooldownUntil(), now);
+    }
+
+    /**
+     * 调度快照尊重短 TTL 冷却；冷却到期后无需人工恢复即可重新进入候选。
+     */
+    private boolean runtimeAvailable(String state, Instant cooldownUntil, Instant now) {
+        return state == null || "AVAILABLE".equals(state) || cooldownUntil != null && !cooldownUntil.isAfter(now);
+    }
+
+    private String runtimeStatus(String state, Instant cooldownUntil, String fallback, Instant now) {
+        return runtimeAvailable(state, cooldownUntil, now) ? fallback : state;
+    }
+
+    /**
+     * 模型目录只受长期不可用状态影响；RATE_LIMITED / QUARANTINED 不让模型列表闪烁。
+     */
+    private boolean runtimeBlocksCatalog(RuntimeRouteRow row) {
+        return longTermRuntimeBlock(row.credentialRuntimeState())
+                || longTermRuntimeBlock(row.billingRuntimeState())
+                || longTermRuntimeBlock(row.bindingRuntimeState())
+                || longTermRuntimeBlock(row.candidateRuntimeState())
+                || longTermRuntimeBlock(row.targetRuntimeState());
+    }
+
+    private boolean longTermRuntimeBlock(String state) {
+        return "AUTH_FAILED".equals(state) || "BILLING_EXHAUSTED".equals(state)
+                || "MODEL_MAPPING_INVALID".equals(state) || "PERMISSION_DENIED".equals(state);
     }
 }

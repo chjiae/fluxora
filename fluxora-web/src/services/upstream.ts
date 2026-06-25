@@ -35,7 +35,11 @@ export interface ProviderChannelStats { total: number; enabled: number; disabled
 export interface ProviderCredentialSummary {
   id: number; tenantId: number; providerChannelId: number
   name: string; credentialType: 'API_KEY'; authType: CredentialAuthType; maskedValue: string; status: Status
-  priority: number; weight: number; remark: string | null; createdAt: string; updatedAt: string
+  priority: number; weight: number; runtimeState: string; lastFailedAt: string | null
+  lastFailureKind: string | null; cooldownUntil: string | null
+  billingAccountGroup: string | null; quotaScope: string | null
+  trafficWeight: number; maxConcurrentStreams: number; boundChannelCount: number
+  remark: string | null; createdAt: string; updatedAt: string
 }
 export interface ProviderCredentialStats { total: number; enabled: number; disabled: number }
 
@@ -91,5 +95,6 @@ export async function createCredential(payload: CredentialPayload): Promise<Prov
 export async function updateCredential(id: number, payload: CredentialMetadataPayload): Promise<ProviderCredentialSummary> { return (await http.put(`/api/provider-credentials/${id}`, payload)).data.data }
 export async function replaceCredential(id: number, plaintext: string): Promise<ProviderCredentialSummary> { return (await http.put(`/api/provider-credentials/${id}/replace`, { plaintext })).data.data }
 export async function setCredentialEnabled(id: number, enabled: boolean): Promise<void> { await http.put(`/api/provider-credentials/${id}/${enabled ? 'enable' : 'disable'}`, {}) }
+export async function recoverCredentialRuntime(id: number): Promise<void> { await http.put(`/api/provider-credentials/${id}/runtime/recover`, {}) }
 export async function deleteCredential(id: number): Promise<void> { await http.delete(`/api/provider-credentials/${id}`) }
 export async function importCredentials(payload: CredentialImportPayload): Promise<CredentialImportResult> { return (await http.post('/api/provider-credentials/import', payload)).data.data }
