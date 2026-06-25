@@ -191,6 +191,11 @@ public class TenantModelController {
         m.setSupportsToolCalling(r.supportsToolCalling() != null && r.supportsToolCalling());
         m.setSupportsVision(r.supportsVision() != null && r.supportsVision());
         m.setSupportsCache(r.supportsCache() != null && r.supportsCache());
+        if (r.maxInputTokens() != null) m.setMaxInputTokens(r.maxInputTokens());
+        if (r.maxOutputTokens() != null) m.setMaxOutputTokens(r.maxOutputTokens());
+        if (r.maxCacheWriteTokens() != null) m.setMaxCacheWriteTokens(r.maxCacheWriteTokens());
+        if (r.maxCacheReadTokens() != null) m.setMaxCacheReadTokens(r.maxCacheReadTokens());
+        if (r.defaultOutputTokens() != null) m.setDefaultOutputTokens(r.defaultOutputTokens());
         return m;
     }
 
@@ -238,7 +243,12 @@ public class TenantModelController {
             Boolean supportsStreaming,
             Boolean supportsToolCalling,
             Boolean supportsVision,
-            Boolean supportsCache
+            Boolean supportsCache,
+            Long maxInputTokens,
+            Long maxOutputTokens,
+            Long maxCacheWriteTokens,
+            Long maxCacheReadTokens,
+            Long defaultOutputTokens
     ) {
     }
 

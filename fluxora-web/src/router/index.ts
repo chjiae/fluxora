@@ -18,6 +18,7 @@ import ProviderChannelManagementView from '../views/ProviderChannelManagementVie
 import TenantModelManagementView from '../views/TenantModelManagementView.vue'
 import PublicModelCatalogView from '../views/PublicModelCatalogView.vue'
 import RequestLogsView from '../views/RequestLogsView.vue'
+import ReconciliationView from '../views/ReconciliationView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 export const router = createRouter({
@@ -90,6 +91,7 @@ export const router = createRouter({
         { path: 'tenant-models', component: TenantModelManagementView },
         { path: 'models', component: PublicModelCatalogView },
         { path: 'request-logs', component: RequestLogsView },
+        { path: 'billing/reconciliations', component: ReconciliationView },
       ],
     },
   ],
@@ -137,6 +139,9 @@ router.beforeEach(async (to, _from, next) => {
     }
     if (to.path === '/console/credit/manage'
         && !(auth.canAdjustTenantCredit || auth.canAdjustCrossTenantCredit)) {
+      return next('/console/overview')
+    }
+    if (to.path === '/console/billing/reconciliations' && !auth.canAdjustCrossTenantCredit) {
       return next('/console/overview')
     }
     // 卡密充值：CARD_SELF_REDEEM

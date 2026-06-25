@@ -181,6 +181,25 @@ class RuntimeProjectionIntegrationTest {
     }
 
     @Test
+    void tenantModelCatalogMustContainOnlySafeCallableOpenAiModels() throws Exception {
+        long tenantId = insertTenant();
+        String modelCode = "runtime-catalog-" + System.nanoTime();
+        RuntimeFixture fixture = insertExecutableRouteFixture(tenantId, modelCode);
+
+        outboxService.record(tenantId, "TENANT_MODEL", fixture.modelId(), "ENABLED", null);
+        projector.project(claimSingle("runtime-catalog"));
+
+        RuntimeScope scope = RuntimeScope.catalog(tenantId, "OPENAI");
+        JsonNode snapshot = objectMapper.readTree(redisTemplate.opsForValue().get(
+                RuntimeRedisSnapshotStore.snapshotKey(scope, 1L)));
+        assertThat(snapshot.path("tenantId").asLong()).isEqualTo(tenantId);
+        assertThat(snapshot.path("inboundProtocol").asText()).isEqualTo("OPENAI");
+        assertThat(snapshot.path("models").get(0).path("modelCode").asText()).isEqualTo(modelCode);
+        assertThat(snapshot.path("models").get(0).path("created").asLong()).isPositive();
+        assertThat(snapshot.toString()).doesNotContain("upstreamModelId", "baseUrl", "credential", "routeTargetId");
+    }
+
+    @Test
     void routeSnapshotMustOnlyExposeEnabledCredentialReferences() throws Exception {
         long tenantId = insertTenant();
         String modelCode = "runtime-active-credential-model-" + System.nanoTime();

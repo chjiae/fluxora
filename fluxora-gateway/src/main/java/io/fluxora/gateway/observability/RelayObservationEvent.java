@@ -19,7 +19,7 @@ public record RelayObservationEvent(String eventId, RelayEventType eventType, St
                                     long providerChannelModelId, boolean streaming, Instant requestStartedAt,
                                     Instant requestFinishedAt, Long durationMs, String requestStatus,
                                     String errorCategory, Integer safeHttpStatus, RelayUsage usage,
-                                    RelayPriceSnapshot priceSnapshot) {
+                                    UpstreamDispatchState upstreamDispatchState, RelayPriceSnapshot priceSnapshot) {
     private static final String SCHEMA_VERSION = "1";
 
     public static RelayObservationEvent started(String requestId, AuthenticatedPrincipal principal,
@@ -31,28 +31,40 @@ public record RelayObservationEvent(String eventId, RelayEventType eventType, St
                 now, principal.tenantId(), principal.userId(), principal.apiKeyId(), protocol, protocol, endpoint,
                 priceSnapshot.tenantModelId(), priceSnapshot.tenantModelCode(), routeTargetId, providerChannelId,
                 providerChannelModelId, streaming, now, null, null, "STARTED", null, null,
-                RelayUsage.unknown(), priceSnapshot);
+                RelayUsage.unknown(), UpstreamDispatchState.NOT_DISPATCHED, priceSnapshot);
     }
 
     public RelayObservationEvent finished(RelayUsage terminalUsage, int statusCode, long elapsedMs) {
-        return terminal(RelayEventType.RELAY_REQUEST_FINISHED, "SUCCESS", null, statusCode, terminalUsage, elapsedMs);
+        return finished(terminalUsage, statusCode, elapsedMs, UpstreamDispatchState.NOT_DISPATCHED);
+    }
+    public RelayObservationEvent finished(RelayUsage terminalUsage, int statusCode, long elapsedMs,
+                                          UpstreamDispatchState dispatchState) {
+        return terminal(RelayEventType.RELAY_REQUEST_FINISHED, "SUCCESS", null, statusCode, terminalUsage, elapsedMs, dispatchState);
     }
 
     public RelayObservationEvent failed(String safeErrorCategory, Integer statusCode, RelayUsage terminalUsage,
                                         long elapsedMs) {
-        return terminal(RelayEventType.RELAY_REQUEST_FAILED, "FAILED", safeErrorCategory, statusCode, terminalUsage, elapsedMs);
+        return failed(safeErrorCategory, statusCode, terminalUsage, elapsedMs, UpstreamDispatchState.NOT_DISPATCHED);
+    }
+    public RelayObservationEvent failed(String safeErrorCategory, Integer statusCode, RelayUsage terminalUsage,
+                                        long elapsedMs, UpstreamDispatchState dispatchState) {
+        return terminal(RelayEventType.RELAY_REQUEST_FAILED, "FAILED", safeErrorCategory, statusCode, terminalUsage, elapsedMs, dispatchState);
     }
 
     public RelayObservationEvent cancelled(RelayUsage terminalUsage, long elapsedMs) {
-        return terminal(RelayEventType.RELAY_REQUEST_CANCELLED, "CANCELLED", "CLIENT_CANCELLED", null, terminalUsage, elapsedMs);
+        return cancelled(terminalUsage, elapsedMs, UpstreamDispatchState.NOT_DISPATCHED);
+    }
+    public RelayObservationEvent cancelled(RelayUsage terminalUsage, long elapsedMs, UpstreamDispatchState dispatchState) {
+        return terminal(RelayEventType.RELAY_REQUEST_CANCELLED, "CANCELLED", "CLIENT_CANCELLED", null, terminalUsage, elapsedMs, dispatchState);
     }
 
     private RelayObservationEvent terminal(RelayEventType type, String status, String error, Integer httpStatus,
-                                           RelayUsage terminalUsage, long elapsedMs) {
+                                           RelayUsage terminalUsage, long elapsedMs, UpstreamDispatchState dispatchState) {
         return new RelayObservationEvent(UUID.randomUUID().toString(), type, requestId, Instant.now(), tenantId, userId,
                 apiKeyId, inboundProtocol, outboundProtocol, endpoint, tenantModelId, tenantModelCode, routeTargetId,
                 providerChannelId, providerChannelModelId, streaming, requestStartedAt, Instant.now(), elapsedMs,
-                status, error, httpStatus, terminalUsage == null ? RelayUsage.unknown() : terminalUsage, priceSnapshot);
+                status, error, httpStatus, terminalUsage == null ? RelayUsage.unknown() : terminalUsage,
+                dispatchState == null ? UpstreamDispatchState.UNKNOWN : dispatchState, priceSnapshot);
     }
 
     public Map<String, String> toStreamFields() {
@@ -66,6 +78,7 @@ public record RelayObservationEvent(String eventId, RelayEventType eventType, St
         put(fields, "stream", streaming); put(fields, "requestStartedAt", requestStartedAt); put(fields, "requestFinishedAt", requestFinishedAt);
         put(fields, "durationMs", durationMs); put(fields, "requestStatus", requestStatus); put(fields, "errorCategory", errorCategory);
         put(fields, "safeHttpStatus", safeHttpStatus); put(fields, "usageStatus", effectiveUsageStatus().name());
+        put(fields, "upstreamDispatchState", upstreamDispatchState.name());
         put(fields, "pricingStatus", pricingStatus()); put(fields, "inputTokens", usage.inputTokens());
         put(fields, "outputTokens", usage.outputTokens()); put(fields, "cacheWriteTokens", usage.cacheWriteTokens());
         put(fields, "cacheReadTokens", usage.cacheReadTokens()); put(fields, "currencyCode", priceSnapshot.currencyCode());

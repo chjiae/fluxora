@@ -29,9 +29,12 @@ import org.springframework.web.cors.CorsConfigurationSource;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final InternalGatewayAuthenticationFilter internalGatewayAuthenticationFilter;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
+                          InternalGatewayAuthenticationFilter internalGatewayAuthenticationFilter) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.internalGatewayAuthenticationFilter = internalGatewayAuthenticationFilter;
     }
 
     @Bean
@@ -47,6 +50,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/internal/gateway/**").permitAll()
                 .requestMatchers("/api/tenant/self-operated/**").authenticated()
                 .requestMatchers("/api/tenant/*/members/**").authenticated()
                 .requestMatchers("/api/tenant/*/api-keys/**").authenticated()
@@ -68,6 +72,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/request-logs/**").authenticated()
                 .requestMatchers("/api/admin/api-keys/**").authenticated()
                 .requestMatchers("/api/admin/credit/**").authenticated()
+                .requestMatchers("/api/admin/billing/**").authenticated()
                 .requestMatchers("/api/admin/cards/**").authenticated()
                 .requestMatchers("/api/auth/**").authenticated()
                 .anyRequest().denyAll()
@@ -76,6 +81,7 @@ public class SecurityConfig {
                 .authenticationEntryPoint(this::handleAuthenticationEntryPoint)
                 .accessDeniedHandler(this::handleAccessDenied)
             )
+            .addFilterBefore(internalGatewayAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

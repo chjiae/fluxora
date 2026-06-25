@@ -16,8 +16,12 @@ export interface CreditAccountView {
   tenantId: number
   tenantCode: string
   tenantName: string
-  /** 余额；后端 DECIMAL(20,4)，前端按 string 保留精度 */
+  /** 可用余额；后端 DECIMAL，前端按 string 保留精度 */
   balance: string
+  /** 已预冻结但尚未最终结算/释放的余额 */
+  frozenBalance: string
+  /** 可用余额 + 冻结余额 */
+  totalBalance: string
   createdAt: string
   updatedAt: string
 }
@@ -34,6 +38,10 @@ export interface CreditTransactionView {
   amount: string
   balanceBefore: string
   balanceAfter: string
+  frozenBalanceBefore: string | null
+  frozenBalanceAfter: string | null
+  transactionType: 'MANUAL_ADJUSTMENT' | 'RESERVE' | 'SETTLE' | 'RELEASE' | string
+  reservationId: number | null
   reason: string
   operatorId: number
   operatorName: string | null
@@ -50,6 +58,7 @@ export interface CreditTransactionPage {
 export interface CreditStats {
   totalAccounts: number
   totalBalance: string
+  totalFrozenBalance: string
   totalCredits: string
   totalDebits: string
   transactionCount: number

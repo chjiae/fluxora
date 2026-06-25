@@ -66,15 +66,26 @@ onMounted(async () => { await Promise.all([loadAccount(), loadTxns()]) })
 
 const metricItems = computed(() => [
   { label: '可用余额', value: account.value?.balance ?? null },
-  { label: '账户创建时间', value: account.value?.createdAt?.slice(0, 10) ?? null },
-  { label: '最后更新', value: account.value?.updatedAt?.slice(0, 10) ?? null },
+  { label: '冻结余额', value: account.value?.frozenBalance ?? null, tone: 'warn' as const },
+  { label: '账户总额', value: account.value?.totalBalance ?? null },
   { label: '流水总数', value: total.value },
 ])
 
-function formatDirection(d: string) { return d === 'CREDIT' ? '增加' : d === 'DEBIT' ? '扣减' : d }
-function formatAmount(d: string, amount: string) {
-  // 增加显示 +，扣减显示 -；前端纯展示，后端始终返回正数 amount
-  return (d === 'CREDIT' ? '+' : '-') + amount
+function formatType(row: CreditTransactionView) {
+  const byType: Record<string, string> = {
+    MANUAL_ADJUSTMENT: row.direction === 'CREDIT' ? '人工增加' : '人工扣减',
+    RESERVE: '预冻结',
+    SETTLE: '结算',
+    RELEASE: '释放',
+  }
+  return byType[row.transactionType] || (row.direction === 'CREDIT' ? '增加' : '扣减')
+}
+function amountClass(row: CreditTransactionView) {
+  return row.transactionType === 'RELEASE' || row.direction === 'CREDIT' ? 'credit' : 'debit'
+}
+function formatAmount(row: CreditTransactionView) {
+  // 前端纯展示，后端始终返回正数 amount；释放归还可用余额显示为正向变更。
+  return (amountClass(row) === 'credit' ? '+' : '-') + row.amount
 }
 function timeAgo(iso: string | null | undefined) {
   if (!iso) return '—'
@@ -82,17 +93,20 @@ function timeAgo(iso: string | null | undefined) {
 }
 
 const columns = computed<DataTableColumns<CreditTransactionView>>(() => [
-  { title: '类型', key: 'direction', width: 80,
-    render: (row) => h('span', { class: `txn-dir txn-${row.direction.toLowerCase()}` }, formatDirection(row.direction)),
+  { title: '类型', key: 'direction', width: 90,
+    render: (row) => h('span', { class: `txn-dir txn-${amountClass(row)}` }, formatType(row)),
   },
   { title: '变更', key: 'amount', width: 130, align: 'right',
-    render: (row) => h('span', { class: `txn-amount txn-${row.direction.toLowerCase()}` }, formatAmount(row.direction, row.amount)),
+    render: (row) => h('span', { class: `txn-amount txn-${amountClass(row)}` }, formatAmount(row)),
   },
   { title: '变更前', key: 'balanceBefore', width: 120, align: 'right',
     render: (row) => h('span', { class: 'cell-num' }, row.balanceBefore),
   },
   { title: '变更后', key: 'balanceAfter', width: 120, align: 'right',
     render: (row) => h('span', { class: 'cell-num' }, row.balanceAfter),
+  },
+  { title: '冻结后', key: 'frozenBalanceAfter', width: 120, align: 'right',
+    render: (row) => h('span', { class: 'cell-num' }, row.frozenBalanceAfter ?? '—'),
   },
   { title: '原因', key: 'reason', minWidth: 180,
     render: (row) => h('span', { class: 'cell-muted' }, row.reason),
@@ -122,7 +136,7 @@ function resetFilters() {
     <header class="page-hdr">
       <div class="page-hdr-text">
         <h1>我的额度</h1>
-        <p>查看你的可用额度和历史流水。所有调整由管理员发起，记录不可篡改。</p>
+        <p>查看你的可用额度、冻结额度和历史流水。冻结额度来自正在结算或待对账的 API 请求。</p>
       </div>
     </header>
 

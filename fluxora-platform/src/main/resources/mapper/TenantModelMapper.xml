@@ -11,15 +11,18 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO tenant_model(tenant_id, model_code, display_name, description,
             supports_streaming, supports_tool_calling, supports_vision, supports_cache,
+            max_input_tokens, max_output_tokens, max_cache_write_tokens, max_cache_read_tokens, default_output_tokens,
             publish_status, enabled, created_by, updated_by, created_at, updated_at)
         VALUES(#{tenantId}, #{modelCode}, #{displayName}, #{description},
             #{supportsStreaming}, #{supportsToolCalling}, #{supportsVision}, #{supportsCache},
+            #{maxInputTokens}, #{maxOutputTokens}, #{maxCacheWriteTokens}, #{maxCacheReadTokens}, #{defaultOutputTokens},
             #{publishStatus}, #{enabled}, #{createdBy}, #{updatedBy}, NOW(), NOW())
     </insert>
 
     <select id="findById" resultType="io.fluxora.platform.model.TenantModel">
         SELECT id, tenant_id, model_code, display_name, description,
             supports_streaming, supports_tool_calling, supports_vision, supports_cache,
+            max_input_tokens, max_output_tokens, max_cache_write_tokens, max_cache_read_tokens, default_output_tokens,
             publish_status, enabled, deleted_at, created_by, updated_by, created_at, updated_at
         FROM tenant_model WHERE id=#{id} AND deleted_at IS NULL
     </select>
@@ -102,6 +105,11 @@
             supports_tool_calling = #{supportsToolCalling},
             supports_vision = #{supportsVision},
             supports_cache = #{supportsCache},
+            max_input_tokens = #{maxInputTokens},
+            max_output_tokens = #{maxOutputTokens},
+            max_cache_write_tokens = #{maxCacheWriteTokens},
+            max_cache_read_tokens = #{maxCacheReadTokens},
+            default_output_tokens = #{defaultOutputTokens},
             updated_by = #{updatedBy},
             updated_at = NOW()
         WHERE id = #{id} AND deleted_at IS NULL

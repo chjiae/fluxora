@@ -34,6 +34,12 @@ public record RuntimeScope(RuntimeScopeType type, String scopeKey, Long tenantId
                 tenantId, inboundProtocol, tenantModelCode);
     }
 
+    /** 租户协议目录不含模型编码，供 GET /v1/models 单次读取。 */
+    public static RuntimeScope catalog(Long tenantId, String inboundProtocol) {
+        return new RuntimeScope(RuntimeScopeType.TENANT_MODEL_CATALOG, tenantId + ":" + inboundProtocol,
+                tenantId, inboundProtocol, null);
+    }
+
     /**
      * 上游凭证的独立敏感 Scope。逻辑键只包含内部数值 ID，避免任何认证材料参与 Redis Key。
      */

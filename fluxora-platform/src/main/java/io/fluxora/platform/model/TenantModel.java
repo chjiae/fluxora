@@ -24,6 +24,16 @@ public class TenantModel {
     private boolean supportsVision;
     /** 租户声明对外支持缓存命中；启用前候选必须支撑缓存，且缓存读写价格不能为空。 */
     private boolean supportsCache;
+    /** 预冻结输入上限；Gateway 以 UTF-8 请求体字节数作严格保守上界并据此拒绝超限请求。 */
+    private long maxInputTokens = 32768L;
+    /** 客户端可声明的最大输出 Token，实际转发绝不能超过此配置。 */
+    private long maxOutputTokens = 8192L;
+    /** 缓存写入 Token 上限；对应缓存价格存在时必须覆盖安全上界。 */
+    private long maxCacheWriteTokens;
+    /** 缓存读取 Token 上限；对应缓存价格存在时必须覆盖安全上界。 */
+    private long maxCacheReadTokens;
+    /** 未传输出上限时写入请求并向上游转发的确定性限制。 */
+    private long defaultOutputTokens = 2048L;
     /**
      * 发布状态：DRAFT 未完成配置；ENABLED 对 C 端可见；DISABLED 暂停展示。
      * 与 enabled 字段共同决定 getStatus() 三态展示，保持 DRAFT > DISABLED > ENABLED 的优先级。
@@ -56,6 +66,16 @@ public class TenantModel {
     public void setSupportsVision(boolean value) { supportsVision = value; }
     public boolean isSupportsCache() { return supportsCache; }
     public void setSupportsCache(boolean value) { supportsCache = value; }
+    public long getMaxInputTokens() { return maxInputTokens; }
+    public void setMaxInputTokens(long value) { maxInputTokens = value; }
+    public long getMaxOutputTokens() { return maxOutputTokens; }
+    public void setMaxOutputTokens(long value) { maxOutputTokens = value; }
+    public long getMaxCacheWriteTokens() { return maxCacheWriteTokens; }
+    public void setMaxCacheWriteTokens(long value) { maxCacheWriteTokens = value; }
+    public long getMaxCacheReadTokens() { return maxCacheReadTokens; }
+    public void setMaxCacheReadTokens(long value) { maxCacheReadTokens = value; }
+    public long getDefaultOutputTokens() { return defaultOutputTokens; }
+    public void setDefaultOutputTokens(long value) { defaultOutputTokens = value; }
     public String getPublishStatus() { return publishStatus; }
     public void setPublishStatus(String value) { publishStatus = value; }
     public boolean isEnabled() { return enabled; }

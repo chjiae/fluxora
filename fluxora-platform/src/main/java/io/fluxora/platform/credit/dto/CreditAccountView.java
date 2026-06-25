@@ -15,6 +15,8 @@ public record CreditAccountView(
         String tenantCode,
         String tenantName,
         BigDecimal balance,
+        BigDecimal frozenBalance,
+        BigDecimal totalBalance,
         Instant createdAt,
         Instant updatedAt
 ) {}

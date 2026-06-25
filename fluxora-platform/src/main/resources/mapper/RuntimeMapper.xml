@@ -129,10 +129,12 @@
     WHERE id=#{credentialId}
       <if test="tenantId != null">AND tenant_id=#{tenantId}</if>
   </select>
-  <!-- 强关联模型/价格/路由/目标/候选/通道/凭证池一次读取，供单个 TENANT_MODEL_ROUTE 原子快照使用。 -->
-  <select id="findRouteSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeRouteRow">
-    SELECT tm.tenant_id AS tenantId,tm.id AS tenantModelId,tm.model_code AS tenantModelCode,tm.enabled AS tenantModelEnabled,
-      tm.supports_streaming AS supportsStreaming,tm.supports_tool_calling AS supportsToolCalling,tm.supports_vision AS supportsVision,tm.supports_cache AS supportsCache,
+  <!-- 强关联模型/价格/路由/目标/候选/通道/凭证池一次读取，供路由与目录快照共用。 -->
+  <sql id="routeSnapshotColumns">
+    SELECT tm.tenant_id AS tenantId,tm.id AS tenantModelId,tm.model_code AS tenantModelCode,tm.created_at AS tenantModelCreatedAt,tm.enabled AS tenantModelEnabled,
+      tm.supports_streaming AS supportsStreaming,tm.max_input_tokens AS maxInputTokens,tm.max_output_tokens AS maxOutputTokens,
+      tm.max_cache_write_tokens AS maxCacheWriteTokens,tm.max_cache_read_tokens AS maxCacheReadTokens,tm.default_output_tokens AS defaultOutputTokens,
+      tm.supports_tool_calling AS supportsToolCalling,tm.supports_vision AS supportsVision,tm.supports_cache AS supportsCache,
       route.inbound_protocol AS inboundProtocol,price.id AS priceId,price.version AS priceVersion,price.currency_code AS currencyCode,
       price.input_price_per_million AS inputPricePerMillion,price.output_price_per_million AS outputPricePerMillion,
       price.cache_write_price_per_million AS cacheWritePricePerMillion,price.cache_read_price_per_million AS cacheReadPricePerMillion,
@@ -154,6 +156,8 @@
                 FROM provider_channel_credential binding JOIN provider_credential credential ON credential.id=binding.provider_credential_id
                 WHERE binding.provider_channel_id=channel.id AND binding.enabled=TRUE AND binding.deleted_at IS NULL
                   AND credential.enabled=TRUE AND credential.deleted_at IS NULL),0) AS credentialPoolVersion
+  </sql>
+  <sql id="routeSnapshotJoins">
     FROM tenant_model tm JOIN model_route route ON route.tenant_model_id=tm.id
       LEFT JOIN tenant_model_price price ON price.tenant_model_id=tm.id AND price.expired_at IS NULL
       <!-- 路由执行快照只读取可执行依赖；变更影响范围查询保留宽关联，用于替换旧快照。 -->
@@ -165,10 +169,23 @@
       LEFT JOIN provider ON provider.id=baseUrl.provider_id AND provider.enabled=TRUE AND provider.deleted_at IS NULL
       LEFT JOIN provider_channel_credential binding ON binding.provider_channel_id=channel.id AND binding.enabled=TRUE AND binding.deleted_at IS NULL
       LEFT JOIN provider_credential credential ON credential.id=binding.provider_credential_id AND credential.enabled=TRUE AND credential.deleted_at IS NULL
+  </sql>
+  <select id="findRouteSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeRouteRow">
+    <include refid="routeSnapshotColumns"/><include refid="routeSnapshotJoins"/>
     WHERE tm.tenant_id=#{tenantId} AND tm.model_code=#{tenantModelCode} AND route.inbound_protocol=#{inboundProtocol}
       AND tm.deleted_at IS NULL AND route.deleted_at IS NULL
     <!-- 同一 RouteTarget 的有效凭证引用必须具备稳定顺序，Gateway 固定选择第一项。 -->
     ORDER BY target.id ASC NULLS LAST, credential.id ASC NULLS LAST
+  </select>
+  <!-- 租户目录使用同一关联集合一次读取，避免按模型循环构建执行包。 -->
+  <select id="findTenantModelCatalogSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeRouteRow">
+    <include refid="routeSnapshotColumns"/><include refid="routeSnapshotJoins"/>
+    JOIN tenant tenant ON tenant.id=tm.tenant_id
+    WHERE tm.tenant_id=#{tenantId} AND route.inbound_protocol=#{inboundProtocol}
+      AND tm.deleted_at IS NULL AND route.deleted_at IS NULL
+      AND tenant.enabled=TRUE AND tenant.deleted_at IS NULL
+      AND (tenant.expire_at IS NULL OR tenant.expire_at &gt; NOW())
+    ORDER BY tm.model_code ASC,target.id ASC NULLS LAST,credential.id ASC NULLS LAST
   </select>
 
   <select id="findExpiredApiKeyIdsSince" resultType="long">SELECT id FROM api_key WHERE expire_at &gt; #{from} AND expire_at &lt;= #{until}</select>

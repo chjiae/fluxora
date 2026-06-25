@@ -1,5 +1,6 @@
 package io.fluxora.gateway.route;
 
+import io.fluxora.common.runtime.RouteExecutionEligibility;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import java.util.ArrayList;
@@ -35,17 +36,14 @@ public final class RouteTargetSelector {
     }
 
     private boolean eligible(JsonObject target, String inboundProtocol) {
-        return "ENABLED".equals(target.getString("targetStatus"))
-                && "ENABLED".equals(target.getString("mappingStatus"))
-                && "ENABLED".equals(target.getString("candidateStatus"))
-                && "ENABLED".equals(target.getString("channelStatus"))
-                && target.getBoolean("hasUsableCredential", false)
-                && inboundProtocol.equals(target.getString("outboundProtocol"))
-                && target.getInteger("priority", -1) >= 0
-                && target.getInteger("weight", 0) > 0
-                && positive(target.getLong("routeTargetId"))
-                && positive(target.getLong("providerChannelId"))
-                && positive(target.getLong("providerChannelModelId"));
+        return RouteExecutionEligibility.targetCallable(
+                "ENABLED".equals(target.getString("targetStatus")),
+                "ENABLED".equals(target.getString("mappingStatus")),
+                "ENABLED".equals(target.getString("candidateStatus")),
+                "ENABLED".equals(target.getString("channelStatus")),
+                target.getBoolean("hasUsableCredential", false), inboundProtocol, target.getString("outboundProtocol"),
+                target.getInteger("priority"), target.getInteger("weight"), target.getLong("routeTargetId"),
+                target.getLong("providerChannelId"), target.getLong("providerChannelModelId"));
     }
 
     private RouteSelection selection(JsonObject target) {
@@ -54,5 +52,4 @@ public final class RouteTargetSelector {
                 target.getString("upstreamModelId"), target.copy());
     }
 
-    private boolean positive(Long value) { return value != null && value > 0; }
 }

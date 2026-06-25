@@ -2,6 +2,7 @@ package io.fluxora.gateway.route;
 
 import io.fluxora.gateway.GatewayFailure;
 import io.fluxora.gateway.runtime.RuntimeL1Caches;
+import io.fluxora.common.runtime.RouteExecutionEligibility;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import java.time.Instant;
@@ -37,25 +38,23 @@ public final class GatewayRouteResolver {
 
     private boolean modelUsable(JsonObject route, long tenantId, String protocol, String modelCode,
                                 boolean streamingRequested) {
+        Instant now = Instant.now();
         return route.getLong("tenantId", -1L) == tenantId
                 && protocol.equals(route.getString("inboundProtocol"))
                 && modelCode.equals(route.getString("tenantModelCode"))
-                && route.getBoolean("tenantModelEnabled", false)
                 && "ENABLED".equals(route.getString("tenantModelStatus"))
-                && route.getBoolean("routeEnabled", false)
                 && "ENABLED".equals(route.getString("routeStatus"))
-                && route.getBoolean("priceAvailable", false)
+                && RouteExecutionEligibility.baseRouteCallable(route.getBoolean("tenantModelEnabled", false),
+                        route.getBoolean("routeEnabled", false), route.getBoolean("priceAvailable", false),
+                        instant(route.getString("priceEffectiveAt")), instant(route.getString("priceExpiresAt")), now)
                 && (!streamingRequested || route.getBoolean("supportsStreaming", false))
-                && priceCurrent(route);
+                ;
     }
 
-    private boolean priceCurrent(JsonObject route) {
+    private Instant instant(String value) {
+        if (value == null) return null;
         try {
-            String effective = route.getString("priceEffectiveAt");
-            String expires = route.getString("priceExpiresAt");
-            Instant now = Instant.now();
-            return (effective == null || !Instant.parse(effective).isAfter(now))
-                    && (expires == null || Instant.parse(expires).isAfter(now));
+            return Instant.parse(value);
         } catch (DateTimeParseException error) {
             throw GatewayFailure.runtimeUnavailable();
         }

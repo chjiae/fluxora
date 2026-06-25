@@ -49,6 +49,9 @@ public interface RuntimeMapper {
     List<RuntimeRouteRow> findRouteSnapshot(@Param("tenantId") Long tenantId,
                                             @Param("inboundProtocol") String inboundProtocol,
                                             @Param("tenantModelCode") String tenantModelCode);
+    /** 单次读取租户协议目录候选，避免 Projector 对每个模型执行 N+1 查询。 */
+    List<RuntimeRouteRow> findTenantModelCatalogSnapshot(@Param("tenantId") Long tenantId,
+                                                         @Param("inboundProtocol") String inboundProtocol);
 
     List<Long> findExpiredApiKeyIdsSince(@Param("from") Instant from, @Param("until") Instant until);
     List<Long> findExpiredTenantIdsSince(@Param("from") Instant from, @Param("until") Instant until);

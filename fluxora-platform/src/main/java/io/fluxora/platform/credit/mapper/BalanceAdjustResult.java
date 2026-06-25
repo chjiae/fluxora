@@ -11,4 +11,5 @@ import java.math.BigDecimal;
  * service 收到 null 视为 UPDATE 影响 0 行 → 余额不足；非 null 即原子调整成功，
  * balanceBefore / balanceAfter 来自同一语句的同一行，保证审计连贯。
  */
-public record BalanceAdjustResult(BigDecimal balanceBefore, BigDecimal balanceAfter) {}
+public record BalanceAdjustResult(BigDecimal balanceBefore, BigDecimal balanceAfter,
+                                  BigDecimal frozenBalanceBefore, BigDecimal frozenBalanceAfter) {}
