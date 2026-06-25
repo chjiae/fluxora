@@ -40,18 +40,20 @@ npm run dev
 - Platform 在业务事务内写入 `runtime_outbox`；Projector 从 PostgreSQL 构建版本化不可变 Redis Snapshot，并只在 Manifest 原子切换成功后发布 Pub/Sub 失效通知。
 - Gateway 使用完整 API Key 的 `HMAC-SHA-256(APIKEY_LOOKUP_SECRET, canonicalApiKey)` 查找 `AUTH_API_KEY` 快照，并用独立 Caffeine L1 校验 API Key、用户、租户和 `TENANT_MODEL_ROUTE`。
 - Gateway 热路径不会访问 PostgreSQL，不缓存 API Key 或 ProviderCredential 明文；普通路由快照不含凭证密文，独立敏感快照只保存运行时重加密密文。Redis 缺失、Manifest/版本不一致、schema 不兼容或 L1 过期时一律失败关闭。
-- 当前支持 `POST /v1/chat/completions` 与 `POST /v1/messages` 的同协议原生 JSON / SSE 中继：仅替换请求与响应的模型标识，保留协议合法扩展字段，不做转换或计费。
+- 当前支持 `GET /v1/models`、`POST /v1/chat/completions` 与 `POST /v1/messages` 的同协议原生 JSON / SSE 中继：模型发现只返回租户对外模型编码；请求中继仅替换请求与响应的模型标识，保留协议合法扩展字段。
+- Gateway 在上游投递前会同步调用 Platform 做余额预冻结；请求终态事件经 Redis Stream 异步结算、释放或转入待对账。
 
-详细设计见 [运行时配置架构](docs/runtime-config-architecture.md)、[原生中继架构](docs/native-relay-architecture.md) 和[本地 Ollama 验证](docs/local-ollama-upstream-testing.md)。逐实体刷新规则见[刷新覆盖矩阵](docs/runtime-refresh-coverage-matrix.md)。本地运行时需要让 Platform 与 Gateway 使用相同的 `APIKEY_LOOKUP_SECRET`、`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 与 `FLUXORA_RUNTIME_CREDENTIAL_KEY`。
+详细设计见 [运行时配置架构](docs/runtime-config-architecture.md)、[原生中继架构](docs/native-relay-architecture.md)、[模型发现 API](docs/model-discovery-api.md) 和[本地 Ollama 验证](docs/local-ollama-upstream-testing.md)。逐实体刷新规则见[刷新覆盖矩阵](docs/runtime-refresh-coverage-matrix.md)。本地运行时需要让 Platform 与 Gateway 使用相同的 `APIKEY_LOOKUP_SECRET`、`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`FLUXORA_RUNTIME_CREDENTIAL_KEY` 与 `FLUXORA_INTERNAL_GATEWAY_HMAC_SECRET`。
 
-## 请求日志、Token 与理论金额
+## 请求日志、Token、预冻结与结算
 
 - Gateway 在原生 OpenAI / Anthropic 中继成功完成鉴权和路由后，异步写入 Redis Stream；Platform 通过 Consumer Group 幂等落库并提供安全分页、详情和趋势查询。
 - 观测数据只保存内部引用、状态、耗时、Token 与价格快照，绝不保存 API Key、凭证、BaseUrl、上游模型、消息正文、工具参数或完整响应。
 - Redis 可用时是 At-Least-Once 投递加 Platform 幂等消费；Redis 不可用时 Gateway 仅进行有界内存重试，不会阻塞用户响应，进程崩溃仍可能丢失待重试事件。
-- 金额是请求开始价格快照下的理论预览，不是余额扣减；本轮不涉及钱包、额度、账单、结算或退款。
+- 请求开始前按租户模型 token 上限和价格快照预冻结余额；终态事件完整时自动结算并释放差额，未知投递、未知用量、价格不可用、超额或超时记录转入待对账。
+- 系统不允许负余额，不按 0 结算未知用量，不自动追扣超过预冻结金额的差额，也不做第三方支付退款。
 
-详细规则见[请求观测架构](docs/request-observability-architecture.md)、[Token 用量与理论金额](docs/token-usage-and-pricing-preview.md)和[用量趋势聚合](docs/usage-trend-aggregation.md)。
+详细规则见[请求观测架构](docs/request-observability-architecture.md)、[Token 用量与理论金额](docs/token-usage-and-pricing-preview.md)、[余额预冻结与请求结算](docs/billing-reservation-and-settlement.md)、[余额对账状态机](docs/reconciliation-state-machine.md)和[用量趋势聚合](docs/usage-trend-aggregation.md)。
 
 ## 初始账号
 
@@ -110,6 +112,9 @@ npm run dev
 | GET | `/api/credit/me/transactions` | 当前用户额度流水分页 | `CREDIT_SELF_READ` |
 | POST | `/api/tenant/{tenantId}/credit/adjust` | 调整用户额度（原子 + 流水） | `CREDIT_TENANT_ADJUST` |
 | GET | `/api/credit/adjustable-users` | 可调整额度用户列表 | `CREDIT_TENANT_ADJUST` |
+| GET | `/api/admin/billing/reconciliations` | 待对账预冻结记录分页 | `CREDIT_CROSS_TENANT_ADJUST` |
+| POST | `/api/admin/billing/reconciliations/{requestId}/release` | 人工确认释放冻结金额 | `CREDIT_CROSS_TENANT_ADJUST` |
+| POST | `/api/admin/billing/reconciliations/{requestId}/settle` | 人工确认最终结算 | `CREDIT_CROSS_TENANT_ADJUST` |
 | POST | `/api/cards/redeem` | 核销卡密充值到当前用户 | `CARD_SELF_REDEEM` |
 | POST | `/api/tenant/{tenantId}/cards/batches` | 创建卡密批次（完整明文仅本响应返回一次） | `CARD_TENANT_MANAGE` / `CARD_CROSS_TENANT_MANAGE` |
 | GET | `/api/tenant/{tenantId}/cards/batches` | 租户卡密批次分页 | 同上 |
