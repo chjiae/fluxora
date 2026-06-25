@@ -20,6 +20,17 @@ public final class GatewayRouteResolver {
 
     public Future<RouteSelection> resolve(long tenantId, String inboundProtocol, String tenantModelCode,
                                            boolean streamingRequested) {
+        return resolveRouteSnapshot(tenantId, inboundProtocol, tenantModelCode, streamingRequested)
+                .map(route -> {
+                    RouteSelection selection = selector.select(route.getJsonArray("targets"), inboundProtocol);
+                    if (selection == null) throw GatewayFailure.modelUnavailable();
+                    return selection.withRouteSnapshot(route);
+                });
+    }
+
+    /** 返回已验证的路由执行包，供 Attempt 调度器在同一请求内多次选择不同目标/凭证。 */
+    public Future<JsonObject> resolveRouteSnapshot(long tenantId, String inboundProtocol, String tenantModelCode,
+                                                   boolean streamingRequested) {
         if (tenantModelCode == null || tenantModelCode.isBlank() || tenantModelCode.length() > 128) {
             return Future.failedFuture(GatewayFailure.modelUnavailable());
         }
@@ -29,9 +40,7 @@ public final class GatewayRouteResolver {
             if (!modelUsable(route, tenantId, inboundProtocol, tenantModelCode, streamingRequested)) {
                 throw GatewayFailure.modelUnavailable();
             }
-            RouteSelection selection = selector.select(route.getJsonArray("targets"), inboundProtocol);
-            if (selection == null) throw GatewayFailure.modelUnavailable();
-            return selection.withRouteSnapshot(route);
+            return route;
         }).recover(error -> Future.failedFuture(error instanceof GatewayFailure
                 ? error : GatewayFailure.runtimeUnavailable()));
     }

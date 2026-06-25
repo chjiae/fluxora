@@ -6,7 +6,7 @@ import StatusDot from '@/components/StatusDot.vue'
 import CredentialImportDrawer from '@/components/CredentialImportDrawer.vue'
 import {
   createCredential, deleteCredential, replaceCredential, setCredentialEnabled,
-  updateCredential, listCredentials,
+  updateCredential, listCredentials, recoverCredentialRuntime,
   type CredentialAuthType, type ProviderCredentialSummary,
 } from '@/services/upstream'
 
@@ -97,6 +97,11 @@ async function toggle(r: ProviderCredentialSummary) {
   catch (e: any) { message.error(e.userMessage || '状态更新失败') }
 }
 
+async function recoverRuntime(r: ProviderCredentialSummary) {
+  try { await recoverCredentialRuntime(r.id); message.success('运行时状态已恢复'); await load() }
+  catch (e: any) { message.error(e.userMessage || '恢复失败，请确认权限后重试') }
+}
+
 function confirmDelete(r: ProviderCredentialSummary) {
   dialog.warning({
     title: '删除凭证', content: `确定删除「${r.name}」吗？删除后该凭证视为不存在，可重新导入。`,
@@ -110,14 +115,23 @@ const columns = computed(() => [
   { title: '脱敏值', key: 'maskedValue', width: 140 },
   { title: '认证', key: 'authType', width: 100 },
   { title: '状态', key: 'status', width: 90, render: (r: ProviderCredentialSummary) => h(StatusDot, { status: r.status }) },
+  { title: '运行时', key: 'runtimeState', width: 120, render: (r: ProviderCredentialSummary) => r.runtimeState || 'AVAILABLE' },
+  { title: '最近失败', key: 'lastFailureKind', width: 140, ellipsis: { tooltip: true }, render: (r: ProviderCredentialSummary) => r.lastFailureKind || '—' },
+  { title: '冷却至', key: 'cooldownUntil', width: 170, render: (r: ProviderCredentialSummary) => r.cooldownUntil ? new Date(r.cooldownUntil).toLocaleString() : '—' },
+  { title: '账户组', key: 'billingAccountGroup', width: 140, ellipsis: { tooltip: true }, render: (r: ProviderCredentialSummary) => r.billingAccountGroup || '—' },
+  { title: '限流池', key: 'quotaScope', width: 140, ellipsis: { tooltip: true }, render: (r: ProviderCredentialSummary) => r.quotaScope || '—' },
   { title: '优先级', key: 'priority', width: 80 },
   { title: '权重', key: 'weight', width: 80 },
+  { title: '流量权重', key: 'trafficWeight', width: 90 },
+  { title: '并发上限', key: 'maxConcurrentStreams', width: 100, render: (r: ProviderCredentialSummary) => r.maxConcurrentStreams >= 2147483647 ? '不限' : r.maxConcurrentStreams },
+  { title: '关联通道', key: 'boundChannelCount', width: 90 },
   { title: '备注', key: 'remark', minWidth: 140, ellipsis: { tooltip: true }, render: (r: ProviderCredentialSummary) => r.remark || '—' },
   {
     title: '操作', key: 'actions', fixed: 'right' as const, width: 200, render: (r: ProviderCredentialSummary) => h('div', { class: 'row-actions' }, [
       h(NButton, { text: true, size: 'tiny', disabled: !props.canManage, onClick: () => openEdit(r) }, { default: () => h(NIcon, { size: 14 }, { default: () => h(Pencil) }), icon: () => h(NIcon, { size: 14 }, { default: () => h(Pencil) }) }),
       h(NButton, { text: true, size: 'tiny', disabled: !props.canManage, onClick: () => openReplace(r) }, { default: () => '替换' }),
       h(NButton, { text: true, size: 'tiny', disabled: !props.canManage, onClick: () => toggle(r) }, { default: () => r.status === 'ENABLED' ? '停用' : '启用' }),
+      h(NButton, { text: true, size: 'tiny', disabled: !props.canManage, onClick: () => recoverRuntime(r) }, { default: () => '恢复运行时' }),
       h(NButton, { text: true, size: 'tiny', disabled: !props.canManage, class: 'danger-text', onClick: () => confirmDelete(r) }, { default: () => h('span', { class: 'danger-text' }, '删除') }),
     ]),
   },
@@ -133,7 +147,7 @@ const columns = computed(() => [
       <n-button size="small" type="primary" :disabled="!canManage" @click="openCreate">新增凭证</n-button>
     </div>
 
-    <n-data-table :columns="columns" :data="rows" :loading="loading" :pagination="false" :bordered="false" :single-line="false" :scroll-x="900" size="small" />
+    <n-data-table :columns="columns" :data="rows" :loading="loading" :pagination="false" :bordered="false" :single-line="false" :scroll-x="1650" size="small" />
     <div class="panel-foot"><span>共 {{ total }} 条凭证</span><n-pagination v-model:page="page" :item-count="total" :page-size="20" size="small" @update:page="load" /></div>
 
     <n-modal v-model:show="editorOpen" preset="card" :title="editing ? '编辑凭证' : '新增凭证'" style="max-width:480px">

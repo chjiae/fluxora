@@ -10,7 +10,8 @@ public record GatewayRuntimeConfig(String redisConnectionString, String invalida
                                    String relayEventStreamKey, int relayEventStreamMaxLength,
                                    int relayEventRetryQueueSize, int relayEventRetryMaxAttempts,
                                    Duration relayEventRetryDelay, String platformInternalBaseUrl,
-                                   String internalGatewayHmacSecret, Duration billingTimeout) {
+                                   String internalGatewayHmacSecret, Duration billingTimeout,
+                                   Duration dispatchLeaseTtl, String schedulerDegradationPolicy) {
     private static final String LOCAL_RUNTIME_CREDENTIAL_KEY = "cnVudGltZS1jcmVkZW50aWFsLWtleS0wMTIzNDU2Nzg=";
 
     /** 保持已有测试和调用方的构造契约，新增安全配置使用本地开发默认值。 */
@@ -21,7 +22,7 @@ public record GatewayRuntimeConfig(String redisConnectionString, String invalida
                 invalidApiKeyTtl, maxCacheEntries, Duration.ofMillis(5_000), LOCAL_RUNTIME_CREDENTIAL_KEY,
                 "local", 1_048_576, "fluxora:relay-events:v1", 10_000, 1_000, 5, Duration.ofSeconds(1),
                 "http://localhost:8080", "fluxora-internal-gateway-hmac-secret-local-only-override-in-production",
-                Duration.ofSeconds(3));
+                Duration.ofSeconds(3), Duration.ofSeconds(120), "STRICT");
     }
 
     public static GatewayRuntimeConfig fromEnvironment() {
@@ -53,7 +54,9 @@ public record GatewayRuntimeConfig(String redisConnectionString, String invalida
                 env("PLATFORM_INTERNAL_BASE_URL", "http://localhost:8080"),
                 env("FLUXORA_INTERNAL_GATEWAY_HMAC_SECRET",
                         "fluxora-internal-gateway-hmac-secret-local-only-override-in-production"),
-                duration("GATEWAY_BILLING_TIMEOUT_MS", 3_000));
+                duration("GATEWAY_BILLING_TIMEOUT_MS", 3_000),
+                duration("GATEWAY_DISPATCH_LEASE_TTL_MS", 120_000),
+                env("GATEWAY_SCHEDULER_DEGRADATION_POLICY", "STRICT"));
     }
 
     private static Duration duration(String key, long defaultMs) {

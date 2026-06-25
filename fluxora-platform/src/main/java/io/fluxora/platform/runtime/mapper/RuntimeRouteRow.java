@@ -22,7 +22,16 @@ public record RuntimeRouteRow(Long tenantId, Long tenantModelId, String tenantMo
                               boolean targetEnabled, boolean mappingEnabled, boolean candidateEnabled,
                               boolean channelEnabled, String outboundProtocol, String upstreamModelId,
                               String normalizedBaseUrl, Integer connectTimeoutMs, Integer readTimeoutMs,
-                              Long providerCredentialId, Long credentialVersion, String credentialAuthType,
+                              Long providerChannelCredentialId, Long providerCredentialId,
+                              Long credentialVersion, String credentialAuthType,
                               boolean credentialBindingEnabled, boolean credentialEnabled,
+                              String billingAccountGroup, String quotaScope, Integer credentialTrafficWeight,
+                              Integer credentialMaxConcurrentStreams, String targetRuntimeState,
+                              Instant targetCooldownUntil, String channelRuntimeState, Instant channelCooldownUntil,
+                              String candidateRuntimeState, Instant candidateCooldownUntil,
+                              String bindingRuntimeState, Instant bindingCooldownUntil,
+                              String credentialRuntimeState, Instant credentialCooldownUntil,
+                              String billingRuntimeState, Instant billingCooldownUntil,
+                              String quotaRuntimeState, Instant quotaCooldownUntil,
                               boolean hasUsableCredential, Long credentialPoolVersion) {
 }

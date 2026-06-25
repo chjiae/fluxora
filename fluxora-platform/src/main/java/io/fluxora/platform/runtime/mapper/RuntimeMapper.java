@@ -34,6 +34,7 @@ public interface RuntimeMapper {
     List<RuntimeScopeRow> findRouteScopesByCredential(@Param("credentialId") Long credentialId);
     List<RuntimeScopeRow> findRouteScopesByProvider(@Param("providerId") Long providerId);
     List<RuntimeScopeRow> findRouteScopesByBaseUrl(@Param("baseUrlId") Long baseUrlId);
+    List<RuntimeScopeRow> findRouteScopesByTenant(@Param("tenantId") Long tenantId);
     List<RuntimeScopeRow> findAllRouteScopes();
     List<RuntimeCredentialScopeRow> findCredentialScopesByChannel(@Param("channelId") Long channelId);
     List<RuntimeCredentialScopeRow> findAllCredentialScopes();

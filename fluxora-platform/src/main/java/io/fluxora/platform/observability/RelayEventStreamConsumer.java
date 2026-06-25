@@ -1,5 +1,6 @@
 package io.fluxora.platform.observability;
 
+import io.fluxora.platform.runtime.availability.UpstreamRuntimeFailureService;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,14 +22,16 @@ import org.springframework.stereotype.Component;
 public class RelayEventStreamConsumer {
     private static final Logger log = LoggerFactory.getLogger(RelayEventStreamConsumer.class);
     private final StringRedisTemplate redis; private final RelayRequestLogService service;
+    private final UpstreamRuntimeFailureService runtimeFailureService;
     private final String stream; private final String group; private final String consumer = "platform-" + UUID.randomUUID();
     private boolean groupReady;
     private int consecutiveFailures;
 
     public RelayEventStreamConsumer(StringRedisTemplate redis, RelayRequestLogService service,
+                                    UpstreamRuntimeFailureService runtimeFailureService,
                                     @Value("${fluxora.observability.stream-key:fluxora:relay-events:v1}") String stream,
                                     @Value("${fluxora.observability.consumer-group:fluxora-platform-v1}") String group) {
-        this.redis=redis;this.service=service;this.stream=stream;this.group=group;
+        this.redis=redis;this.service=service;this.runtimeFailureService=runtimeFailureService;this.stream=stream;this.group=group;
         log.info("中继观测消费组初始化：consumer={}, stream={}, group={}", consumer, stream, group);
     }
 
@@ -45,7 +48,8 @@ public class RelayEventStreamConsumer {
             for(MapRecord<String,Object,Object> row:rows){
                 try {
                     Map<String,String> fields=new LinkedHashMap<>(); row.getValue().forEach((k,v)->fields.put(String.valueOf(k),String.valueOf(v)));
-                    service.consume(fields);
+                    if ("UPSTREAM_RUNTIME_FAILURE_DETECTED".equals(fields.get("eventType"))) runtimeFailureService.consume(fields);
+                    else service.consume(fields);
                     // 事务成功提交后才 XACK，绝不能提前确认。
                     redis.opsForStream().acknowledge(group,row);
                 } catch (Exception ex) {

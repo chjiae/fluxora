@@ -28,4 +28,9 @@ public final class GatewayMetrics {
     public final AtomicLong relayPricingCalculated = new AtomicLong();
     public final AtomicLong relayPricingPartial = new AtomicLong();
     public final AtomicLong relayPricingUnavailable = new AtomicLong();
+    public final AtomicLong upstreamRuntimeFailureEvent = new AtomicLong();
+    public final AtomicLong relayAttemptRetry = new AtomicLong();
+    public final AtomicLong relayRetryBlockedPossibleExecution = new AtomicLong();
+    public final AtomicLong relayRetryBlockedClientCommitted = new AtomicLong();
+    public final AtomicLong relaySchedulerNoCandidate = new AtomicLong();
 }

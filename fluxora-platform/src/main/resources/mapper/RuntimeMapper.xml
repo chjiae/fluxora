@@ -67,6 +67,7 @@
   <select id="findRouteScopesByCredential" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id JOIN provider_channel_credential binding ON binding.provider_channel_id=candidate.provider_channel_id WHERE binding.provider_credential_id=#{credentialId}</select>
   <select id="findRouteScopesByProvider" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id JOIN provider_channel channel ON channel.id=candidate.provider_channel_id JOIN provider_base_url baseUrl ON baseUrl.id=channel.provider_base_url_id WHERE baseUrl.provider_id=#{providerId}</select>
   <select id="findRouteScopesByBaseUrl" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> JOIN tenant_model_candidate_mapping mapping ON mapping.tenant_model_id=tm.id JOIN provider_channel_model candidate ON candidate.id=mapping.provider_channel_model_id JOIN provider_channel channel ON channel.id=candidate.provider_channel_id WHERE channel.provider_base_url_id=#{baseUrlId}</select>
+  <select id="findRouteScopesByTenant" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow"><include refid="routeScopeDistinct"/> WHERE tm.tenant_id=#{tenantId}</select>
   <select id="findAllRouteScopes" resultType="io.fluxora.platform.runtime.mapper.RuntimeScopeRow">
     <include refid="routeScopeDistinct"/>
     JOIN tenant tenant ON tenant.id=tm.tenant_id
@@ -147,9 +148,21 @@
       COALESCE(channel.enabled AND baseUrl.enabled AND provider.enabled AND channel.deleted_at IS NULL AND baseUrl.deleted_at IS NULL AND provider.deleted_at IS NULL,FALSE) AS channelEnabled,
       baseUrl.protocol AS outboundProtocol,candidate.upstream_model_id AS upstreamModelId,
       baseUrl.normalized_base_url AS normalizedBaseUrl,channel.connect_timeout_ms AS connectTimeoutMs,channel.read_timeout_ms AS readTimeoutMs,
-      credential.id AS providerCredentialId,credential.credential_version AS credentialVersion,credential.auth_type AS credentialAuthType,
+      binding.id AS providerChannelCredentialId,credential.id AS providerCredentialId,
+      credential.credential_version AS credentialVersion,credential.auth_type AS credentialAuthType,
       COALESCE(binding.enabled AND binding.deleted_at IS NULL,FALSE) AS credentialBindingEnabled,
       COALESCE(credential.enabled AND credential.deleted_at IS NULL,FALSE) AS credentialEnabled,
+      COALESCE(binding.billing_account_group, CONCAT('credential:', credential.id)) AS billingAccountGroup,
+      COALESCE(binding.quota_scope, CONCAT('credential:', credential.id)) AS quotaScope,
+      binding.traffic_weight AS credentialTrafficWeight,
+      binding.max_concurrent_streams AS credentialMaxConcurrentStreams,
+      targetState.runtime_state AS targetRuntimeState,targetState.cooldown_until AS targetCooldownUntil,
+      channelState.runtime_state AS channelRuntimeState,channelState.cooldown_until AS channelCooldownUntil,
+      candidateState.runtime_state AS candidateRuntimeState,candidateState.cooldown_until AS candidateCooldownUntil,
+      bindingState.runtime_state AS bindingRuntimeState,bindingState.cooldown_until AS bindingCooldownUntil,
+      credentialState.runtime_state AS credentialRuntimeState,credentialState.cooldown_until AS credentialCooldownUntil,
+      billingState.runtime_state AS billingRuntimeState,billingState.cooldown_until AS billingCooldownUntil,
+      quotaState.runtime_state AS quotaRuntimeState,quotaState.cooldown_until AS quotaCooldownUntil,
       EXISTS(SELECT 1 FROM provider_channel_credential binding JOIN provider_credential credential ON credential.id=binding.provider_credential_id
              WHERE binding.provider_channel_id=channel.id AND binding.enabled=TRUE AND binding.deleted_at IS NULL AND credential.enabled=TRUE AND credential.deleted_at IS NULL) AS hasUsableCredential,
       COALESCE((SELECT MAX(EXTRACT(EPOCH FROM GREATEST(binding.updated_at,credential.updated_at))*1000)::BIGINT
@@ -169,6 +182,22 @@
       LEFT JOIN provider ON provider.id=baseUrl.provider_id AND provider.enabled=TRUE AND provider.deleted_at IS NULL
       LEFT JOIN provider_channel_credential binding ON binding.provider_channel_id=channel.id AND binding.enabled=TRUE AND binding.deleted_at IS NULL
       LEFT JOIN provider_credential credential ON credential.id=binding.provider_credential_id AND credential.enabled=TRUE AND credential.deleted_at IS NULL
+      LEFT JOIN upstream_runtime_resource_state targetState
+        ON targetState.scope_type='ROUTE_TARGET' AND targetState.scope_key=CAST(target.id AS TEXT)
+      LEFT JOIN upstream_runtime_resource_state channelState
+        ON channelState.scope_type='PROVIDER_CHANNEL' AND channelState.scope_key=CAST(channel.id AS TEXT)
+      LEFT JOIN upstream_runtime_resource_state candidateState
+        ON candidateState.scope_type='PROVIDER_CHANNEL_MODEL' AND candidateState.scope_key=CAST(candidate.id AS TEXT)
+      LEFT JOIN upstream_runtime_resource_state bindingState
+        ON bindingState.scope_type='PROVIDER_CHANNEL_CREDENTIAL' AND bindingState.scope_key=CAST(binding.id AS TEXT)
+      LEFT JOIN upstream_runtime_resource_state credentialState
+        ON credentialState.scope_type='CREDENTIAL' AND credentialState.scope_key=CAST(credential.id AS TEXT)
+      LEFT JOIN upstream_runtime_resource_state billingState
+        ON billingState.scope_type='BILLING_ACCOUNT_GROUP'
+       AND billingState.scope_key=CONCAT(tm.tenant_id, ':', COALESCE(binding.billing_account_group, CONCAT('credential:', credential.id)))
+      LEFT JOIN upstream_runtime_resource_state quotaState
+        ON quotaState.scope_type='QUOTA_SCOPE'
+       AND quotaState.scope_key=CONCAT(tm.tenant_id, ':', COALESCE(binding.quota_scope, CONCAT('credential:', credential.id)))
   </sql>
   <select id="findRouteSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeRouteRow">
     <include refid="routeSnapshotColumns"/><include refid="routeSnapshotJoins"/>
