@@ -74,6 +74,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/admin/credit/**").authenticated()
                 .requestMatchers("/api/admin/billing/**").authenticated()
                 .requestMatchers("/api/admin/cards/**").authenticated()
+                .requestMatchers("/api/runtime-states/**").authenticated()
                 .requestMatchers("/api/auth/**").authenticated()
                 .anyRequest().denyAll()
             )

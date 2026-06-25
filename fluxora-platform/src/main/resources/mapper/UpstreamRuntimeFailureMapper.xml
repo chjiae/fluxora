@@ -73,7 +73,7 @@
     LEFT JOIN provider_channel ch2 ON ch2.id = binding.provider_channel_id AND s.scope_type = 'PROVIDER_CHANNEL_CREDENTIAL'
     LEFT JOIN provider_credential cred ON cred.id = CAST(s.scope_key AS BIGINT) AND s.scope_type = 'CREDENTIAL'
     WHERE s.runtime_state != 'AVAILABLE'
-      AND (#{tenantId} IS NULL OR s.tenant_id = #{tenantId})
+      AND (#{tenantId, jdbcType=BIGINT} IS NULL OR s.tenant_id = #{tenantId, jdbcType=BIGINT})
     ORDER BY s.cooldown_until ASC NULLS LAST, s.updated_at DESC
   </select>
 

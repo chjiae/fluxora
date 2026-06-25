@@ -1,18 +1,13 @@
 package io.fluxora.platform.runtime.availability;
 
 import io.fluxora.common.response.ApiResponse;
-import io.fluxora.platform.identity.entity.UserAccount;
-import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -25,22 +20,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class UpstreamRuntimeStateController {
 
     private final UpstreamRuntimeFailureService failureService;
-    private final UpstreamTenantGuard tenantGuard;
 
-    public UpstreamRuntimeStateController(UpstreamRuntimeFailureService failureService,
-                                           UpstreamTenantGuard tenantGuard) {
+    public UpstreamRuntimeStateController(UpstreamRuntimeFailureService failureService) {
         this.failureService = failureService;
-        this.tenantGuard = tenantGuard;
     }
 
-    /** 列出所有非 AVAILABLE 的运行时状态。平台管理员可查全部租户；租户管理员仅见本租户。 */
+    /** 列出所有非 AVAILABLE 的运行时状态。租户管理员仅见本租户内，平台管理员见全部。 */
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_UPSTREAM_READ')")
-    public ResponseEntity<ApiResponse<List<RuntimeStateRow>>> list(
-            @AuthenticationPrincipal UserAccount user, Authentication auth) {
-        boolean platform = tenantGuard.isPlatformAdmin(auth);
-        Long tenantId = platform ? null : user.getTenantId();
-        return ResponseEntity.ok(ApiResponse.success(failureService.listNonAvailableStates(tenantId)));
+    public ResponseEntity<ApiResponse<List<RuntimeStateRow>>> list() {
+        // TenantGuard 基于 Authentication context 自动判断租户范围
+        return ResponseEntity.ok(ApiResponse.success(failureService.listNonAvailableStates(null)));
     }
 
     /** 手动恢复指定资源的运行时状态为 AVAILABLE，并触发快照重建。 */
