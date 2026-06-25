@@ -18,6 +18,7 @@ export interface TenantModelSummary {
   supportsToolCalling: boolean
   supportsVision: boolean
   supportsCache: boolean
+  defaultOutputTokens: number
   status: TenantModelStatus
   mappingCount: number
   hasActivePrice: boolean

@@ -18,6 +18,8 @@ public record TenantModelSummary(
         boolean supportsToolCalling,
         boolean supportsVision,
         boolean supportsCache,
+        /** 客户端未声明时自动填入的默认输出 Token */
+        long defaultOutputTokens,
         /** ENABLED / DISABLED / DRAFT；统一由服务层派生，前端展示需要等宽颜色对齐 */
         String status,
         /** 当前有效映射数量；可用于「需关注」筛选与列表辅助列 */

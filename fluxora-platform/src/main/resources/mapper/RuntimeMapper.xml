@@ -133,8 +133,7 @@
   <!-- 强关联模型/价格/路由/目标/候选/通道/凭证池一次读取，供路由与目录快照共用。 -->
   <sql id="routeSnapshotColumns">
     SELECT tm.tenant_id AS tenantId,tm.id AS tenantModelId,tm.model_code AS tenantModelCode,tm.created_at AS tenantModelCreatedAt,tm.enabled AS tenantModelEnabled,
-      tm.supports_streaming AS supportsStreaming,tm.max_input_tokens AS maxInputTokens,tm.max_output_tokens AS maxOutputTokens,
-      tm.max_cache_write_tokens AS maxCacheWriteTokens,tm.max_cache_read_tokens AS maxCacheReadTokens,tm.default_output_tokens AS defaultOutputTokens,
+      tm.supports_streaming AS supportsStreaming,tm.default_output_tokens AS defaultOutputTokens,
       tm.supports_tool_calling AS supportsToolCalling,tm.supports_vision AS supportsVision,tm.supports_cache AS supportsCache,
       route.inbound_protocol AS inboundProtocol,price.id AS priceId,price.version AS priceVersion,price.currency_code AS currencyCode,
       price.input_price_per_million AS inputPricePerMillion,price.output_price_per_million AS outputPricePerMillion,

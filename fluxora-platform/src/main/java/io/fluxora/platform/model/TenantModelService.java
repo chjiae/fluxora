@@ -198,18 +198,12 @@ public class TenantModelService {
                 || m.getDisplayName() == null || m.getDisplayName().isBlank() || m.getDisplayName().length() > 256) {
             throw new ModelException(BusinessErrorCode.TENANT_MODEL_INVALID, "模型编码或展示名不合法");
         }
-        if (m.getMaxInputTokens() <= 0 || m.getMaxOutputTokens() <= 0 || m.getDefaultOutputTokens() <= 0
-                || m.getDefaultOutputTokens() > m.getMaxOutputTokens() || m.getMaxCacheWriteTokens() < 0
-                || m.getMaxCacheReadTokens() < 0) {
+        if (m.getDefaultOutputTokens() <= 0) {
             throw new ModelException(BusinessErrorCode.TENANT_MODEL_INVALID, "模型 Token 上限不合法");
         }
     }
 
     private void copyTokenLimits(TenantModel target, TenantModel source) {
-        target.setMaxInputTokens(source.getMaxInputTokens());
-        target.setMaxOutputTokens(source.getMaxOutputTokens());
-        target.setMaxCacheWriteTokens(source.getMaxCacheWriteTokens());
-        target.setMaxCacheReadTokens(source.getMaxCacheReadTokens());
         target.setDefaultOutputTokens(source.getDefaultOutputTokens());
     }
 

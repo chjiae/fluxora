@@ -16,10 +16,8 @@ public record TokenReservationPlan(JsonObject normalizedInbound, long inputToken
 
     public static TokenReservationPlan build(JsonObject inbound, String protocol, JsonObject route, int utf8BodyBytes,
                                              RelayPriceSnapshot price) {
-        long maxInput = positive(route.getLong("maxInputTokens"));
-        long maxOutput = positive(route.getLong("maxOutputTokens"));
         long defaultOutput = positive(route.getLong("defaultOutputTokens"));
-        if (defaultOutput > maxOutput || utf8BodyBytes < 0 || utf8BodyBytes > maxInput) {
+        if (utf8BodyBytes < 0) {
             throw GatewayFailure.billingUnsupported();
         }
         Long maxTokens = exactPositiveLong(inbound.getValue("max_tokens"));
@@ -28,20 +26,12 @@ public record TokenReservationPlan(JsonObject normalizedInbound, long inputToken
             throw GatewayFailure.invalidRequest();
         }
         long output = maxTokens != null ? maxTokens : maxCompletionTokens != null ? maxCompletionTokens : defaultOutput;
-        if (output > maxOutput) throw GatewayFailure.invalidRequest();
         JsonObject normalized = inbound.copy();
         if (maxTokens == null && maxCompletionTokens == null) normalized.put("max_tokens", output);
-        long cacheWrite = ceilingForPricedCache(price.cacheWritePricePerMillion(), route.getLong("maxCacheWriteTokens"), utf8BodyBytes);
-        long cacheRead = ceilingForPricedCache(price.cacheReadPricePerMillion(), route.getLong("maxCacheReadTokens"), utf8BodyBytes);
+        long cacheWrite = 0L;
+        long cacheRead = 0L;
         return new TokenReservationPlan(normalized, utf8BodyBytes, output, cacheWrite, cacheRead,
                 quote(utf8BodyBytes, output, cacheWrite, cacheRead, price));
-    }
-
-    private static long ceilingForPricedCache(String price, Long configuredMaximum, int bodyBytes) {
-        if (price == null) return 0L;
-        long maximum = positive(configuredMaximum);
-        if (bodyBytes > maximum) throw GatewayFailure.billingUnsupported();
-        return bodyBytes;
     }
 
     private static String quote(long input, long output, long cacheWrite, long cacheRead, RelayPriceSnapshot price) {

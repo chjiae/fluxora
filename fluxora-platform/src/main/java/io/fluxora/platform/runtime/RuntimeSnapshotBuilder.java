@@ -94,10 +94,6 @@ public class RuntimeSnapshotBuilder {
         snapshot.put("tenantModelStatus", enabledStatus(first.tenantModelEnabled(), "ENABLED", "DISABLED"));
         snapshot.put("tenantModelEnabled", first.tenantModelEnabled());
         snapshot.put("supportsStreaming", first.supportsStreaming());
-        snapshot.put("maxInputTokens", first.maxInputTokens());
-        snapshot.put("maxOutputTokens", first.maxOutputTokens());
-        snapshot.put("maxCacheWriteTokens", first.maxCacheWriteTokens());
-        snapshot.put("maxCacheReadTokens", first.maxCacheReadTokens());
         snapshot.put("defaultOutputTokens", first.defaultOutputTokens());
         snapshot.put("supportsToolCalling", first.supportsToolCalling());
         snapshot.put("supportsVision", first.supportsVision());
