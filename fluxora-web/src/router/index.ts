@@ -163,7 +163,7 @@ router.beforeEach(async (to, _from, next) => {
     }
 
     // 上游配置页面需要 UPSTREAM_READ 权限，普通成员重定向到概览
-    if ((to.path === '/console/providers' || to.path === '/console/provider-base-urls' || to.path === '/console/provider-channels')
+    if ((to.path === '/console/providers' || to.path === '/console/provider-base-urls' || to.path === '/console/provider-channels' || to.path === '/console/runtime-states')
         && !auth.canReadUpstream) {
       return next('/console/overview')
     }

@@ -35,7 +35,7 @@ public class UpstreamRuntimeStateController {
 
     /** 列出所有非 AVAILABLE 的运行时状态。平台管理员可查全部租户；租户管理员仅见本租户。 */
     @GetMapping
-    @PreAuthorize("hasAuthority('UPSTREAM_READ')")
+    @PreAuthorize("hasAuthority('PERM_UPSTREAM_READ')")
     public ResponseEntity<ApiResponse<List<RuntimeStateRow>>> list(
             @AuthenticationPrincipal UserAccount user, Authentication auth) {
         boolean platform = tenantGuard.isPlatformAdmin(auth);
@@ -45,7 +45,7 @@ public class UpstreamRuntimeStateController {
 
     /** 手动恢复指定资源的运行时状态为 AVAILABLE，并触发快照重建。 */
     @PostMapping("/{scopeType}/{scopeKey}/recover")
-    @PreAuthorize("hasAuthority('UPSTREAM_CREATE')")
+    @PreAuthorize("hasAuthority('PERM_UPSTREAM_CREATE')")
     public ResponseEntity<ApiResponse<Void>> recover(
             @PathVariable String scopeType,
             @PathVariable String scopeKey) {
