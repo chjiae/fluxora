@@ -91,7 +91,8 @@ async function loadStats() {
 }
 const metricItems = computed(() => [
   { label: '账户总数', value: stats.value?.totalAccounts ?? null },
-  { label: '余额合计', value: stats.value?.totalBalance ?? null },
+  { label: '可用余额合计', value: stats.value?.totalBalance ?? null },
+  { label: '冻结余额合计', value: stats.value?.totalFrozenBalance ?? null, tone: 'warn' as const },
   { label: '累计增加', value: stats.value?.totalCredits ?? null },
   { label: '累计扣减', value: stats.value?.totalDebits ?? null, tone: 'warn' as const },
   { label: '流水数', value: stats.value?.transactionCount ?? null },
@@ -205,8 +206,19 @@ const userColumns = computed<DataTableColumns<AdjustableUserOption>>(() => [
 ])
 
 // ---------- 流水表 ----------
-function formatDirection(d: string) { return d === 'CREDIT' ? '增加' : '扣减' }
-function formatAmount(d: string, amount: string) { return (d === 'CREDIT' ? '+' : '-') + amount }
+function formatType(row: CreditTransactionView) {
+  const byType: Record<string, string> = {
+    MANUAL_ADJUSTMENT: row.direction === 'CREDIT' ? '人工增加' : '人工扣减',
+    RESERVE: '预冻结',
+    SETTLE: '结算',
+    RELEASE: '释放',
+  }
+  return byType[row.transactionType] || (row.direction === 'CREDIT' ? '增加' : '扣减')
+}
+function amountClass(row: CreditTransactionView) {
+  return row.transactionType === 'RELEASE' || row.direction === 'CREDIT' ? 'credit' : 'debit'
+}
+function formatAmount(row: CreditTransactionView) { return (amountClass(row) === 'credit' ? '+' : '-') + row.amount }
 function timeAgo(iso: string | null | undefined) { return iso ? iso.slice(0, 16).replace('T', ' ') : '—' }
 
 const txnColumns = computed<DataTableColumns<CreditTransactionView>>(() => [
@@ -216,14 +228,17 @@ const txnColumns = computed<DataTableColumns<CreditTransactionView>>(() => [
       h('div', { class: 'cell-user-uname' }, row.username),
     ]),
   },
-  { title: '类型', key: 'direction', width: 80,
-    render: (row) => h('span', { class: `txn-dir txn-${row.direction.toLowerCase()}` }, formatDirection(row.direction)),
+  { title: '类型', key: 'direction', width: 90,
+    render: (row) => h('span', { class: `txn-dir txn-${amountClass(row)}` }, formatType(row)),
   },
   { title: '变更', key: 'amount', width: 120, align: 'right',
-    render: (row) => h('span', { class: `txn-amount txn-${row.direction.toLowerCase()}` }, formatAmount(row.direction, row.amount)),
+    render: (row) => h('span', { class: `txn-amount txn-${amountClass(row)}` }, formatAmount(row)),
   },
   { title: '变更后', key: 'balanceAfter', width: 120, align: 'right',
     render: (row) => h('span', { class: 'cell-num' }, row.balanceAfter),
+  },
+  { title: '冻结后', key: 'frozenBalanceAfter', width: 120, align: 'right',
+    render: (row) => h('span', { class: 'cell-num' }, row.frozenBalanceAfter ?? '—'),
   },
   { title: '原因', key: 'reason', minWidth: 180,
     render: (row) => h('span', { class: 'cell-muted' }, row.reason),

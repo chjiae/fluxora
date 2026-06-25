@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Building2, CreditCard, KeyRound, LayoutDashboard, Menu, Network, Plug, Sparkles, UserRound, Users, Wallet, Boxes, ChartNoAxesCombined } from 'lucide-vue-next'
+import { Building2, CreditCard, KeyRound, LayoutDashboard, Menu, Network, Plug, Sparkles, UserRound, Users, Wallet, Boxes, ChartNoAxesCombined, Scale } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
@@ -52,6 +52,9 @@ const menuOptions = computed(() => [
     ? [{ label: '模型目录', key: '/console/models', icon: () => h(Sparkles, { size: 18 }) }]
     : []),
   ...(auth.isLoggedIn ? [{ label: '请求日志', key: '/console/request-logs', icon: () => h(ChartNoAxesCombined, { size: 18 }) }] : []),
+  ...(auth.canAdjustCrossTenantCredit
+    ? [{ label: '余额对账', key: '/console/billing/reconciliations', icon: () => h(Scale, { size: 18 }) }]
+    : []),
   // 租户模型管理：仅 TENANT_MODEL_READ 权限可见（PLATFORM_ADMIN / TENANT_ADMIN）
   ...(auth.canReadTenantModels
     ? [{ label: '租户模型', key: '/console/tenant-models', icon: () => h(Boxes, { size: 18 }) }]
@@ -72,6 +75,7 @@ const title = computed(() => {
   if (route.path === '/console/tenant-models') return '租户模型'
   if (route.path === '/console/models') return '模型目录'
   if (route.path === '/console/request-logs') return '请求日志'
+  if (route.path === '/console/billing/reconciliations') return '余额对账'
   return menuOptions.value.find(item => item.key === route.path)?.label || '概览'
 })
 

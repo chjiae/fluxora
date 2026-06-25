@@ -13,6 +13,13 @@ describe('credit management module', () => {
     }
   })
 
+  it('reconciliation service exposes the expected api surface', async () => {
+    const svc = await import('@/services/reconciliation')
+    for (const fn of ['listPendingReconciliations', 'confirmRelease', 'confirmSettle']) {
+      expect(typeof (svc as any)[fn]).toBe('function')
+    }
+  })
+
   it('auth store exposes credit permission getters', async () => {
     const mod = await import('@/stores/auth')
     const { createPinia, setActivePinia } = await import('pinia')
@@ -68,7 +75,9 @@ describe('credit management module', () => {
     expect(src).toContain("'api-keys'")
     expect(src).toContain("'credit'")
     expect(src).toContain("'credit/manage'")
+    expect(src).toContain("'billing/reconciliations'")
     expect(src).toContain('canManageOwnApiKeys')
     expect(src).toContain('canReadOwnCredit')
+    expect(src).toContain('canAdjustCrossTenantCredit')
   })
 })
