@@ -19,6 +19,7 @@ import TenantModelManagementView from '../views/TenantModelManagementView.vue'
 import PublicModelCatalogView from '../views/PublicModelCatalogView.vue'
 import RequestLogsView from '../views/RequestLogsView.vue'
 import ReconciliationView from '../views/ReconciliationView.vue'
+import RuntimeStateManagementView from '../views/RuntimeStateManagementView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 export const router = createRouter({
@@ -92,6 +93,7 @@ export const router = createRouter({
         { path: 'models', component: PublicModelCatalogView },
         { path: 'request-logs', component: RequestLogsView },
         { path: 'billing/reconciliations', component: ReconciliationView },
+        { path: 'runtime-states', component: RuntimeStateManagementView },
       ],
     },
   ],

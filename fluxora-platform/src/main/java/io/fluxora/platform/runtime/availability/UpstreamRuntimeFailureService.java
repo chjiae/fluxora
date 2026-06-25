@@ -35,6 +35,24 @@ public class UpstreamRuntimeFailureService {
         return true;
     }
 
+    /** 平台管理员确认修复后手动恢复任意资源的运行时状态；重复调用保持幂等。 */
+    @Transactional
+    public void recoverState(String scopeType, String scopeKey) {
+        mapper.recoverState(scopeType, scopeKey);
+        // 查出 tenant_id 以写入带租户关联的 outbox 事件
+        Long tenantId = mapper.findTenantIdByScope(scopeType, scopeKey).orElse(null);
+        if (tenantId != null) {
+            outboxService.record(tenantId, "UPSTREAM_RUNTIME_STATE", null,
+                    "RUNTIME_STATE_RECOVERED", scopeType + ":" + scopeKey);
+        }
+    }
+
+    /** 列出所有非 AVAILABLE 的运行时故障状态。tenantId 为 null 时返回全量（仅平台管理员）。 */
+    @Transactional(readOnly = true)
+    public java.util.List<RuntimeStateRow> listNonAvailableStates(Long tenantId) {
+        return mapper.findAllNonAvailableStates(tenantId);
+    }
+
     /** 平台管理员确认修复后手动恢复 Credential 运行时状态；重复调用保持幂等。 */
     @Transactional
     public void recoverCredential(Long credentialId) {

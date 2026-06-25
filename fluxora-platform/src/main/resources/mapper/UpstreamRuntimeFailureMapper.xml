@@ -40,4 +40,45 @@
   <select id="findCredentialTenantId" resultType="long">
     SELECT tenant_id FROM provider_credential WHERE id=#{credentialId} AND deleted_at IS NULL
   </select>
+
+  <!--
+    列出所有非 AVAILABLE 运行时状态，联表取可读资源名称。
+    每条记录包含一种 scope_type + scope_key 的故障状态，
+    管理页可直接展示，不需要逐条 N+1 反查。
+  -->
+  <select id="findAllNonAvailableStates" resultType="io.fluxora.platform.runtime.availability.RuntimeStateRow">
+    SELECT
+      s.tenant_id AS tenantId,
+      s.scope_type AS scopeType,
+      s.scope_key AS scopeKey,
+      s.runtime_state AS runtimeState,
+      s.last_failure_kind AS lastFailureKind,
+      s.last_failed_at AS lastFailedAt,
+      s.cooldown_until AS cooldownUntil,
+      s.updated_at AS updatedAt,
+      CASE
+        WHEN s.scope_type = 'PROVIDER_CHANNEL' THEN COALESCE(ch.name, '通道 ' || s.scope_key)
+        WHEN s.scope_type = 'PROVIDER_CHANNEL_MODEL' THEN COALESCE(candidate.upstream_model_id, '上游候选 ' || s.scope_key)
+        WHEN s.scope_type = 'PROVIDER_CHANNEL_CREDENTIAL' THEN COALESCE(ch2.name, '通道凭证绑定 ' || s.scope_key)
+        WHEN s.scope_type = 'CREDENTIAL' THEN COALESCE(cred.auth_type, '') || ' 凭证 #' || s.scope_key
+        WHEN s.scope_type = 'ROUTE_TARGET' THEN '路由目标 #' || s.scope_key
+        WHEN s.scope_type = 'BILLING_ACCOUNT_GROUP' THEN '计费组 ' || s.scope_key
+        WHEN s.scope_type = 'QUOTA_SCOPE' THEN '配额域 ' || s.scope_key
+        ELSE s.scope_type || ' / ' || s.scope_key
+      END AS resourceLabel
+    FROM upstream_runtime_resource_state s
+    LEFT JOIN provider_channel ch ON ch.id = CAST(s.scope_key AS BIGINT) AND s.scope_type = 'PROVIDER_CHANNEL'
+    LEFT JOIN provider_channel_model candidate ON candidate.id = CAST(s.scope_key AS BIGINT) AND s.scope_type = 'PROVIDER_CHANNEL_MODEL'
+    LEFT JOIN provider_channel_credential binding ON binding.id = CAST(s.scope_key AS BIGINT) AND s.scope_type = 'PROVIDER_CHANNEL_CREDENTIAL'
+    LEFT JOIN provider_channel ch2 ON ch2.id = binding.provider_channel_id AND s.scope_type = 'PROVIDER_CHANNEL_CREDENTIAL'
+    LEFT JOIN provider_credential cred ON cred.id = CAST(s.scope_key AS BIGINT) AND s.scope_type = 'CREDENTIAL'
+    WHERE s.runtime_state != 'AVAILABLE'
+      AND (#{tenantId} IS NULL OR s.tenant_id = #{tenantId})
+    ORDER BY s.cooldown_until ASC NULLS LAST, s.updated_at DESC
+  </select>
+
+  <select id="findTenantIdByScope" resultType="long">
+    SELECT tenant_id FROM upstream_runtime_resource_state
+    WHERE scope_type = #{scopeType} AND scope_key = #{scopeKey}
+  </select>
 </mapper>

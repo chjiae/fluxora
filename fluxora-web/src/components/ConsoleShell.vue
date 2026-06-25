@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Building2, CreditCard, KeyRound, LayoutDashboard, Menu, Network, Plug, Sparkles, UserRound, Users, Wallet, Boxes, ChartNoAxesCombined, Scale } from 'lucide-vue-next'
+import { Building2, CreditCard, KeyRound, LayoutDashboard, Menu, Network, Plug, ShieldAlert, Sparkles, UserRound, Users, Wallet, Boxes, ChartNoAxesCombined, Scale } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
@@ -44,6 +44,7 @@ const menuOptions = computed(() => [
         { label: '上游厂商', key: '/console/providers', icon: () => h(Network, { size: 18 }) },
         { label: '接入地址', key: '/console/provider-base-urls', icon: () => h(Plug, { size: 18 }) },
         { label: '上游通道', key: '/console/provider-channels', icon: () => h(Network, { size: 18 }) },
+        { label: '故障资源', key: '/console/runtime-states', icon: () => h(ShieldAlert, { size: 18 }) },
       ]
     : []),
   // 模型目录：所有拥有 TENANT_MODEL_PUBLIC_READ 的用户可见（含租户成员）
@@ -76,6 +77,7 @@ const title = computed(() => {
   if (route.path === '/console/models') return '模型目录'
   if (route.path === '/console/request-logs') return '请求日志'
   if (route.path === '/console/billing/reconciliations') return '余额对账'
+  if (route.path === '/console/runtime-states') return '故障资源'
   return menuOptions.value.find(item => item.key === route.path)?.label || '概览'
 })
 
