@@ -3,6 +3,7 @@ package io.fluxora.platform.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.fluxora.common.runtime.RouteExecutionEligibility;
 import io.fluxora.common.security.RuntimeCredentialCipher;
 import io.fluxora.platform.runtime.mapper.RuntimeAuthApiKeyRow;
 import io.fluxora.platform.runtime.mapper.RuntimeAuthTenantRow;
@@ -12,6 +13,7 @@ import io.fluxora.platform.runtime.mapper.RuntimeRouteRow;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.stereotype.Component;
@@ -41,6 +43,7 @@ public class RuntimeSnapshotBuilder {
             case AUTH_USER -> userSnapshot(scope, runtimeVersion, event);
             case AUTH_TENANT -> tenantSnapshot(scope, runtimeVersion, event);
             case TENANT_MODEL_ROUTE -> routeSnapshot(scope, runtimeVersion, event);
+            case TENANT_MODEL_CATALOG -> catalogSnapshot(scope, runtimeVersion, event);
             case UPSTREAM_CREDENTIAL -> upstreamCredentialSnapshot(scope, runtimeVersion, event);
         };
     }
@@ -91,6 +94,11 @@ public class RuntimeSnapshotBuilder {
         snapshot.put("tenantModelStatus", enabledStatus(first.tenantModelEnabled(), "ENABLED", "DISABLED"));
         snapshot.put("tenantModelEnabled", first.tenantModelEnabled());
         snapshot.put("supportsStreaming", first.supportsStreaming());
+        snapshot.put("maxInputTokens", first.maxInputTokens());
+        snapshot.put("maxOutputTokens", first.maxOutputTokens());
+        snapshot.put("maxCacheWriteTokens", first.maxCacheWriteTokens());
+        snapshot.put("maxCacheReadTokens", first.maxCacheReadTokens());
+        snapshot.put("defaultOutputTokens", first.defaultOutputTokens());
         snapshot.put("supportsToolCalling", first.supportsToolCalling());
         snapshot.put("supportsVision", first.supportsVision());
         snapshot.put("supportsCache", first.supportsCache());
@@ -142,6 +150,35 @@ public class RuntimeSnapshotBuilder {
                 credentialRef.put("credentialStatus", enabledStatus(row.credentialEnabled(), "ENABLED", "DISABLED"));
             }
         }
+        return snapshot;
+    }
+
+    /**
+     * 模型目录从一次关联查询构建，且复用 RouteExecutionEligibility 与 Gateway 的真实目标筛选规则。
+     * 快照严格只写 modelCode 与稳定创建秒，不下发任何路由、地址、候选或凭证元数据。
+     */
+    private ObjectNode catalogSnapshot(RuntimeScope scope, long runtimeVersion, RuntimeOutboxEvent event) {
+        ObjectNode snapshot = common(scope, runtimeVersion, event);
+        snapshot.put("tenantId", scope.tenantId());
+        snapshot.put("inboundProtocol", scope.inboundProtocol());
+        ArrayNode models = snapshot.putArray("models");
+        List<RuntimeRouteRow> rows = runtimeMapper.findTenantModelCatalogSnapshot(scope.tenantId(), scope.inboundProtocol());
+        TreeMap<String, RuntimeRouteRow> callable = new TreeMap<>();
+        Instant now = Instant.now();
+        for (RuntimeRouteRow row : rows) {
+            if (!RouteExecutionEligibility.baseRouteCallable(row.tenantModelEnabled(), row.routeEnabled(),
+                    row.priceId() != null, row.priceEffectiveAt(), row.priceExpiresAt(), now)
+                    || !RouteExecutionEligibility.targetCallable(row.targetEnabled(), row.mappingEnabled(),
+                    row.candidateEnabled(), row.channelEnabled(), row.hasUsableCredential(), scope.inboundProtocol(),
+                    row.outboundProtocol(), row.priority(), row.weight(), row.routeTargetId(), row.providerChannelId(),
+                    row.providerChannelModelId())) {
+                continue;
+            }
+            callable.putIfAbsent(row.tenantModelCode(), row);
+        }
+        callable.forEach((modelCode, row) -> models.addObject().put("modelCode", modelCode)
+                // 迁移前异常空值以 Unix 0 作为项目统一稳定兜底，绝不使用“当前时间”。
+                .put("created", row.tenantModelCreatedAt() == null ? 0L : row.tenantModelCreatedAt().getEpochSecond()));
         return snapshot;
     }
 

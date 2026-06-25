@@ -13,6 +13,9 @@ interface RelayRequestLogMapper {
     int insertReceipt(@Param("eventId") String eventId, @Param("requestId") String requestId, @Param("eventType") String eventType);
     int insertStarted(RelayEventPayload event);
     int upsertTerminal(@Param("event") RelayEventPayload event, @Param("theoreticalAmount") BigDecimal theoreticalAmount, @Param("pricingStatus") String pricingStatus);
+    void updateBillingStatus(@Param("requestId") String requestId, @Param("reservationStatus") String reservationStatus,
+                             @Param("reservationAmount") BigDecimal reservationAmount, @Param("actualAmount") BigDecimal actualAmount,
+                             @Param("releasedAmount") BigDecimal releasedAmount);
     List<RelayRequestLogSummary> findPage(RelayRequestLogQuery query);
     long countPage(RelayRequestLogQuery query);
     Optional<RelayRequestLogDetail> findDetail(@Param("requestId") String requestId, @Param("tenantId") long tenantId, @Param("userId") Long userId);

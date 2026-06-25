@@ -1,9 +1,11 @@
 package io.fluxora.gateway;
 
 import io.fluxora.gateway.auth.ApiKeyLookupHasher;
+import io.fluxora.gateway.billing.PlatformBillingClient;
 import io.fluxora.gateway.auth.GatewayAuthenticator;
 import io.fluxora.gateway.credential.RuntimeCredentialResolver;
 import io.fluxora.gateway.observability.RelayEventPublisher;
+import io.fluxora.gateway.model.GatewayModelCatalog;
 import io.fluxora.gateway.route.GatewayRouteResolver;
 import io.fluxora.gateway.route.RouteTargetSelector;
 import io.fluxora.gateway.runtime.RedisRuntimeSnapshotSource;
@@ -22,6 +24,8 @@ public final class GatewayRuntime {
     private final RuntimeInvalidationSubscriber subscriber;
     private final GatewayAuthenticator authenticator;
     private final GatewayRouteResolver routeResolver;
+    private final GatewayModelCatalog modelCatalog;
+    private final PlatformBillingClient billingClient;
     private final RuntimeCredentialResolver credentialResolver;
     private final GatewayMetrics metrics;
     private final RuntimeL1Caches caches;
@@ -39,6 +43,8 @@ public final class GatewayRuntime {
         this.caches = new RuntimeL1Caches(new RedisRuntimeSnapshotSource(redis), config, metrics);
         this.authenticator = new GatewayAuthenticator(new ApiKeyLookupHasher(config.apiKeyLookupSecret()), caches, metrics);
         this.routeResolver = new GatewayRouteResolver(caches, new RouteTargetSelector());
+        this.modelCatalog = new GatewayModelCatalog(caches);
+        this.billingClient = new PlatformBillingClient(vertx, config);
         this.credentialResolver = new RuntimeCredentialResolver(caches, config.runtimeCredentialKey());
         this.subscriber = new RuntimeInvalidationSubscriber(vertx, redis, config.invalidationChannel(), caches, metrics);
         this.relayEventPublisher = RelayEventPublisher.forRedis(redis, metrics, config.relayEventStreamKey(),
@@ -47,6 +53,8 @@ public final class GatewayRuntime {
 
     public GatewayAuthenticator authenticator() { return authenticator; }
     public GatewayRouteResolver routeResolver() { return routeResolver; }
+    public GatewayModelCatalog modelCatalog() { return modelCatalog; }
+    public PlatformBillingClient billingClient() { return billingClient; }
     public RuntimeCredentialResolver credentialResolver() { return credentialResolver; }
     public GatewayMetrics metrics() { return metrics; }
     public RelayEventPublisher relayEventPublisher() { return relayEventPublisher; }

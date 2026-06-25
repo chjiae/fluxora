@@ -35,6 +35,9 @@ fluxora:
       # API Key Lookup Secret：对完整 canonical API Key 做 HMAC，供 Gateway 以摘要定位 Redis 快照。
       # 生产环境必须通过 APIKEY_LOOKUP_SECRET 覆盖；该值绝不可进入 PostgreSQL、Redis、日志或响应。
       lookup-secret: ${APIKEY_LOOKUP_SECRET:fluxora-apikey-lookup-secret-for-local-development-only-please-override}
+    internal-gateway:
+      # Gateway 到 Platform 计费调用专用 HMAC；仅本地默认，生产必须经环境变量覆盖且不得复用用户 API Key。
+      hmac-secret: ${FLUXORA_INTERNAL_GATEWAY_HMAC_SECRET:fluxora-internal-gateway-hmac-secret-local-only-override-in-production}
     card:
       # 卡密 HMAC Pepper：与 API Key Pepper 独立，提供防御纵深
       # 生产环境必须通过 CARD_PEPPER 环境变量覆盖；建议至少 32 字符随机字符串
@@ -70,6 +73,11 @@ fluxora:
     stream-key: ${RELAY_EVENT_STREAM:fluxora:relay-events:v1}
     consumer-group: ${RELAY_EVENT_CONSUMER_GROUP:fluxora-platform-v1}
     stream-poll-delay-ms: ${RELAY_EVENT_POLL_DELAY_MS:500}
+  billing:
+    reservation:
+      # 终态延迟或 Gateway 崩溃只会进入待对账；此超时不是自动释放条件。
+      stale-after-ms: ${BILLING_RESERVATION_STALE_AFTER_MS:900000}
+      stale-scan-delay-ms: ${BILLING_RESERVATION_STALE_SCAN_DELAY_MS:60000}
 
 management:
   endpoints:

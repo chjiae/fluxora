@@ -9,6 +9,8 @@ public enum RuntimeScopeType {
     AUTH_USER,
     AUTH_TENANT,
     TENANT_MODEL_ROUTE,
+    /** 仅含当前租户可执行模型编码与稳定创建时间的 OpenAI 目录快照。 */
+    TENANT_MODEL_CATALOG,
     /** Gateway 专用敏感快照，保存运行时重加密密文，禁止作为普通路由或管理接口响应。 */
     UPSTREAM_CREDENTIAL
 }

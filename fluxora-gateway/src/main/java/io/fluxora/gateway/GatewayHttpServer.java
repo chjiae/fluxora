@@ -42,6 +42,13 @@ public final class GatewayHttpServer {
             json(request, 200, new JsonObject().put("status", "UP"));
             return;
         }
+        if (request.method() == HttpMethod.GET && "/v1/models".equals(request.path())) {
+            runtime.authenticator().authenticate(apiKey(request))
+                    .compose(principal -> runtime.modelCatalog().listOpenAiModels(principal.tenantId()))
+                    .onSuccess(body -> json(request, 200, body))
+                    .onFailure(error -> writeFailure(request, "OPENAI", error));
+            return;
+        }
         String protocol = protocolFor(request);
         if (protocol == null) {
             safeError(request, 404, "请求地址不存在");
@@ -75,6 +82,10 @@ public final class GatewayHttpServer {
             case MODEL_UNAVAILABLE -> protocolError(request, protocol, 503, "当前模型暂不可用，请稍后重试");
             case RUNTIME_UNAVAILABLE -> protocolError(request, protocol, 503, "服务配置暂不可用，请稍后重试");
             case UNSUPPORTED -> protocolError(request, protocol, 501, "当前服务暂不支持该请求");
+            case INSUFFICIENT_BALANCE -> protocolError(request, protocol, 402, "当前可用余额不足，请充值后重试");
+            case BILLING_SERVICE_UNAVAILABLE -> protocolError(request, protocol, 503, "计费服务暂不可用，请稍后重试");
+            case BILLING_RESERVATION_CONFLICT -> protocolError(request, protocol, 409, "请求计费状态冲突，请稍后重试");
+            case BILLING_RESERVATION_UNSUPPORTED -> protocolError(request, protocol, 400, "请求无法安全计算预冻结金额，请调整后重试");
         }
     }
 
@@ -95,5 +106,11 @@ public final class GatewayHttpServer {
 
     private void json(HttpServerRequest request, int status, JsonObject body) {
         request.response().setStatusCode(status).putHeader("content-type", "application/json").end(body.encode());
+    }
+
+    private String apiKey(HttpServerRequest request) {
+        String authorization = request.getHeader("Authorization");
+        return authorization != null && authorization.regionMatches(true, 0, "Bearer ", 0, 7)
+                ? authorization.substring(7) : request.getHeader("x-api-key");
     }
 }

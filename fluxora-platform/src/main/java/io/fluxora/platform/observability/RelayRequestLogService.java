@@ -2,6 +2,8 @@ package io.fluxora.platform.observability;
 
 import io.fluxora.common.error.BusinessErrorCode;
 import io.fluxora.platform.identity.entity.UserAccount;
+import io.fluxora.platform.billing.reservation.ReservationFinalization;
+import io.fluxora.platform.billing.reservation.ReservationSettlementService;
 import io.fluxora.platform.model.ModelException;
 import io.fluxora.platform.upstream.security.UpstreamTenantGuard;
 import java.math.BigDecimal;
@@ -21,12 +23,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class RelayRequestLogService {
     private final RelayRequestLogMapper mapper;
     private final UpstreamTenantGuard tenantGuard;
+    private final ReservationSettlementService reservationSettlementService;
     private final ZoneId businessZone;
 
     public RelayRequestLogService(RelayRequestLogMapper mapper, UpstreamTenantGuard tenantGuard,
+                                  ReservationSettlementService reservationSettlementService,
                                   @Value("${fluxora.observability.business-time-zone:Asia/Shanghai}") String businessTimeZone) {
         this.mapper = mapper;
         this.tenantGuard = tenantGuard;
+        this.reservationSettlementService = reservationSettlementService;
         this.businessZone = ZoneId.of(businessTimeZone);
     }
 
@@ -46,6 +51,10 @@ public class RelayRequestLogService {
         String pricingStatus = amount.isPresent() ? "CALCULATED"
                 : "PARTIAL".equals(event.pricingStatus()) ? "PARTIAL" : "UNAVAILABLE";
         mapper.upsertTerminal(event, amount.map(BigDecimal::new).orElse(null), pricingStatus);
+        ReservationFinalization finalization = reservationSettlementService.finalizeTerminal(event,
+                amount.map(BigDecimal::new).orElse(null), pricingStatus);
+        mapper.updateBillingStatus(event.requestId(), finalization.status(), finalization.reservationAmount(),
+                finalization.actualAmount(), finalization.releasedAmount());
         return true;
     }
 

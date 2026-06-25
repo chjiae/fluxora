@@ -3,6 +3,8 @@ package io.fluxora.gateway;
 import io.fluxora.gateway.auth.ApiKeyLookupHasher;
 import io.fluxora.gateway.auth.AuthenticatedPrincipal;
 import io.fluxora.gateway.auth.GatewayAuthenticator;
+import io.fluxora.gateway.model.CatalogScopeKey;
+import io.fluxora.gateway.model.GatewayModelCatalog;
 import io.fluxora.gateway.route.GatewayRouteResolver;
 import io.fluxora.gateway.route.RouteScopeKey;
 import io.fluxora.gateway.route.RouteTargetSelector;
@@ -88,6 +90,44 @@ class GatewayRuntimeBehaviorTest {
 
         assertEquals(1001L, await(resolver.resolve(101, "OPENAI", modelCode, false)).routeTargetId());
         assertEquals(2001L, await(resolver.resolve(202, "OPENAI", modelCode, false)).routeTargetId());
+    }
+
+    @Test
+    void modelCatalogMustReadOneTenantOpenAiSnapshotAndKeepStableOrdering() throws Exception {
+        MemorySource source = new MemorySource();
+        String scope = CatalogScopeKey.of(101L, "OPENAI");
+        source.put(RuntimeScopeType.TENANT_MODEL_CATALOG, scope, new JsonObject()
+                .put("tenantId", 101L).put("inboundProtocol", "OPENAI")
+                .put("models", new JsonArray()
+                        .add(new JsonObject().put("modelCode", "zeta").put("created", 1700000000L))
+                        .add(new JsonObject().put("modelCode", "alpha").put("created", 1600000000L))));
+        GatewayModelCatalog catalog = new GatewayModelCatalog(
+                new RuntimeL1Caches(source, config(), new GatewayMetrics()));
+
+        JsonObject first = await(catalog.listOpenAiModels(101L));
+        JsonObject second = await(catalog.listOpenAiModels(101L));
+
+        assertEquals("list", first.getString("object"));
+        assertEquals("alpha", first.getJsonArray("data").getJsonObject(0).getString("id"));
+        assertEquals(1600000000L, first.getJsonArray("data").getJsonObject(0).getLong("created"));
+        assertEquals("fluxora", first.getJsonArray("data").getJsonObject(0).getString("owned_by"));
+        assertEquals(first.encode(), second.encode());
+        assertEquals(1, source.loads(RuntimeScopeType.TENANT_MODEL_CATALOG, scope));
+        assertEquals(0, source.loads(RuntimeScopeType.TENANT_MODEL_ROUTE, RouteScopeKey.of(101L, "OPENAI", "alpha")));
+    }
+
+    @Test
+    void emptyModelCatalogMustRemainAValidOpenAiList() throws Exception {
+        MemorySource source = new MemorySource();
+        String scope = CatalogScopeKey.of(101L, "OPENAI");
+        source.put(RuntimeScopeType.TENANT_MODEL_CATALOG, scope,
+                new JsonObject().put("tenantId", 101L).put("inboundProtocol", "OPENAI").put("models", new JsonArray()));
+
+        JsonObject response = await(new GatewayModelCatalog(
+                new RuntimeL1Caches(source, config(), new GatewayMetrics())).listOpenAiModels(101L));
+
+        assertEquals("list", response.getString("object"));
+        assertTrue(response.getJsonArray("data").isEmpty());
     }
 
     @Test

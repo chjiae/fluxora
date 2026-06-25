@@ -30,7 +30,7 @@ public class RuntimeImpactResolver {
             return Set.of();
         }
 
-        return switch (aggregateType) {
+        Set<RuntimeScope> scopes = switch (aggregateType) {
             case "API_KEY" -> runtimeMapper.findApiKeyLookupHash(aggregateId)
                     .map(hash -> Set.of(RuntimeScope.apiKey(hash, event.tenantId())))
                     .orElseGet(Set::of);
@@ -52,6 +52,7 @@ public class RuntimeImpactResolver {
             case "PROVIDER_BASE_URL" -> routeScopes(runtimeMapper.findRouteScopesByBaseUrl(aggregateId));
             default -> Set.of();
         };
+        return withCatalogScopes(event, scopes);
     }
 
     private Set<RuntimeScope> allScopes() {
@@ -60,6 +61,7 @@ public class RuntimeImpactResolver {
         runtimeMapper.findAllAuthUserScopes().forEach(row -> scopes.add(RuntimeScope.user(row.tenantId(), row.userId())));
         runtimeMapper.findAllAuthTenantScopes().forEach(row -> scopes.add(RuntimeScope.tenant(row.tenantId())));
         scopes.addAll(routeScopes(runtimeMapper.findAllRouteScopes()));
+        runtimeMapper.findAllAuthTenantScopes().forEach(row -> scopes.add(RuntimeScope.catalog(row.tenantId(), "OPENAI")));
         runtimeMapper.findAllCredentialScopes().forEach(row ->
                 scopes.add(RuntimeScope.upstreamCredential(row.tenantId(), row.credentialId())));
         return scopes;
@@ -98,6 +100,19 @@ public class RuntimeImpactResolver {
         Set<RuntimeScope> scopes = routeScopes(runtimeMapper.findRouteScopesByCredential(credentialId));
         runtimeMapper.findRuntimeCredentialSnapshot(event.tenantId(), credentialId)
                 .ifPresent(row -> scopes.add(RuntimeScope.upstreamCredential(row.tenantId(), credentialId)));
+        return scopes;
+    }
+
+    /** 目录与 OpenAI 路由同一 Outbox 变更失效；模型删除时用事件 tenantId 补齐空路由集合。 */
+    private Set<RuntimeScope> withCatalogScopes(RuntimeOutboxEvent event, Set<RuntimeScope> original) {
+        Set<RuntimeScope> scopes = new LinkedHashSet<>(original);
+        original.stream().filter(scope -> scope.type() == RuntimeScopeType.TENANT_MODEL_ROUTE
+                        && "OPENAI".equals(scope.inboundProtocol()))
+                .forEach(scope -> scopes.add(RuntimeScope.catalog(scope.tenantId(), "OPENAI")));
+        if ("TENANT".equals(event.aggregateType()) || "TENANT_MODEL".equals(event.aggregateType())
+                || "TENANT_MODEL_PRICE".equals(event.aggregateType())) {
+            if (event.tenantId() != null) scopes.add(RuntimeScope.catalog(event.tenantId(), "OPENAI"));
+        }
         return scopes;
     }
 }

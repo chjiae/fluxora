@@ -2,6 +2,11 @@ package io.fluxora.platform.credit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.fluxora.platform.billing.reservation.BillingReservationService;
+import io.fluxora.platform.billing.reservation.GatewayReservationRequest;
+import io.fluxora.platform.billing.reservation.ReservationOutcome;
+import io.fluxora.platform.billing.reservation.ReservationSettlementService;
+import io.fluxora.platform.observability.RelayEventPayload;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +29,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -63,6 +69,8 @@ class CreditIntegrationTest {
 
     @LocalServerPort private int port;
     @Autowired private DataSource dataSource;
+    @Autowired private BillingReservationService billingReservationService;
+    @Autowired private ReservationSettlementService reservationSettlementService;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private String baseUrl;
@@ -180,6 +188,96 @@ class CreditIntegrationTest {
                 objectMapper.readTree(g.getBody()).get("data").get("balance").asText());
         assertThat(balance).isEqualByComparingTo("100.5");
     }
+
+    @Test
+    void reservationSettlementIsIdempotentAndMovesAvailableAndFrozenBalancesTogether() throws Exception {
+        HttpHeaders ah = adminAuth();
+        ensureSelfOperated(ah);
+        long userId = createMemberReturnId(ah, 1L)[0];
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        restTemplate.exchange(baseUrl + "/api/tenant/1/credit/adjust?userId=" + userId, HttpMethod.POST,
+                new HttpEntity<>(objectMapper.writeValueAsString(Map.of("direction", "CREDIT", "amount", "10", "reason", "预冻结测试")), ah), String.class);
+        long apiKeyId = jdbc.queryForObject("""
+                INSERT INTO api_key(tenant_id,user_id,name,key_prefix,lookup_hash,lookup_hash_version,enabled)
+                VALUES(1,?, '结算测试 Key', ?, ?, 1, TRUE) RETURNING id
+                """, Long.class, userId, "flx_" + System.nanoTime(), "f".repeat(64));
+        long modelId = jdbc.queryForObject("""
+                INSERT INTO tenant_model(tenant_id,model_code,display_name,enabled,publish_status)
+                VALUES(1,?, '结算测试模型', TRUE, 'ENABLED') RETURNING id
+                """, Long.class, "billing-model-" + System.nanoTime());
+        String requestId = "billing-" + System.nanoTime();
+        GatewayReservationRequest request = reservationRequest(requestId, userId, apiKeyId, modelId, "1");
+
+        ReservationOutcome first = billingReservationService.reserve(request);
+        ReservationOutcome duplicate = billingReservationService.reserve(request);
+
+        assertThat(first.status()).isEqualTo("RESERVED");
+        assertThat(duplicate.status()).isEqualTo("RESERVED");
+        assertThat(balance(jdbc, userId)).isEqualByComparingTo("9");
+        assertThat(frozen(jdbc, userId)).isEqualByComparingTo("1");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM billing_reservation WHERE request_id=?", Long.class, requestId)).isEqualTo(1L);
+
+        RelayEventPayload event = terminalEvent(requestId, userId, apiKeyId, modelId);
+        reservationSettlementService.finalizeTerminal(event, new BigDecimal("0.50000000"), "CALCULATED");
+        reservationSettlementService.finalizeTerminal(event, new BigDecimal("0.50000000"), "CALCULATED");
+
+        assertThat(balance(jdbc, userId)).isEqualByComparingTo("9.5");
+        assertThat(frozen(jdbc, userId)).isEqualByComparingTo("0");
+        assertThat(jdbc.queryForObject("SELECT status FROM billing_reservation WHERE request_id=?", String.class, requestId)).isEqualTo("SETTLED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM credit_transaction WHERE reservation_id=(SELECT id FROM billing_reservation WHERE request_id=?)", Long.class, requestId)).isEqualTo(3L);
+    }
+
+    @Test
+    void undispatchedFailureReleasesFrozenBalanceWhileUnknownUsageStaysPending() throws Exception {
+        HttpHeaders ah = adminAuth();
+        ensureSelfOperated(ah);
+        long userId = createMemberReturnId(ah, 1L)[0];
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        restTemplate.exchange(baseUrl + "/api/tenant/1/credit/adjust?userId=" + userId, HttpMethod.POST,
+                new HttpEntity<>(objectMapper.writeValueAsString(Map.of("direction", "CREDIT", "amount", "2", "reason", "预冻结测试")), ah), String.class);
+        long apiKeyId = jdbc.queryForObject("""
+                INSERT INTO api_key(tenant_id,user_id,name,key_prefix,lookup_hash,lookup_hash_version,enabled)
+                VALUES(1,?, '失败结算 Key', ?, ?, 1, TRUE) RETURNING id
+                """, Long.class, userId, "flx_" + System.nanoTime(), "e".repeat(64));
+        long modelId = jdbc.queryForObject("""
+                INSERT INTO tenant_model(tenant_id,model_code,display_name,enabled,publish_status)
+                VALUES(1,?, '失败结算模型', TRUE, 'ENABLED') RETURNING id
+                """, Long.class, "billing-failure-model-" + System.nanoTime());
+        String releasedId = "release-" + System.nanoTime();
+        billingReservationService.reserve(reservationRequest(releasedId, userId, apiKeyId, modelId, "1"));
+        reservationSettlementService.finalizeTerminal(terminalEvent(releasedId, userId, apiKeyId, modelId,
+                "UNKNOWN", "NOT_DISPATCHED"), null, "UNAVAILABLE");
+        assertThat(balance(jdbc, userId)).isEqualByComparingTo("2");
+        assertThat(frozen(jdbc, userId)).isEqualByComparingTo("0");
+        assertThat(jdbc.queryForObject("SELECT status FROM billing_reservation WHERE request_id=?", String.class, releasedId)).isEqualTo("RELEASED");
+
+        String pendingId = "pending-" + System.nanoTime();
+        billingReservationService.reserve(reservationRequest(pendingId, userId, apiKeyId, modelId, "1"));
+        reservationSettlementService.finalizeTerminal(terminalEvent(pendingId, userId, apiKeyId, modelId,
+                "UNKNOWN", "UNKNOWN"), null, "UNAVAILABLE");
+        assertThat(balance(jdbc, userId)).isEqualByComparingTo("1");
+        assertThat(frozen(jdbc, userId)).isEqualByComparingTo("1");
+        assertThat(jdbc.queryForObject("SELECT status FROM billing_reservation WHERE request_id=?", String.class, pendingId)).isEqualTo("RECONCILIATION_PENDING");
+    }
+
+    private GatewayReservationRequest reservationRequest(String requestId, long userId, long apiKeyId, long modelId, String amount) {
+        return new GatewayReservationRequest(requestId, 1L, userId, apiKeyId, modelId, "billing-test", "OPENAI",
+                "/v1/chat/completions", Instant.now().toString(), "CNY", 1, "1.00000000", "0.00000000", null, null,
+                1_000_000L, 0L, 0L, 0L, amount);
+    }
+    private RelayEventPayload terminalEvent(String requestId, long userId, long apiKeyId, long modelId) {
+        return terminalEvent(requestId, userId, apiKeyId, modelId, "REPORTED", "RESPONSE_STARTED");
+    }
+    private RelayEventPayload terminalEvent(String requestId, long userId, long apiKeyId, long modelId, String usageStatus, String dispatchState) {
+        Instant now = Instant.now();
+        return new RelayEventPayload("event-" + System.nanoTime(), "RELAY_REQUEST_FINISHED", requestId, now, 1L, userId,
+                apiKeyId, "OPENAI", "OPENAI", "/v1/chat/completions", modelId, "billing-test", 1L, 1L, 1L, false,
+                now, now, 1L, "SUCCESS", null, 200, usageStatus, usageStatus.equals("REPORTED") ? 500_000L : null, 0L,
+                null, null, "CNY", 1, new BigDecimal("1.00000000"), BigDecimal.ZERO, null, null,
+                usageStatus.equals("REPORTED") ? "CALCULATED" : "UNAVAILABLE", dispatchState);
+    }
+    private BigDecimal balance(JdbcTemplate jdbc, long userId) { return jdbc.queryForObject("SELECT balance FROM user_credit_account WHERE user_id=?", BigDecimal.class, userId); }
+    private BigDecimal frozen(JdbcTemplate jdbc, long userId) { return jdbc.queryForObject("SELECT frozen_balance FROM user_credit_account WHERE user_id=?", BigDecimal.class, userId); }
 
     // ---------- 余额不足 → 拒绝；不写流水 ----------
 

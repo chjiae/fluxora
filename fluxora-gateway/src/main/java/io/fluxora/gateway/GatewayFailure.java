@@ -2,7 +2,9 @@ package io.fluxora.gateway;
 
 /** 仅在 Gateway 内部流转的失败分类；HTTP 层只映射为安全中文文案。 */
 public final class GatewayFailure extends RuntimeException {
-    public enum Type { INVALID_REQUEST, INVALID_API_KEY, ACCOUNT_UNAVAILABLE, RUNTIME_UNAVAILABLE, MODEL_UNAVAILABLE, UNSUPPORTED }
+    public enum Type { INVALID_REQUEST, INVALID_API_KEY, ACCOUNT_UNAVAILABLE, RUNTIME_UNAVAILABLE, MODEL_UNAVAILABLE,
+        INSUFFICIENT_BALANCE, BILLING_SERVICE_UNAVAILABLE, BILLING_RESERVATION_CONFLICT,
+        BILLING_RESERVATION_UNSUPPORTED, UNSUPPORTED }
 
     private final Type type;
 
@@ -17,5 +19,9 @@ public final class GatewayFailure extends RuntimeException {
     public static GatewayFailure accountUnavailable() { return new GatewayFailure(Type.ACCOUNT_UNAVAILABLE); }
     public static GatewayFailure runtimeUnavailable() { return new GatewayFailure(Type.RUNTIME_UNAVAILABLE); }
     public static GatewayFailure modelUnavailable() { return new GatewayFailure(Type.MODEL_UNAVAILABLE); }
+    public static GatewayFailure insufficientBalance() { return new GatewayFailure(Type.INSUFFICIENT_BALANCE); }
+    public static GatewayFailure billingUnavailable() { return new GatewayFailure(Type.BILLING_SERVICE_UNAVAILABLE); }
+    public static GatewayFailure billingConflict() { return new GatewayFailure(Type.BILLING_RESERVATION_CONFLICT); }
+    public static GatewayFailure billingUnsupported() { return new GatewayFailure(Type.BILLING_RESERVATION_UNSUPPORTED); }
     public static GatewayFailure unsupported() { return new GatewayFailure(Type.UNSUPPORTED); }
 }

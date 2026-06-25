@@ -161,6 +161,8 @@ public class CreditService {
         txn.setDelta(amount);
         txn.setBalanceBefore(r.balanceBefore());
         txn.setBalanceAfter(r.balanceAfter());
+        txn.setFrozenBalanceBefore(r.frozenBalanceBefore());
+        txn.setFrozenBalanceAfter(r.frozenBalanceAfter());
         txn.setReason(req.reason().trim());
         txn.setOperatorId(currentUser.getId());
         txn.setOperatorName(currentUser.getDisplayName() != null
@@ -291,6 +293,8 @@ public class CreditService {
                 row.getId(), row.getTenantId(), row.getTenantCode(), row.getTenantName(),
                 row.getUserId(), row.getUsername(), row.getUserDisplayName(),
                 row.getDirection(), row.getDelta(), row.getBalanceBefore(), row.getBalanceAfter(),
+                row.getFrozenBalanceBefore(), row.getFrozenBalanceAfter(),
+                row.getTransactionType(), row.getReservationId(),
                 row.getReason(), row.getOperatorId(), row.getOperatorName(), row.getCreatedAt());
     }
 
