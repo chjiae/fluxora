@@ -6,6 +6,7 @@ import java.util.List;
  * 批量导入请求。
  * lines 为原始多行文本；服务端逐行清理首尾空白并保留原始大小写，不修改中间字符。
  * namePrefix 可空，用于为本次导入的凭证统一命名；priority/weight/remark 为统一默认值。
+ * authType 可空，为空时服务端按通道所属协议自动推断（ANTHROPIC→X_API_KEY，OPENAI→BEARER）。
  * plaintext 仅在请求处理期间存在，处理完成后不再持有。
  */
 public record CredentialImportRequest(
@@ -14,5 +15,6 @@ public record CredentialImportRequest(
         String namePrefix,
         Integer priority,
         Integer weight,
-        String remark) {
+        String remark,
+        String authType) {
 }

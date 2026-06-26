@@ -5,12 +5,12 @@ import { Pencil, RefreshCw, Trash2 } from 'lucide-vue-next'
 import StatusDot from '@/components/StatusDot.vue'
 import CredentialImportDrawer from '@/components/CredentialImportDrawer.vue'
 import {
-  createCredential, deleteCredential, replaceCredential, setCredentialEnabled,
+  createCredential, deleteCredential, deleteCredentialsBatch, replaceCredential, setCredentialEnabled,
   updateCredential, listCredentials, recoverCredentialRuntime,
   type CredentialAuthType, type ProviderCredentialSummary,
 } from '@/services/upstream'
 
-const props = defineProps<{ channelId: number; canManage: boolean }>()
+const props = defineProps<{ channelId: number; canManage: boolean; protocol?: 'OPENAI' | 'ANTHROPIC' }>()
 
 const message = useMessage()
 const dialog = useDialog()
@@ -31,12 +31,48 @@ const authTypeOptions = [
   { label: '无认证', value: 'NONE' },
 ]
 
+/** 根据通道协议推断默认认证方式：Anthropic→X_API_KEY，OpenAI→BEARER */
+function defaultAuthType(): CredentialAuthType {
+  return props.protocol === 'ANTHROPIC' ? 'X_API_KEY' : 'BEARER'
+}
+
 const replaceOpen = ref(false)
 const replaceTarget = ref<ProviderCredentialSummary | null>(null)
 const replacePlaintext = ref('')
 const replacing = ref(false)
 
 const importOpen = ref(false)
+
+/** 批量删除：选中行 keys 与提交状态。Naive UI row-key 使用凭证 id(number)，checkedRowKeys 必须同类型。 */
+const checkedRowKeys = ref<number[]>([])
+const batchDeleting = ref(false)
+
+function handleCheckedRowKeys(keys: Array<string | number>) {
+  checkedRowKeys.value = keys.map(Number)
+}
+
+function rowKey(row: ProviderCredentialSummary): number {
+  return row.id
+}
+
+async function confirmBatchDelete() {
+  if (!checkedRowKeys.value.length) return
+  dialog.warning({
+    title: '批量删除凭证',
+    content: `确定删除选中的 ${checkedRowKeys.value.length} 条凭证吗？删除后视为不存在，可重新导入。`,
+    positiveText: '删除', negativeText: '取消',
+    onPositiveClick: async () => {
+      batchDeleting.value = true
+      try {
+        const result = await deleteCredentialsBatch({ providerChannelId: props.channelId, ids: checkedRowKeys.value })
+        message.success(`已批量删除 ${result.deleted} 条凭证`)
+        checkedRowKeys.value = []
+        await load()
+      } catch (e: any) { message.error(e.userMessage || '批量删除失败') }
+      finally { batchDeleting.value = false }
+    },
+  })
+}
 
 async function load() {
   if (!props.channelId) return
@@ -51,7 +87,7 @@ async function load() {
 watch(() => props.channelId, () => { page.value = 1; keyword.value = ''; void load() }, { immediate: true })
 watch(() => form.value.authType, authType => { if (authType === 'NONE') form.value.plaintext = '' })
 
-function openCreate() { editing.value = null; form.value = { name: '', plaintext: '', priority: 100, weight: 100, remark: '', authType: 'BEARER' }; editorOpen.value = true }
+function openCreate() { editing.value = null; form.value = { name: '', plaintext: '', priority: 100, weight: 100, remark: '', authType: defaultAuthType() }; editorOpen.value = true }
 function openEdit(r: ProviderCredentialSummary) { editing.value = r; form.value = { name: r.name, plaintext: '', priority: r.priority, weight: r.weight, remark: r.remark || '', authType: r.authType }; editorOpen.value = true }
 function clearPlaintext() { form.value.plaintext = ''; replacePlaintext.value = '' }
 
@@ -111,6 +147,7 @@ function confirmDelete(r: ProviderCredentialSummary) {
 }
 
 const columns = computed(() => [
+  { type: 'selection' as const },
   { title: '名称', key: 'name', minWidth: 150 },
   { title: '脱敏值', key: 'maskedValue', width: 140 },
   { title: '认证', key: 'authType', width: 100 },
@@ -143,11 +180,12 @@ const columns = computed(() => [
     <div class="panel-toolbar">
       <n-input v-model:value="keyword" placeholder="搜索凭证名称" clearable size="small" style="max-width:240px" @keyup.enter="page = 1; load()" />
       <div style="flex:1" />
+      <n-button v-if="checkedRowKeys.length" size="small" type="error" :disabled="!canManage" :loading="batchDeleting" @click="confirmBatchDelete">批量删除 ({{ checkedRowKeys.length }})</n-button>
       <n-button size="small" :disabled="!canManage" @click="importOpen = true">批量导入</n-button>
       <n-button size="small" type="primary" :disabled="!canManage" @click="openCreate">新增凭证</n-button>
     </div>
 
-    <n-data-table :columns="columns" :data="rows" :loading="loading" :pagination="false" :bordered="false" :single-line="false" :scroll-x="1650" size="small" />
+    <n-data-table :columns="columns" :data="rows" :loading="loading" :pagination="false" :bordered="false" :single-line="false" :scroll-x="1700" size="small" :row-key="rowKey" :checked-row-keys="checkedRowKeys" @update:checked-row-keys="handleCheckedRowKeys" />
     <div class="panel-foot"><span>共 {{ total }} 条凭证</span><n-pagination v-model:page="page" :item-count="total" :page-size="20" size="small" @update:page="load" /></div>
 
     <n-modal v-model:show="editorOpen" preset="card" :title="editing ? '编辑凭证' : '新增凭证'" style="max-width:480px">
@@ -169,7 +207,7 @@ const columns = computed(() => [
       <template #footer><n-button @click="replaceOpen = false; clearPlaintext()">取消</n-button><n-button type="warning" :loading="replacing" @click="doReplace">确认替换</n-button></template>
     </n-modal>
 
-    <CredentialImportDrawer v-model:show="importOpen" :channel-id="channelId" @done="load" />
+    <CredentialImportDrawer v-model:show="importOpen" :channel-id="channelId" :protocol="protocol" @done="load" />
   </div>
 </template>
 

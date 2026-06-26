@@ -24,4 +24,10 @@ public class RuntimeOutboxService {
         }
         runtimeMapper.insertOutbox(tenantId, aggregateType, aggregateId, mutationType, impactHint);
     }
+
+    /** 服务启动时全量重建所有运行时快照，由 StartupSnapshotRebuilder 调用。 */
+    @Transactional
+    public void recordFullyRebuild() {
+        runtimeMapper.insertOutbox(null, "RUNTIME_NAMESPACE", null, "FULL_REBUILD", null);
+    }
 }

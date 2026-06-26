@@ -248,7 +248,7 @@ onMounted(async () => {
           <div class="detail-item"><span>超时</span><strong>{{ detailChannel.connectTimeoutMs }} / {{ detailChannel.readTimeoutMs }} ms</strong></div>
         </div>
         <n-divider style="margin:16px 0">通道凭证</n-divider>
-        <CredentialManagementPanel :channel-id="detailChannel.id" :can-manage="detailCanManage" />
+        <CredentialManagementPanel :channel-id="detailChannel.id" :can-manage="detailCanManage" :protocol="detailChannel.protocol" />
         <n-divider style="margin:16px 0">上游模型候选</n-divider>
         <!-- 候选仅是「上游模型 + 能力 + 启停」纯 CRUD；
              V10 后不再可映射到任何全局模型，候选用于「租户模型 → 候选映射」中被引用 -->

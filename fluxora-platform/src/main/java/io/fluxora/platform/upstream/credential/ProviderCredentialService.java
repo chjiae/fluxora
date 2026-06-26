@@ -112,7 +112,7 @@ public class ProviderCredentialService {
     public ProviderCredentialSummary create(CreateFields fields, UserAccount user, Authentication auth) {
         ProviderChannel channel = channelService.requireVisible(fields.providerChannelId(), user, auth);
         tenantGuard.assertWritable(channel.getTenantId());
-        String authType = normalizeAuthType(fields.authType());
+        String authType = normalizeAuthType(fields.authType(), resolveDefaultAuthType(channel.getProviderBaseUrlId()));
         String plaintext = "NONE".equals(authType) ? null : requirePlaintext(fields.plaintext());
 
         ProviderCredential credential = buildCredential(channel.getTenantId(),
@@ -214,7 +214,7 @@ public class ProviderCredentialService {
         credential.setWeight(fields.weight() == null ? credential.getWeight() : fields.weight());
         credential.setRemark(blankToNull(fields.remark()));
         String previousAuthType = credential.getAuthType();
-        String requestedAuthType = fields.authType() == null ? previousAuthType : normalizeAuthType(fields.authType());
+        String requestedAuthType = fields.authType() == null ? previousAuthType : normalizeAuthType(fields.authType(), DEFAULT_AUTH_TYPE);
         if (!requestedAuthType.equals(credential.getAuthType())
                 && ("NONE".equals(requestedAuthType) || "NONE".equals(credential.getAuthType()))) {
             throw new ProviderException(BusinessErrorCode.VALIDATION_ERROR, "无认证凭证请重新创建");
@@ -274,6 +274,27 @@ public class ProviderCredentialService {
         log.info("上游凭证已软删除：credentialId={}", id);
     }
 
+    /**
+     * 批量软删除凭证。
+     * 限定同一通道作用域，一次通道可见性校验替代逐条加载；
+     * 使用单条 SQL 批量 UPDATE，禁止逐条调用 softDelete。
+     * 返回实际删除的行数（跳过不存在的 ID 或已删除行，不视为错误）。
+     */
+    @Transactional
+    public int deleteBatch(Long providerChannelId, List<Long> ids, UserAccount user, Authentication auth) {
+        ProviderChannel channel = channelService.requireVisible(providerChannelId, user, auth);
+        tenantGuard.assertWritable(channel.getTenantId());
+        if (ids == null || ids.isEmpty()) {
+            throw new ProviderException(BusinessErrorCode.VALIDATION_ERROR, "请选择要删除的凭证");
+        }
+        int deleted = mapper.softDeleteBatch(channel.getTenantId(), ids);
+        // 记录一条通道级 Outbox，触发 Runtime 快照重建，避免逐条 N+1 写入。
+        runtimeOutboxService.record(channel.getTenantId(), "PROVIDER_CHANNEL", providerChannelId,
+                "CREDENTIAL_POOL_CHANGED", null);
+        log.info("批量软删除上游凭证：channelId={}, requested={}, deleted={}", providerChannelId, ids.size(), deleted);
+        return deleted;
+    }
+
     // ==================== 批量导入 ====================
 
     /**
@@ -331,6 +352,9 @@ public class ProviderCredentialService {
                 ? Set.of()
                 : new HashSet<>(mapper.findActiveFingerprints(channel.getTenantId(), channel.getId(), uniqueCandidates.keySet(), null));
 
+        // 批量导入的认证方式：优先使用请求中指定值，未指定时按通道所属协议推断。
+        String authType = normalizeAuthType(req.authType(), resolveDefaultAuthType(channel.getProviderBaseUrlId()));
+
         List<ProviderCredential> toInsert = new ArrayList<>();
         for (Candidate c : uniqueCandidates.values()) {
             if (existing.contains(c.fingerprint)) {
@@ -339,7 +363,7 @@ public class ProviderCredentialService {
                 continue;
             }
             ProviderCredential credential = buildCredential(channel.getTenantId(),
-                    resolveName(req.namePrefix(), c.plaintext), priority, weight, remark, DEFAULT_AUTH_TYPE);
+                    resolveName(req.namePrefix(), c.plaintext), priority, weight, remark, authType);
             EncryptedCredential encrypted = cryptoService.encrypt(c.plaintext);
             applySecret(credential, c.maskedValue, c.fingerprint, encrypted);
             toInsert.add(credential);
@@ -511,8 +535,23 @@ public class ProviderCredentialService {
         return s == null || s.isBlank() ? null : s.trim();
     }
 
-    private String normalizeAuthType(String authType) {
-        String normalized = authType == null || authType.isBlank() ? DEFAULT_AUTH_TYPE : authType.trim().toUpperCase();
+    /**
+     * 根据上游协议推断默认认证方式。
+     * Anthropic 系上游默认使用 x-api-key 头，OpenAI 系默认使用 Bearer Token；
+     * 未知协议回退为 Bearer Token，避免历史数据在新增协议时失效。
+     */
+    private String resolveDefaultAuthType(Long providerBaseUrlId) {
+        ProviderBaseUrl baseUrl = providerMapper.findBaseUrlById(providerBaseUrlId)
+                .orElseThrow(() -> new ProviderException(BusinessErrorCode.RESOURCE_NOT_FOUND, "接入地址不存在或不可访问"));
+        return switch (baseUrl.getProtocol().toUpperCase()) {
+            case "ANTHROPIC" -> "X_API_KEY";
+            case "OPENAI" -> "BEARER";
+            default -> DEFAULT_AUTH_TYPE;
+        };
+    }
+
+    private String normalizeAuthType(String authType, String defaultAuthType) {
+        String normalized = authType == null || authType.isBlank() ? defaultAuthType : authType.trim().toUpperCase();
         if (!AUTH_TYPES.contains(normalized)) {
             throw new ProviderException(BusinessErrorCode.VALIDATION_ERROR, "凭证认证方式不合法");
         }

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import io.fluxora.common.response.ApiResponse;
 import io.fluxora.platform.identity.entity.UserAccount;
+import io.fluxora.platform.upstream.credential.dto.BatchDeleteRequest;
 import io.fluxora.platform.upstream.credential.dto.CredentialImportRequest;
 import io.fluxora.platform.upstream.credential.dto.CredentialImportResult;
 import io.fluxora.platform.upstream.credential.dto.CreateCredentialRequest;
@@ -25,6 +26,8 @@ import io.fluxora.platform.upstream.credential.dto.ReplaceCredentialRequest;
 import io.fluxora.platform.upstream.credential.dto.UpdateCredentialRequest;
 import io.fluxora.platform.upstream.dto.UpstreamPage;
 import io.fluxora.platform.runtime.availability.UpstreamRuntimeFailureService;
+
+import java.util.Map;
 
 /**
  * 上游凭证 REST 接口。
@@ -164,6 +167,16 @@ public class ProviderCredentialController {
             @PathVariable Long id, @AuthenticationPrincipal UserAccount user, Authentication auth) {
         service.delete(id, user, auth);
         return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    /** 批量软删除凭证：限定同一通道作用域，使用一条 SQL 批量 UPDATE，返回实际删除行数。 */
+    @DeleteMapping("/batch")
+    @PreAuthorize("hasAuthority('PERM_UPSTREAM_DELETE')")
+    public ResponseEntity<ApiResponse<Map<String, Integer>>> deleteBatch(
+            @RequestBody BatchDeleteRequest req,
+            @AuthenticationPrincipal UserAccount user, Authentication auth) {
+        int deleted = service.deleteBatch(req.providerChannelId(), req.ids(), user, auth);
+        return ResponseEntity.ok(ApiResponse.success(Map.of("deleted", deleted)));
     }
 
     @PostMapping("/import")

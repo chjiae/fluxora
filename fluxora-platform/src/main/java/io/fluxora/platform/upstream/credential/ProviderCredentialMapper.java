@@ -71,6 +71,13 @@ public interface ProviderCredentialMapper {
     void setEnabled(@Param("id") Long id, @Param("enabled") boolean enabled);
     void softDelete(@Param("id") Long id);
 
+    /**
+     * 批量软删除凭证。
+     * 使用一条 UPDATE ... WHERE id IN (...) 完成，禁止循环调用 softDelete。
+     * 限定租户与未删除状态，返回实际影响行数。
+     */
+    int softDeleteBatch(@Param("tenantId") Long tenantId, @Param("ids") List<Long> ids);
+
     /** 指定通道下凭证聚合指标。 */
     ProviderCredentialStats stats(@Param("channelId") Long channelId);
 }

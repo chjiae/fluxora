@@ -54,7 +54,7 @@ export interface BaseUrlPayload { providerId: number; protocol: Protocol; baseUr
 export interface ChannelPayload { tenantId?: number | null; providerBaseUrlId: number; name: string; enabled?: boolean; priority?: number; weight?: number; connectTimeoutMs?: number; readTimeoutMs?: number; remark?: string }
 export interface CredentialPayload { providerChannelId: number; plaintext?: string; name?: string; priority?: number; weight?: number; remark?: string; authType?: CredentialAuthType }
 export interface CredentialMetadataPayload { name: string; priority: number; weight: number; remark?: string; authType?: CredentialAuthType }
-export interface CredentialImportPayload { providerChannelId: number; lines: string[]; namePrefix?: string; priority?: number; weight?: number; remark?: string }
+export interface CredentialImportPayload { providerChannelId: number; lines: string[]; namePrefix?: string; priority?: number; weight?: number; remark?: string; authType?: CredentialAuthType }
 
 export type CredentialImportItemResult = 'IMPORTED' | 'SKIPPED_BATCH_DUPLICATE' | 'SKIPPED_EXISTING' | 'INVALID' | 'OVER_LIMIT' | 'SKIPPED_CONCURRENT'
 export interface CredentialImportItem { lineNumber: number; maskedValue: string | null; result: CredentialImportItemResult; reason: string }
@@ -97,4 +97,7 @@ export async function replaceCredential(id: number, plaintext: string): Promise<
 export async function setCredentialEnabled(id: number, enabled: boolean): Promise<void> { await http.put(`/api/provider-credentials/${id}/${enabled ? 'enable' : 'disable'}`, {}) }
 export async function recoverCredentialRuntime(id: number): Promise<void> { await http.put(`/api/provider-credentials/${id}/runtime/recover`, {}) }
 export async function deleteCredential(id: number): Promise<void> { await http.delete(`/api/provider-credentials/${id}`) }
+export interface BatchDeletePayload { providerChannelId: number; ids: number[] }
+export interface BatchDeleteResult { deleted: number }
+export async function deleteCredentialsBatch(payload: BatchDeletePayload): Promise<BatchDeleteResult> { return (await http.delete('/api/provider-credentials/batch', { data: payload })).data.data }
 export async function importCredentials(payload: CredentialImportPayload): Promise<CredentialImportResult> { return (await http.post('/api/provider-credentials/import', payload)).data.data }

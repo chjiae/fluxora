@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
-import { importCredentials, type CredentialImportResult, type CredentialImportItemResult } from '@/services/upstream'
+import { importCredentials, type CredentialImportResult, type CredentialImportItemResult, type CredentialAuthType } from '@/services/upstream'
 
-const props = defineProps<{ show: boolean; channelId: number }>()
+const props = defineProps<{ show: boolean; channelId: number; protocol?: 'OPENAI' | 'ANTHROPIC' }>()
 const emit = defineEmits<{ 'update:show': [boolean]; done: [] }>()
 
 const message = useMessage()
@@ -12,6 +12,7 @@ const namePrefix = ref('')
 const priority = ref(100)
 const weight = ref(100)
 const remark = ref('')
+const authType = ref<CredentialAuthType>(props.protocol === 'ANTHROPIC' ? 'X_API_KEY' : 'BEARER')
 const submitting = ref(false)
 const result = ref<CredentialImportResult | null>(null)
 
@@ -34,6 +35,7 @@ function clearPlaintext() {
   priority.value = 100
   weight.value = 100
   remark.value = ''
+  authType.value = props.protocol === 'ANTHROPIC' ? 'X_API_KEY' : 'BEARER'
 }
 
 function close() { emit('update:show', false) }
@@ -69,6 +71,7 @@ async function submit() {
       namePrefix: namePrefix.value.trim() || undefined,
       priority: priority.value, weight: weight.value,
       remark: remark.value.trim() || undefined,
+      authType: authType.value,
     })
     // 提交完成后立即清空明文输入；结果只保留脱敏明细
     text.value = ''
@@ -105,6 +108,7 @@ watch(() => props.show, v => { if (!v) { clearPlaintext(); result.value = null }
           <n-form-item label="从文件导入">
             <input type="file" accept=".txt,.csv,text/plain,text/csv" @change="onFile" />
           </n-form-item>
+          <n-form-item label="认证方式"><n-select v-model:value="authType" :options="[{ label: 'Bearer Token', value: 'BEARER' }, { label: 'x-api-key', value: 'X_API_KEY' }, { label: '无认证', value: 'NONE' }]" /></n-form-item>
           <n-form-item label="统一名称前缀（可选）"><n-input v-model:value="namePrefix" placeholder="留空则自动生成脱敏名称" /></n-form-item>
           <div style="display: flex; gap: 12px">
             <n-form-item label="优先级" style="flex: 1"><n-input-number v-model:value="priority" :min="0" :max="100000" /></n-form-item>
