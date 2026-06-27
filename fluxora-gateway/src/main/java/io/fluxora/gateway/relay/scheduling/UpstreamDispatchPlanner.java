@@ -35,8 +35,18 @@ public final class UpstreamDispatchPlanner {
                                                String requestId, String attemptId) {
         List<DispatchCandidate> candidates = candidates(routeSnapshot, exclusions == null ? DispatchExclusions.none() : exclusions);
         if (candidates.isEmpty()) return Future.failedFuture(GatewayFailure.modelUnavailable());
-        int tier = candidates.stream().map(DispatchCandidate::priorityTier).min(Comparator.naturalOrder()).orElse(Integer.MAX_VALUE);
-        List<DispatchCandidate> tierCandidates = candidates.stream().filter(c -> c.priorityTier() == tier).toList();
+        // 选取最高可用优先级层（数值越小优先级越高），流量优先落在更高优先级的 Tier
+        int highestPriorityTier = Integer.MAX_VALUE;
+        for (DispatchCandidate candidate : candidates) {
+            highestPriorityTier = Math.min(highestPriorityTier, candidate.priorityTier());
+        }
+        // 只保留当前最高优先级 Tier 的候选目标，低优先级 Tier 仅在当前层无可用候选时才会在下一轮被选中
+        List<DispatchCandidate> tierCandidates = new ArrayList<>();
+        for (DispatchCandidate candidate : candidates) {
+            if (candidate.priorityTier() == highestPriorityTier) {
+                tierCandidates.add(candidate);
+            }
+        }
         DispatchCandidate selected = selectCredential(selectChannel(tierCandidates), exclusions == null ? DispatchExclusions.none() : exclusions);
         return leaseManager.acquire(selected, requestId, attemptId).map(lease -> new DispatchPlan(
                 new RouteSelection(selected.routeTargetId(), selected.providerChannelId(), selected.providerChannelModelId(),
@@ -52,10 +62,23 @@ public final class UpstreamDispatchPlanner {
         for (DispatchCandidate candidate : candidates) byChannel.computeIfAbsent(candidate.providerChannelId(), ignored -> new ArrayList<>()).add(candidate);
         List<Long> channelIds = new ArrayList<>(byChannel.keySet());
         channelIds.sort(Comparator.naturalOrder());
-        long minActive = channelIds.stream()
-                .mapToLong(id -> leaseManager.activeCount("channel", Long.toString(id))).min().orElse(0L);
-        List<Long> leastActive = channelIds.stream()
-                .filter(id -> leaseManager.activeCount("channel", Long.toString(id)) == minActive).toList();
+        // 计算各 Channel 当前活跃连接数的最小值，用于筛选"最空闲"的 Channel
+        long minActive = 0L;
+        boolean first = true;
+        for (Long channelId : channelIds) {
+            long active = leaseManager.activeCount("channel", Long.toString(channelId));
+            if (first || active < minActive) {
+                minActive = active;
+                first = false;
+            }
+        }
+        // 收集所有活跃数等于最小值的 Channel，使流量在并列最空闲的 Channel 间轮询
+        List<Long> leastActive = new ArrayList<>();
+        for (Long channelId : channelIds) {
+            if (leaseManager.activeCount("channel", Long.toString(channelId)) == minActive) {
+                leastActive.add(channelId);
+            }
+        }
         long selectedChannel = leastActive.get(nextCursor("channel:" + candidates.getFirst().priorityTier(), leastActive.size()));
         return byChannel.get(selectedChannel).get(nextCursor("target:" + selectedChannel, byChannel.get(selectedChannel).size()));
     }
@@ -70,10 +93,23 @@ public final class UpstreamDispatchPlanner {
             if (exclusions.accepts(candidate)) credentials.add(candidate);
         }
         if (credentials.isEmpty()) throw GatewayFailure.modelUnavailable();
-        long minActive = credentials.stream()
-                .mapToLong(c -> leaseManager.activeCount("credential", Long.toString(c.providerCredentialId()))).min().orElse(0L);
-        List<DispatchCandidate> leastActive = credentials.stream()
-                .filter(c -> leaseManager.activeCount("credential", Long.toString(c.providerCredentialId())) == minActive).toList();
+        // 计算各凭证当前活跃连接数的最小值，用于筛选"最空闲"的凭证
+        long minActive = 0L;
+        boolean first = true;
+        for (DispatchCandidate credential : credentials) {
+            long active = leaseManager.activeCount("credential", Long.toString(credential.providerCredentialId()));
+            if (first || active < minActive) {
+                minActive = active;
+                first = false;
+            }
+        }
+        // 收集所有活跃数等于最小值的凭证，使流量在并列最空闲的凭证间轮询
+        List<DispatchCandidate> leastActive = new ArrayList<>();
+        for (DispatchCandidate credential : credentials) {
+            if (leaseManager.activeCount("credential", Long.toString(credential.providerCredentialId())) == minActive) {
+                leastActive.add(credential);
+            }
+        }
         return leastActive.get(nextCursor("credential:" + selectedTarget.routeTargetId(), leastActive.size()));
     }
 
