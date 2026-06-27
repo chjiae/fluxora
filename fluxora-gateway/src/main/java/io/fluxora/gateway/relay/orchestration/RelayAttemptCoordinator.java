@@ -65,11 +65,18 @@ public final class RelayAttemptCoordinator {
         Future<DispatchPlan> planned = plan == null
                 ? planner.planAndAcquire(context.routeSnapshot(), context.exclusions(), context.requestId(), context.nextAttemptId())
                 : Future.succeededFuture(plan);
-        planned.compose(currentPlan -> {
-            AttemptStateMachine stateMachine = new AttemptStateMachine();
-            return executor.execute(currentPlan, stateMachine)
-                    .eventually(() -> planner.release(currentPlan.lease()));
-        }).onSuccess(promise::complete).onFailure(error -> handleFailure(context, executor, promise, error));
+        planned.compose(currentPlan -> executeSingleAttempt(currentPlan, executor))
+                .onSuccess(promise::complete)
+                .onFailure(error -> handleFailure(context, executor, promise, error));
+    }
+
+    /** 执行单次 Attempt：独立状态机驱动请求写入、上游响应与提交屏障判定，并在结束后释放该次租约。 */
+    private Future<Void> executeSingleAttempt(DispatchPlan currentPlan, AttemptExecutor executor) {
+        // 每次执行独立的状态机：单次 Attempt 的请求写入、上游响应、提交屏障判定互不串扰
+        AttemptStateMachine stateMachine = new AttemptStateMachine();
+        return executor.execute(currentPlan, stateMachine)
+                // 无论本次执行成功或失败，都必须释放该 Attempt 持有的调度租约，避免租约泄漏阻塞后续调度
+                .eventually(() -> planner.release(currentPlan.lease()));
     }
 
     private void handleFailure(RelayAttemptContext context, AttemptExecutor executor, Promise<Void> promise, Throwable error) {
