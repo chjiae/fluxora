@@ -4,7 +4,6 @@ import io.fluxora.common.runtime.RouteExecutionEligibility;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -21,11 +20,23 @@ public final class RouteTargetSelector {
         if (eligible.isEmpty()) {
             return null;
         }
-        int priority = eligible.stream().map(target -> target.getInteger("priority", Integer.MAX_VALUE))
-                .min(Comparator.naturalOrder()).orElse(Integer.MAX_VALUE);
-        List<JsonObject> group = eligible.stream()
-                .filter(target -> target.getInteger("priority", Integer.MAX_VALUE) == priority).toList();
-        long totalWeight = group.stream().mapToLong(target -> target.getInteger("weight", 0)).sum();
+        // 选取最高可用优先级（数值越小优先级越高），仅在该优先级组内进行加权随机
+        int priority = Integer.MAX_VALUE;
+        for (JsonObject target : eligible) {
+            priority = Math.min(priority, target.getInteger("priority", Integer.MAX_VALUE));
+        }
+        // 收集当前最高优先级组内的目标，低优先级目标仅在当前组无可用目标时由外层空判定处理
+        List<JsonObject> group = new ArrayList<>();
+        for (JsonObject target : eligible) {
+            if (target.getInteger("priority", Integer.MAX_VALUE) == priority) {
+                group.add(target);
+            }
+        }
+        // 累加该组内全部目标的权重，作为加权随机的总区间
+        long totalWeight = 0L;
+        for (JsonObject target : group) {
+            totalWeight += target.getInteger("weight", 0);
+        }
         if (totalWeight <= 0) return null;
         long ticket = ThreadLocalRandom.current().nextLong(totalWeight);
         for (JsonObject target : group) {
