@@ -45,10 +45,13 @@ public final class RelayEventPublisher {
     }
 
     private void publishFields(Map<String, String> fields, RelayObservationEvent observation) {
-        client.append(fields).onSuccess(ignored -> {
+        client.append(fields)
+                // 投递成功：计入生产计数；请求日志类事件需要进一步记录用量与计价观测指标
+                .onSuccess(ignored -> {
                     metrics.relayEventsProduced.incrementAndGet();
                     if (observation != null) recordObservationMetrics(observation);
                 })
+                // 投递失败：绝不向调用者抛出 Redis 异常，仅计入失败计数并进入内存有界重试队列
                 .onFailure(ignored -> {
                     metrics.relayEventsPublishFailed.incrementAndGet();
                     enqueue(fields, observation);
@@ -65,20 +68,24 @@ public final class RelayEventPublisher {
             return;
         }
         metrics.relayEventsRetry.incrementAndGet();
-        client.append(next.fields()).onSuccess(ignored -> {
-            pending.removeFirstOccurrence(next);
-            metrics.relayEventsProduced.incrementAndGet();
-            if (next.observation() != null) recordObservationMetrics(next.observation());
-            refreshPendingMetric();
-        }).onFailure(ignored -> {
-            metrics.relayEventsPublishFailed.incrementAndGet();
-            next.incrementAttempts();
-            if (next.attempts() >= maxAttempts) {
-                pending.removeFirstOccurrence(next);
-                metrics.relayEventsDropped.incrementAndGet();
-            }
-            refreshPendingMetric();
-        });
+        client.append(next.fields())
+                // 重试成功：从队列移除并计入生产计数，请求日志类事件补充观测指标
+                .onSuccess(ignored -> {
+                    pending.removeFirstOccurrence(next);
+                    metrics.relayEventsProduced.incrementAndGet();
+                    if (next.observation() != null) recordObservationMetrics(next.observation());
+                    refreshPendingMetric();
+                })
+                // 重试失败：累加重试次数，达到上限则丢弃并计入丢弃计数，避免单条毒消息长期占用队列
+                .onFailure(ignored -> {
+                    metrics.relayEventsPublishFailed.incrementAndGet();
+                    next.incrementAttempts();
+                    if (next.attempts() >= maxAttempts) {
+                        pending.removeFirstOccurrence(next);
+                        metrics.relayEventsDropped.incrementAndGet();
+                    }
+                    refreshPendingMetric();
+                });
     }
 
     int pendingCount() {
