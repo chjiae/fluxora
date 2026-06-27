@@ -26,6 +26,12 @@ public class RuntimeImpactResolver {
         if ("RUNTIME_NAMESPACE".equals(aggregateType) || "FULL_REBUILD".equals(event.mutationType())) {
             return allScopes();
         }
+        // UPSTREAM_RUNTIME_STATE 基于 tenantId 解析路由 Scope，不依赖 aggregateId；
+        // 恢复与通用故障回退均以 null aggregateId 写入，必须在其前判定，否则不会触发快照重建和网关失效通知。
+        if ("UPSTREAM_RUNTIME_STATE".equals(aggregateType)) {
+            return event.tenantId() == null
+                    ? Set.of() : routeScopes(runtimeMapper.findRouteScopesByTenant(event.tenantId()));
+        }
         if (aggregateId == null) {
             return Set.of();
         }
@@ -50,8 +56,6 @@ public class RuntimeImpactResolver {
             case "PROVIDER_CREDENTIAL" -> credentialScopes(event, aggregateId);
             case "PROVIDER" -> routeScopes(runtimeMapper.findRouteScopesByProvider(aggregateId));
             case "PROVIDER_BASE_URL" -> routeScopes(runtimeMapper.findRouteScopesByBaseUrl(aggregateId));
-            case "UPSTREAM_RUNTIME_STATE" -> event.tenantId() == null
-                    ? Set.of() : routeScopes(runtimeMapper.findRouteScopesByTenant(event.tenantId()));
             default -> Set.of();
         };
         return withCatalogScopes(event, scopes);
