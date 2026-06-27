@@ -8,7 +8,6 @@ import io.fluxora.gateway.GatewayRuntimeConfig;
 import io.vertx.core.Future;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Stream;
 
 /**
  * Gateway L1：四类快照独立硬 TTL，未命中使用 Caffeine AsyncCache 合并 in-flight Redis 读取。
@@ -104,19 +103,45 @@ public final class RuntimeL1Caches {
      * 下一次过期读取仍会失败关闭，避免 Redis 故障时把所有热请求同步打到 Redis。
      */
     public void verifyHotManifestVersions(int limit) {
-        Stream.concat(Stream.concat(apiKeys.synchronous().asMap().values().stream(), users.synchronous().asMap().values().stream()),
-                        Stream.concat(tenants.synchronous().asMap().values().stream(),
-                                Stream.concat(routes.synchronous().asMap().values().stream(),
-                                        Stream.concat(catalogs.synchronous().asMap().values().stream(), credentials.synchronous().asMap().values().stream()))))
-                .limit(limit)
-                .forEach(snapshot -> {
-                    metrics.redisSnapshotRead.incrementAndGet();
-                    source.manifestVersion(snapshot.scopeType(), snapshot.scopeKey()).onSuccess(version -> {
+        // 按六类缓存的声明顺序逐个核对热点快照，剩余配额在缓存间传递；
+        // 配额耗尽立即停止，保持与原 Stream.concat(...).limit(limit) 一致的惰性截断语义，
+        // 避免一次性物化全部缓存条目造成内存与 CPU 浪费。
+        int remaining = limit;
+        remaining = checkCacheManifests(apiKeys, remaining);
+        if (remaining <= 0) return;
+        remaining = checkCacheManifests(users, remaining);
+        if (remaining <= 0) return;
+        remaining = checkCacheManifests(tenants, remaining);
+        if (remaining <= 0) return;
+        remaining = checkCacheManifests(routes, remaining);
+        if (remaining <= 0) return;
+        remaining = checkCacheManifests(catalogs, remaining);
+        if (remaining <= 0) return;
+        checkCacheManifests(credentials, remaining);
+    }
+
+    /**
+     * 核对单个缓存内热点快照的 Manifest 版本，返回本次调用后剩余配额。
+     * 配额耗尽立即停止遍历，与原 limit 截断语义一致；该方法非阻塞，仅发起异步版本核对。
+     */
+    private int checkCacheManifests(AsyncCache<String, RuntimeSnapshot> cache, int budget) {
+        if (budget <= 0) return 0;
+        int remaining = budget;
+        for (RuntimeSnapshot snapshot : cache.synchronous().asMap().values()) {
+            if (remaining <= 0) break;
+            remaining--;
+            metrics.redisSnapshotRead.incrementAndGet();
+            source.manifestVersion(snapshot.scopeType(), snapshot.scopeKey())
+                    // Redis 返回的 Manifest 版本高于本地缓存版本时，说明运行时已发布新版本，立即失效本地条目
+                    .onSuccess(version -> {
                         if (version > snapshot.runtimeVersion()) {
                             invalidate(snapshot.scopeType(), snapshot.scopeKey());
                         }
-                    }).onFailure(ignored -> metrics.redisReadFailure.incrementAndGet());
-                });
+                    })
+                    // Redis 故障时保留未过硬 TTL 的本地值，下次过期读取仍会失败关闭，避免把所有热请求同步打到 Redis
+                    .onFailure(ignored -> metrics.redisReadFailure.incrementAndGet());
+        }
+        return remaining;
     }
 
     private Future<RuntimeSnapshot> load(AsyncCache<String, RuntimeSnapshot> cache, RuntimeScopeType type,
