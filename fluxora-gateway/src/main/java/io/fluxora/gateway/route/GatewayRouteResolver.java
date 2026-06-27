@@ -21,28 +21,40 @@ public final class GatewayRouteResolver {
     public Future<RouteSelection> resolve(long tenantId, String inboundProtocol, String tenantModelCode,
                                            boolean streamingRequested) {
         return resolveRouteSnapshot(tenantId, inboundProtocol, tenantModelCode, streamingRequested)
-                .map(route -> {
-                    RouteSelection selection = selector.select(route.getJsonArray("targets"), inboundProtocol);
-                    if (selection == null) throw GatewayFailure.modelUnavailable();
-                    return selection.withRouteSnapshot(route);
-                });
+                .map(route -> selectFromRoute(route, inboundProtocol));
+    }
+
+    /** 在已校验的路由执行包内选择目标，无可用目标时抛模型不可用，统一进入失败处理。 */
+    private RouteSelection selectFromRoute(JsonObject route, String inboundProtocol) {
+        RouteSelection selection = selector.select(route.getJsonArray("targets"), inboundProtocol);
+        // 路由执行包可用但选择器未能挑出任何目标，说明全部目标不可调用，按模型不可用处理
+        if (selection == null) throw GatewayFailure.modelUnavailable();
+        return selection.withRouteSnapshot(route);
     }
 
     /** 返回已验证的路由执行包，供 Attempt 调度器在同一请求内多次选择不同目标/凭证。 */
     public Future<JsonObject> resolveRouteSnapshot(long tenantId, String inboundProtocol, String tenantModelCode,
                                                    boolean streamingRequested) {
+        // 模型码缺失或超长直接判定模型不可用，避免构造无效 Scope Key 命中缓存
         if (tenantModelCode == null || tenantModelCode.isBlank() || tenantModelCode.length() > 128) {
             return Future.failedFuture(GatewayFailure.modelUnavailable());
         }
         String scopeKey = RouteScopeKey.of(tenantId, inboundProtocol, tenantModelCode);
-        return caches.route(scopeKey).map(snapshot -> {
-            JsonObject route = snapshot.payload();
-            if (!modelUsable(route, tenantId, inboundProtocol, tenantModelCode, streamingRequested)) {
-                throw GatewayFailure.modelUnavailable();
-            }
-            return route;
-        }).recover(error -> Future.failedFuture(error instanceof GatewayFailure
-                ? error : GatewayFailure.runtimeUnavailable()));
+        return caches.route(scopeKey)
+                .map(snapshot -> validateRouteSnapshot(snapshot.payload(), tenantId, inboundProtocol,
+                        tenantModelCode, streamingRequested))
+                // 仅 GatewayFailure 是业务可对外语义，其余异常统一收敛为运行时不可用，避免泄露内部细节
+                .recover(error -> Future.failedFuture(error instanceof GatewayFailure
+                        ? error : GatewayFailure.runtimeUnavailable()));
+    }
+
+    /** 校验路由执行包：租户、协议、模型码、启用状态、价格有效期与流式能力任一不满足即判定模型不可用。 */
+    private JsonObject validateRouteSnapshot(JsonObject route, long tenantId, String inboundProtocol,
+                                             String tenantModelCode, boolean streamingRequested) {
+        if (!modelUsable(route, tenantId, inboundProtocol, tenantModelCode, streamingRequested)) {
+            throw GatewayFailure.modelUnavailable();
+        }
+        return route;
     }
 
     private boolean modelUsable(JsonObject route, long tenantId, String protocol, String modelCode,
