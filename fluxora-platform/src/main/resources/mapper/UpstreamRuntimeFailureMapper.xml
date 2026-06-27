@@ -67,11 +67,11 @@
         ELSE s.scope_type || ' / ' || s.scope_key
       END AS resourceLabel
     FROM upstream_runtime_resource_state s
-    LEFT JOIN provider_channel ch ON ch.id = CAST(s.scope_key AS BIGINT) AND s.scope_type = 'PROVIDER_CHANNEL'
-    LEFT JOIN provider_channel_model candidate ON candidate.id = CAST(s.scope_key AS BIGINT) AND s.scope_type = 'PROVIDER_CHANNEL_MODEL'
-    LEFT JOIN provider_channel_credential binding ON binding.id = CAST(s.scope_key AS BIGINT) AND s.scope_type = 'PROVIDER_CHANNEL_CREDENTIAL'
-    LEFT JOIN provider_channel ch2 ON ch2.id = binding.provider_channel_id AND s.scope_type = 'PROVIDER_CHANNEL_CREDENTIAL'
-    LEFT JOIN provider_credential cred ON cred.id = CAST(s.scope_key AS BIGINT) AND s.scope_type = 'CREDENTIAL'
+    LEFT JOIN provider_channel ch ON s.scope_type = 'PROVIDER_CHANNEL' AND ch.id = CASE WHEN s.scope_key ~ '^\d+$' THEN CAST(s.scope_key AS BIGINT) END
+    LEFT JOIN provider_channel_model candidate ON s.scope_type = 'PROVIDER_CHANNEL_MODEL' AND candidate.id = CASE WHEN s.scope_key ~ '^\d+$' THEN CAST(s.scope_key AS BIGINT) END
+    LEFT JOIN provider_channel_credential binding ON s.scope_type = 'PROVIDER_CHANNEL_CREDENTIAL' AND binding.id = CASE WHEN s.scope_key ~ '^\d+$' THEN CAST(s.scope_key AS BIGINT) END
+    LEFT JOIN provider_channel ch2 ON s.scope_type = 'PROVIDER_CHANNEL_CREDENTIAL' AND ch2.id = binding.provider_channel_id
+    LEFT JOIN provider_credential cred ON s.scope_type = 'CREDENTIAL' AND cred.id = CASE WHEN s.scope_key ~ '^\d+$' THEN CAST(s.scope_key AS BIGINT) END
     WHERE s.runtime_state != 'AVAILABLE'
       AND (#{tenantId, jdbcType=BIGINT} IS NULL OR s.tenant_id = #{tenantId, jdbcType=BIGINT})
     ORDER BY s.cooldown_until ASC NULLS LAST, s.updated_at DESC
