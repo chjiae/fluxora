@@ -23,7 +23,7 @@ public final class AnthropicFailureClassifier implements FailureClassifier {
             return new FailureClassification(FailureKind.AUTH_PERMISSION_DENIED, FailureScope.PROVIDER_CHANNEL_CREDENTIAL,
                     ExecutionCertainty.PRE_EXECUTION_REJECTED, CooldownAdvice.none());
         }
-        if ("billing_error".equals(type) || "insufficient_quota".equals(type)) {
+        if ("billing_error".equals(type) || "insufficient_quota".equals(type) || "budget_exceeded".equals(type)) {
             return new FailureClassification(FailureKind.UPSTREAM_BILLING_EXHAUSTED, FailureScope.BILLING_ACCOUNT_GROUP,
                     ExecutionCertainty.PRE_EXECUTION_REJECTED, CooldownAdvice.none());
         }

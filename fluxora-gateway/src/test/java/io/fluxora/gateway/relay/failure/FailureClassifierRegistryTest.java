@@ -38,6 +38,22 @@ class FailureClassifierRegistryTest {
     }
 
     @Test
+    void openAiBudgetExceededIsAlsoBillingExhausted() {
+        JsonObject body = new JsonObject().put("error", new JsonObject()
+                .put("type", "budget_exceeded")
+                .put("code", "400")
+                .put("message", "Credit has been exceeded! Current cost: 240.1228373, Max credit: 100.0"));
+
+        FailureClassification classification = FailureClassifierRegistry.defaultRegistry().classify(
+                UpstreamSignal.http("OPENAI", 400, "application/json", body, null),
+                AttemptStateSnapshot.initial());
+
+        assertEquals(FailureKind.UPSTREAM_BILLING_EXHAUSTED, classification.kind());
+        assertEquals(FailureScope.BILLING_ACCOUNT_GROUP, classification.scope());
+        assertEquals(ExecutionCertainty.PRE_EXECUTION_REJECTED, classification.executionCertainty());
+    }
+
+    @Test
     void genericRateLimitCarriesCooldownAdvice() {
         FailureClassification classification = FailureClassifierRegistry.defaultRegistry().classify(
                 UpstreamSignal.http("OPENAI", 429, "application/json", new JsonObject(), 7_000L),

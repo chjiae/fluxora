@@ -20,7 +20,9 @@ public final class OpenAiCompatibleFailureClassifier implements FailureClassifie
             return new FailureClassification(FailureKind.AUTH_INVALID, FailureScope.CREDENTIAL,
                     ExecutionCertainty.PRE_EXECUTION_REJECTED, CooldownAdvice.none());
         }
-        if ("insufficient_quota".equals(code) || "insufficient_quota".equals(type)) {
+        // OpenAI 兼容代理（OneAPI / OpenRouter 等）对余额耗尽可能返回 insufficient_quota 或 budget_exceeded；
+        // 二者语义一致，均表示上游可用额度已耗尽，应排除当前计费组重试而不是当作客户端请求错误直接失败。
+        if ("insufficient_quota".equals(code) || "insufficient_quota".equals(type) || "budget_exceeded".equals(type)) {
             return new FailureClassification(FailureKind.UPSTREAM_BILLING_EXHAUSTED, FailureScope.BILLING_ACCOUNT_GROUP,
                     ExecutionCertainty.PRE_EXECUTION_REJECTED, CooldownAdvice.none());
         }
