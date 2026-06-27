@@ -26,18 +26,24 @@ public final class RedisRuntimeSnapshotSource implements RuntimeSnapshotSource {
     public Future<RuntimeSnapshot> load(RuntimeScopeType scopeType, String scopeKey) {
         return get(manifestKey(scopeType, scopeKey))
                 .compose(manifestText -> {
+                    // 先读 Manifest 解析当前激活版本号，再据此读取对应的不可变快照，确保读到版本一致的数据
                     JsonObject manifest = parse(manifestText);
                     long version = validatedManifestVersion(manifest);
-                    return get(snapshotKey(scopeType, scopeKey, version)).map(snapshotText -> {
-                        JsonObject snapshot = parse(snapshotText);
-                        if (snapshot.getInteger("schemaVersion", -1) != SCHEMA_VERSION
-                                || snapshot.getLong("runtimeVersion", -1L) != version
-                                || snapshot.getString("generatedAt") == null) {
-                            throw GatewayFailure.runtimeUnavailable();
-                        }
-                        return new RuntimeSnapshot(scopeType, scopeKey, version, snapshot);
-                    });
+                    return get(snapshotKey(scopeType, scopeKey, version))
+                            .map(snapshotText -> parseAndValidateSnapshot(scopeType, scopeKey, version, snapshotText));
                 });
+    }
+
+    /** 解析并校验快照正文：schema 版本、运行时版本、生成时间任一不匹配即判定运行时不可用。 */
+    private RuntimeSnapshot parseAndValidateSnapshot(RuntimeScopeType scopeType, String scopeKey, long version,
+                                                     String snapshotText) {
+        JsonObject snapshot = parse(snapshotText);
+        if (snapshot.getInteger("schemaVersion", -1) != SCHEMA_VERSION
+                || snapshot.getLong("runtimeVersion", -1L) != version
+                || snapshot.getString("generatedAt") == null) {
+            throw GatewayFailure.runtimeUnavailable();
+        }
+        return new RuntimeSnapshot(scopeType, scopeKey, version, snapshot);
     }
 
     @Override
