@@ -1,6 +1,7 @@
 package io.fluxora.platform.tenant;
 
 import io.fluxora.common.error.BusinessErrorCode;
+import io.fluxora.platform.credit.mapper.CreditMapper;
 import io.fluxora.platform.identity.entity.Role;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.identity.mapper.IdentityMapper;
@@ -23,12 +24,14 @@ public class TenantService {
     private final TenantMapper tenantMapper;
     private final IdentityMapper identityMapper;
     private final RuntimeOutboxService runtimeOutboxService;
+    private final CreditMapper creditMapper;
 
     public TenantService(TenantMapper tenantMapper, IdentityMapper identityMapper,
-                         RuntimeOutboxService runtimeOutboxService) {
+                         RuntimeOutboxService runtimeOutboxService, CreditMapper creditMapper) {
         this.tenantMapper = tenantMapper;
         this.identityMapper = identityMapper;
         this.runtimeOutboxService = runtimeOutboxService;
+        this.creditMapper = creditMapper;
     }
 
     public boolean isSelfOperatedInitialized() {
@@ -107,6 +110,8 @@ public class TenantService {
         tenantAdmin.setTenantId(tenant.getId());
         tenantAdmin.setEnabled(true);
         identityMapper.insertUser(tenantAdmin);
+        // 租户管理员创建时同步创建额度账户，与 MemberService.createMember 行为一致
+        creditMapper.ensureAccount(tenant.getId(), tenantAdmin.getId());
         runtimeOutboxService.record(tenant.getId(), "USER_ACCOUNT", tenantAdmin.getId(), "CREATED", null);
 
         Role tenantAdminRole = identityMapper.findRoleByCode("TENANT_ADMIN")
