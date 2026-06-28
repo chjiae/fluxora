@@ -15,7 +15,7 @@ describe('credit management module', () => {
 
   it('reconciliation service exposes the expected api surface', async () => {
     const svc = await import('@/services/reconciliation')
-    for (const fn of ['listPendingReconciliations', 'confirmRelease', 'confirmSettle']) {
+    for (const fn of ['listPendingReconciliations', 'confirmNoCharge', 'confirmSettle']) {
       expect(typeof (svc as any)[fn]).toBe('function')
     }
   })
@@ -64,7 +64,7 @@ describe('credit management module', () => {
       expect(src).toContain(code)
     }
     // 关键文案：余额不足必须使用固定中文
-    expect(src).toContain('当前可用额度不足')
+    expect(src).toContain('当前额度不足')
   })
 
   it('router declares api-keys and credit routes with guards', async () => {

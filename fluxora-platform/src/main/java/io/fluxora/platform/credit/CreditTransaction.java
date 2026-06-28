@@ -19,8 +19,6 @@ public class CreditTransaction {
     private BigDecimal delta;
     private BigDecimal balanceBefore;
     private BigDecimal balanceAfter;
-    private BigDecimal frozenBalanceBefore;
-    private BigDecimal frozenBalanceAfter;
     private String reason;
     private Long operatorId;
     private String operatorName;
@@ -40,10 +38,6 @@ public class CreditTransaction {
     public void setBalanceBefore(BigDecimal balanceBefore) { this.balanceBefore = balanceBefore; }
     public BigDecimal getBalanceAfter() { return balanceAfter; }
     public void setBalanceAfter(BigDecimal balanceAfter) { this.balanceAfter = balanceAfter; }
-    public BigDecimal getFrozenBalanceBefore() { return frozenBalanceBefore; }
-    public void setFrozenBalanceBefore(BigDecimal value) { this.frozenBalanceBefore = value; }
-    public BigDecimal getFrozenBalanceAfter() { return frozenBalanceAfter; }
-    public void setFrozenBalanceAfter(BigDecimal value) { this.frozenBalanceAfter = value; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
     public Long getOperatorId() { return operatorId; }

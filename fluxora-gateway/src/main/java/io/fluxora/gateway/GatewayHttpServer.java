@@ -82,10 +82,7 @@ public final class GatewayHttpServer {
             case MODEL_UNAVAILABLE -> protocolError(request, protocol, 503, "当前模型暂不可用，请稍后重试");
             case RUNTIME_UNAVAILABLE -> protocolError(request, protocol, 503, "服务配置暂不可用，请稍后重试");
             case UNSUPPORTED -> protocolError(request, protocol, 501, "当前服务暂不支持该请求");
-            case INSUFFICIENT_BALANCE -> protocolError(request, protocol, 402, "当前可用余额不足，请充值后重试");
-            case BILLING_SERVICE_UNAVAILABLE -> protocolError(request, protocol, 503, "计费服务暂不可用，请稍后重试");
-            case BILLING_RESERVATION_CONFLICT -> protocolError(request, protocol, 409, "请求计费状态冲突，请稍后重试");
-            case BILLING_RESERVATION_UNSUPPORTED -> protocolError(request, protocol, 400, "请求无法安全计算预冻结金额，请调整后重试");
+            case INSUFFICIENT_BALANCE -> protocolError(request, protocol, 402, "当前额度不足，暂时无法发起新的模型请求，请充值后重试");
         }
     }
 

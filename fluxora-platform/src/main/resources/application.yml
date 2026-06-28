@@ -74,10 +74,10 @@ fluxora:
     consumer-group: ${RELAY_EVENT_CONSUMER_GROUP:fluxora-platform-v1}
     stream-poll-delay-ms: ${RELAY_EVENT_POLL_DELAY_MS:500}
   billing:
-    reservation:
-      # 终态延迟或 Gateway 崩溃只会进入待对账；此超时不是自动释放条件。
-      stale-after-ms: ${BILLING_RESERVATION_STALE_AFTER_MS:900000}
-      stale-scan-delay-ms: ${BILLING_RESERVATION_STALE_SCAN_DELAY_MS:60000}
+    settlement:
+      # 终态延迟或 Gateway 崩溃只会进入待对账；此超时不推断扣费或不扣费。
+      stale-after-ms: ${BILLING_SETTLEMENT_STALE_AFTER_MS:900000}
+      stale-scan-delay-ms: ${BILLING_SETTLEMENT_STALE_SCAN_DELAY_MS:60000}
 
 management:
   endpoints:

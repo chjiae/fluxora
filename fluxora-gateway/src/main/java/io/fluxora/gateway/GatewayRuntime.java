@@ -1,7 +1,6 @@
 package io.fluxora.gateway;
 
 import io.fluxora.gateway.auth.ApiKeyLookupHasher;
-import io.fluxora.gateway.billing.PlatformBillingClient;
 import io.fluxora.gateway.auth.GatewayAuthenticator;
 import io.fluxora.gateway.credential.RuntimeCredentialResolver;
 import io.fluxora.gateway.observability.RelayEventPublisher;
@@ -22,7 +21,7 @@ import io.vertx.core.Vertx;
 import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisOptions;
 
-/** Gateway 运行时组合根：只装配 Redis、L1、HMAC 与内存路由，不含 JDBC、Platform HTTP 或上游凭证能力。 */
+/** Gateway 运行时组合根：只装配 Redis、L1、HMAC 与中继组件，不含 JDBC 或 Platform 余额查询能力。 */
 public final class GatewayRuntime {
     private final Vertx vertx;
     private final GatewayRuntimeConfig config;
@@ -31,7 +30,6 @@ public final class GatewayRuntime {
     private final GatewayAuthenticator authenticator;
     private final GatewayRouteResolver routeResolver;
     private final GatewayModelCatalog modelCatalog;
-    private final PlatformBillingClient billingClient;
     private final RuntimeCredentialResolver credentialResolver;
     private final LocalRuntimeQuarantine localRuntimeQuarantine;
     private final UpstreamDispatchPlanner dispatchPlanner;
@@ -53,7 +51,6 @@ public final class GatewayRuntime {
         this.authenticator = new GatewayAuthenticator(new ApiKeyLookupHasher(config.apiKeyLookupSecret()), caches, metrics);
         this.routeResolver = new GatewayRouteResolver(caches, new RouteTargetSelector());
         this.modelCatalog = new GatewayModelCatalog(caches);
-        this.billingClient = new PlatformBillingClient(vertx, config);
         this.credentialResolver = new RuntimeCredentialResolver(caches, config.runtimeCredentialKey());
         this.relayEventPublisher = RelayEventPublisher.forRedis(redis, metrics, config.relayEventStreamKey(),
                 config.relayEventStreamMaxLength(), config.relayEventRetryQueueSize(), config.relayEventRetryMaxAttempts());
@@ -68,7 +65,6 @@ public final class GatewayRuntime {
     public GatewayAuthenticator authenticator() { return authenticator; }
     public GatewayRouteResolver routeResolver() { return routeResolver; }
     public GatewayModelCatalog modelCatalog() { return modelCatalog; }
-    public PlatformBillingClient billingClient() { return billingClient; }
     public RuntimeCredentialResolver credentialResolver() { return credentialResolver; }
     public UpstreamDispatchPlanner dispatchPlanner() { return dispatchPlanner; }
     public RelayAttemptCoordinator attemptCoordinator() { return attemptCoordinator; }

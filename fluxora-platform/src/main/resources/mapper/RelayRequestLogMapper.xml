@@ -45,8 +45,8 @@
   </insert>
 
   <update id="updateBillingStatus">
-    UPDATE relay_request_log SET reservation_status=#{reservationStatus},reservation_amount=#{reservationAmount},
-      actual_amount=#{actualAmount},released_amount=#{releasedAmount},updated_at=NOW() WHERE request_id=#{requestId}
+    UPDATE relay_request_log SET billing_status=#{billingStatus},actual_amount=#{actualAmount},
+      outstanding_amount=#{outstandingAmount},updated_at=NOW() WHERE request_id=#{requestId}
   </update>
 
   <sql id="filter">
@@ -66,8 +66,8 @@
     SELECT request_id AS requestId,tenant_model_code AS tenantModelCode,inbound_protocol AS inboundProtocol,stream,
       request_status AS requestStatus,duration_ms AS durationMs,input_tokens AS inputTokens,output_tokens AS outputTokens,
       cache_write_tokens AS cacheWriteTokens,cache_read_tokens AS cacheReadTokens,usage_status AS usageStatus,
-      theoretical_amount AS theoreticalAmount,pricing_status AS pricingStatus,reservation_status AS reservationStatus,
-      reservation_amount AS reservationAmount,actual_amount AS actualAmount,released_amount AS releasedAmount,started_at AS startedAt
+      theoretical_amount AS theoreticalAmount,pricing_status AS pricingStatus,billing_status AS billingStatus,
+      actual_amount AS actualAmount,outstanding_amount AS outstandingAmount,started_at AS startedAt
     FROM relay_request_log <include refid="filter"/> ORDER BY started_at DESC,id DESC LIMIT #{limit} OFFSET #{offset}
   </select>
   <select id="countPage" resultType="long">SELECT COUNT(*) FROM relay_request_log <include refid="filter"/></select>
@@ -80,8 +80,7 @@
       input_price_per_million AS inputPricePerMillion,output_price_per_million AS outputPricePerMillion,
       cache_write_price_per_million AS cacheWritePricePerMillion,cache_read_price_per_million AS cacheReadPricePerMillion,
       theoretical_amount AS theoreticalAmount,pricing_status AS pricingStatus,upstream_dispatch_state AS upstreamDispatchState,
-      reservation_status AS reservationStatus,reservation_amount AS reservationAmount,actual_amount AS actualAmount,
-      released_amount AS releasedAmount
+      billing_status AS billingStatus,actual_amount AS actualAmount,outstanding_amount AS outstandingAmount
     FROM relay_request_log WHERE request_id=#{requestId} AND tenant_id=#{tenantId}
     <if test="userId != null">AND user_id=#{userId}</if>
   </select>

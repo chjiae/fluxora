@@ -13,6 +13,7 @@ import io.fluxora.platform.credit.mapper.CreditMapper;
 import io.fluxora.platform.credit.mapper.CreditTransactionRow;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.identity.mapper.IdentityMapper;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import io.fluxora.platform.tenant.Tenant;
 import io.fluxora.platform.tenant.TenantException;
 import io.fluxora.platform.tenant.TenantMapper;
@@ -46,11 +47,14 @@ public class CreditService {
     private final CreditMapper creditMapper;
     private final IdentityMapper identityMapper;
     private final TenantMapper tenantMapper;
+    private final RuntimeOutboxService runtimeOutboxService;
 
-    public CreditService(CreditMapper creditMapper, IdentityMapper identityMapper, TenantMapper tenantMapper) {
+    public CreditService(CreditMapper creditMapper, IdentityMapper identityMapper, TenantMapper tenantMapper,
+                         RuntimeOutboxService runtimeOutboxService) {
         this.creditMapper = creditMapper;
         this.identityMapper = identityMapper;
         this.tenantMapper = tenantMapper;
+        this.runtimeOutboxService = runtimeOutboxService;
     }
 
     // ============================================================
@@ -161,8 +165,6 @@ public class CreditService {
         txn.setDelta(amount);
         txn.setBalanceBefore(r.balanceBefore());
         txn.setBalanceAfter(r.balanceAfter());
-        txn.setFrozenBalanceBefore(r.frozenBalanceBefore());
-        txn.setFrozenBalanceAfter(r.frozenBalanceAfter());
         txn.setReason(req.reason().trim());
         txn.setOperatorId(currentUser.getId());
         txn.setOperatorName(currentUser.getDisplayName() != null
@@ -172,6 +174,7 @@ public class CreditService {
         log.info("额度已调整：userId={}, direction={}, amount={}, balanceBefore={}, balanceAfter={}, operatorId={}",
                 targetUserId, req.direction(), amount,
                 r.balanceBefore(), r.balanceAfter(), currentUser.getId());
+        publishEligibilityIfCrossed(target.getTenantId(), targetUserId, r.balanceBefore(), r.balanceAfter());
 
         // 回查刚插入的流水（按时间倒序第一条 = 当前事务写入的那条）
         List<CreditTransactionRow> rows = creditMapper.findTransactionRows(
@@ -293,8 +296,7 @@ public class CreditService {
                 row.getId(), row.getTenantId(), row.getTenantCode(), row.getTenantName(),
                 row.getUserId(), row.getUsername(), row.getUserDisplayName(),
                 row.getDirection(), row.getDelta(), row.getBalanceBefore(), row.getBalanceAfter(),
-                row.getFrozenBalanceBefore(), row.getFrozenBalanceAfter(),
-                row.getTransactionType(), row.getReservationId(),
+                row.getTransactionType(), row.getBillingSettlementId(),
                 row.getReason(), row.getOperatorId(), row.getOperatorName(), row.getCreatedAt());
     }
 
@@ -308,6 +310,14 @@ public class CreditService {
         if (user == null || !"TENANT".equals(user.getScopeType())) return false;
         return identityMapper.findRolesByUserId(user.getId()).stream()
                 .anyMatch(r -> TENANT_ADMIN_ROLE.equals(r.getCode()));
+    }
+
+    private void publishEligibilityIfCrossed(Long tenantId, Long userId, BigDecimal before, BigDecimal after) {
+        boolean wasAllowed = before.compareTo(BigDecimal.ZERO) > 0;
+        boolean isAllowed = after.compareTo(BigDecimal.ZERO) > 0;
+        if (wasAllowed != isAllowed) {
+            runtimeOutboxService.record(tenantId, "USER_ACCOUNT", userId, "BILLING_ELIGIBILITY_CHANGED", null);
+        }
     }
 
     private static String blankToNull(String s) { return s == null || s.isBlank() ? null : s.trim(); }

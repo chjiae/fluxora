@@ -7,6 +7,6 @@ import java.time.Instant;
 public record RelayRequestLogSummary(String requestId, String tenantModelCode, String inboundProtocol, boolean stream,
                                      String requestStatus, Long durationMs, Long inputTokens, Long outputTokens,
                                      Long cacheWriteTokens, Long cacheReadTokens, String usageStatus,
-                                     BigDecimal theoreticalAmount, String pricingStatus, String reservationStatus,
-                                     BigDecimal reservationAmount, BigDecimal actualAmount, BigDecimal releasedAmount,
+                                     BigDecimal theoreticalAmount, String pricingStatus, String billingStatus,
+                                     BigDecimal actualAmount, BigDecimal outstandingAmount,
                                      Instant startedAt) { }

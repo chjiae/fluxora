@@ -10,8 +10,8 @@
  * 调整额度通过内联 Modal（不弹 useDialog）完成，避免输入丢失。
  */
 import { computed, h, onMounted, ref, watch } from 'vue'
-import { NButton, NDropdown, NIcon } from 'naive-ui'
-import { ArrowDownToLine, ArrowUpToLine, MoreHorizontal, Search, Users, Wallet, X } from 'lucide-vue-next'
+import { NButton, NIcon } from 'naive-ui'
+import { ArrowDownToLine, ArrowUpToLine, Search, Users, Wallet, X } from 'lucide-vue-next'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 import MetricStrip from '@/components/MetricStrip.vue'
@@ -91,8 +91,7 @@ async function loadStats() {
 }
 const metricItems = computed(() => [
   { label: '账户总数', value: stats.value?.totalAccounts ?? null },
-  { label: '可用余额合计', value: stats.value?.totalBalance ?? null },
-  { label: '冻结余额合计', value: stats.value?.totalFrozenBalance ?? null, tone: 'warn' as const },
+  { label: '当前余额合计', value: stats.value?.totalBalance ?? null },
   { label: '累计增加', value: stats.value?.totalCredits ?? null },
   { label: '累计扣减', value: stats.value?.totalDebits ?? null, tone: 'warn' as const },
   { label: '流水数', value: stats.value?.transactionCount ?? null },
@@ -209,14 +208,13 @@ const userColumns = computed<DataTableColumns<AdjustableUserOption>>(() => [
 function formatType(row: CreditTransactionView) {
   const byType: Record<string, string> = {
     MANUAL_ADJUSTMENT: row.direction === 'CREDIT' ? '人工增加' : '人工扣减',
-    RESERVE: '预冻结',
-    SETTLE: '结算',
-    RELEASE: '释放',
+    CARD_REDEEM: '卡密充值',
+    MODEL_USAGE: '模型结算',
   }
   return byType[row.transactionType] || (row.direction === 'CREDIT' ? '增加' : '扣减')
 }
 function amountClass(row: CreditTransactionView) {
-  return row.transactionType === 'RELEASE' || row.direction === 'CREDIT' ? 'credit' : 'debit'
+  return row.direction === 'CREDIT' ? 'credit' : 'debit'
 }
 function formatAmount(row: CreditTransactionView) { return (amountClass(row) === 'credit' ? '+' : '-') + row.amount }
 function timeAgo(iso: string | null | undefined) { return iso ? iso.slice(0, 16).replace('T', ' ') : '—' }
@@ -236,9 +234,6 @@ const txnColumns = computed<DataTableColumns<CreditTransactionView>>(() => [
   },
   { title: '变更后', key: 'balanceAfter', width: 120, align: 'right',
     render: (row) => h('span', { class: 'cell-num' }, row.balanceAfter),
-  },
-  { title: '冻结后', key: 'frozenBalanceAfter', width: 120, align: 'right',
-    render: (row) => h('span', { class: 'cell-num' }, row.frozenBalanceAfter ?? '—'),
   },
   { title: '原因', key: 'reason', minWidth: 180,
     render: (row) => h('span', { class: 'cell-muted' }, row.reason),
@@ -338,7 +333,7 @@ const pageCount = computed(() => Math.max(1, Math.ceil(total.value / size.value)
           </n-form-item>
         </n-form>
         <p v-if="adjustForm.direction==='DEBIT'" class="hint-warn">
-          扣减将立即从用户可用余额中扣除；如余额不足将自动拒绝。
+          扣减将立即从用户当前余额中扣除；如余额不足将自动拒绝。
         </p>
       </div>
       <template #footer>

@@ -243,7 +243,20 @@ public class RuntimeSnapshotBuilder {
         snapshot.put("tenantId", row.tenantId());
         snapshot.put("userId", row.userId());
         snapshot.put("enabled", row.enabled());
-        snapshot.put("userStatus", row.deletedAt() != null ? "DELETED" : enabledStatus(row.enabled(), "ENABLED", "DISABLED"));
+        String userStatus = row.deletedAt() != null ? "DELETED" : enabledStatus(row.enabled(), "ENABLED", "DISABLED");
+        snapshot.put("userStatus", userStatus);
+        // Gateway 只消费该枚举判断新请求能否进入上游派发；真实余额永远留在 Platform。
+        snapshot.put("billingEligibility", billingEligibility(userStatus, row.billingEligibility()));
+    }
+
+    /**
+     * 用户状态优先于余额状态：停用或删除账号即使余额为正也不能继续发起新请求。
+     */
+    private String billingEligibility(String userStatus, String walletEligibility) {
+        if (!"ENABLED".equals(userStatus)) {
+            return "BLOCKED_USER_STATUS";
+        }
+        return "ALLOWED".equals(walletEligibility) ? "ALLOWED" : "BLOCKED_INSUFFICIENT_BALANCE";
     }
 
     private void writeTenant(ObjectNode snapshot, RuntimeAuthTenantRow row) {

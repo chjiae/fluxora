@@ -35,7 +35,7 @@ const USER_MESSAGES: Record<string, string> = {
   API_KEY_EXPIRED: '该 API Key 已过期，请更新过期时间或创建新的 Key',
   API_KEY_DELETED_STATE: '该 API Key 已删除，无法继续操作',
   // 额度（V5 引入）
-  CREDIT_INSUFFICIENT: '当前可用额度不足，无法完成扣减',
+  CREDIT_INSUFFICIENT: '当前额度不足，无法完成扣减',
   CREDIT_ACCOUNT_NOT_FOUND: '当前账号没有可用的额度账户',
   CREDIT_AMOUNT_INVALID: '调整金额必须为正数',
   CREDIT_REASON_REQUIRED: '请填写调整原因',

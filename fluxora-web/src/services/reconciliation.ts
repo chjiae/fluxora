@@ -1,15 +1,13 @@
 import http from './http'
 
-/** 待对账预冻结记录。只展示安全字段，不包含 API Key、请求正文、上游地址或凭证。 */
-export interface BillingReservationView {
+/** 待对账结算记录。只展示安全字段，不包含 API Key、请求正文、上游地址或凭证。 */
+export interface BillingSettlementView {
   requestId: string
   tenantId: number
   userId: number
   tenantModelCode: string
   status: string
-  reservationAmount: string
   actualAmount: string | null
-  releasedAmount: string
   outstandingAmount: string
   reasonCode: string | null
   upstreamDispatchState: string | null
@@ -18,7 +16,7 @@ export interface BillingReservationView {
 }
 
 export interface ReconciliationPage {
-  items: BillingReservationView[]
+  items: BillingSettlementView[]
   total: number
   page: number
   size: number
@@ -34,12 +32,12 @@ export async function listPendingReconciliations(params: { tenantId?: number; pa
   return res.data.data
 }
 
-export async function confirmRelease(requestId: string, payload: ReconciliationActionRequest): Promise<BillingReservationView> {
-  const res = await http.post(`/api/admin/billing/reconciliations/${encodeURIComponent(requestId)}/release`, payload)
+export async function confirmNoCharge(requestId: string, payload: ReconciliationActionRequest): Promise<BillingSettlementView> {
+  const res = await http.post(`/api/admin/billing/reconciliations/${encodeURIComponent(requestId)}/no-charge`, payload)
   return res.data.data
 }
 
-export async function confirmSettle(requestId: string, payload: ReconciliationActionRequest): Promise<BillingReservationView> {
+export async function confirmSettle(requestId: string, payload: ReconciliationActionRequest): Promise<BillingSettlementView> {
   const res = await http.post(`/api/admin/billing/reconciliations/${encodeURIComponent(requestId)}/settle`, payload)
   return res.data.data
 }

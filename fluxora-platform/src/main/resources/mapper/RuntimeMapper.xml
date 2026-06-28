@@ -116,7 +116,11 @@
     FROM api_key WHERE lookup_hash=#{lookupHash} AND lookup_hash_version=1
   </select>
   <select id="findAuthUserSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeAuthUserRow">
-    SELECT tenant_id AS tenantId,id AS userId,enabled,deleted_at AS deletedAt FROM user_account WHERE id=#{userId} AND tenant_id=#{tenantId}
+    SELECT account.tenant_id AS tenantId,account.id AS userId,account.enabled,account.deleted_at AS deletedAt,
+           CASE WHEN credit.balance &gt; 0 THEN 'ALLOWED' ELSE 'BLOCKED_INSUFFICIENT_BALANCE' END AS billingEligibility
+    FROM user_account account
+    LEFT JOIN user_credit_account credit ON credit.user_id=account.id
+    WHERE account.id=#{userId} AND account.tenant_id=#{tenantId}
   </select>
   <select id="findAuthTenantSnapshot" resultType="io.fluxora.platform.runtime.mapper.RuntimeAuthTenantRow">
     SELECT id AS tenantId,enabled,expire_at AS expireAt,deleted_at AS deletedAt,settlement_currency_code AS settlementCurrencyCode FROM tenant WHERE id=#{tenantId}

@@ -103,6 +103,27 @@ class RuntimeProjectionIntegrationTest {
     }
 
     @Test
+    void userSnapshotMustExposeBillingEligibilityWithoutWalletAmounts() throws Exception {
+        long tenantId = insertTenant();
+        long userId = insertTenantUser(tenantId);
+        jdbc.update("""
+                INSERT INTO user_credit_account(tenant_id, user_id, balance)
+                VALUES (?, ?, 0)
+                """, tenantId, userId);
+
+        outboxService.record(tenantId, "USER_ACCOUNT", userId, "BILLING_ELIGIBILITY_CHANGED", null);
+        projector.project(claimSingle("runtime-user-billing"));
+
+        RuntimeScope scope = RuntimeScope.user(tenantId, userId);
+        JsonNode snapshot = objectMapper.readTree(redisTemplate.opsForValue().get(
+                RuntimeRedisSnapshotStore.snapshotKey(scope, 1L)));
+
+        assertThat(snapshot.path("billingEligibility").asText()).isEqualTo("BLOCKED_INSUFFICIENT_BALANCE");
+        assertThat(snapshot.toString()).doesNotContain("walletBalance", "availableBalance",
+                "frozenAmount", "reservedAmount", "reservationId");
+    }
+
+    @Test
     void fullRebuildMustOnlyEnumerateActiveRuntimeScopes() {
         long tenantId = insertTenant();
         long activeUserId = insertTenantUser(tenantId);
@@ -465,7 +486,9 @@ class RuntimeProjectionIntegrationTest {
         long tenantId = insertTenant();
         long userId = insertTenantUser(tenantId);
         String nanoHex = Long.toHexString(System.nanoTime());
-        String lookupHash = (nanoHex + nanoHex + nanoHex + nanoHex + nanoHex).substring(0, 64);
+        // nanoHex 长度随 nanoTime 取值变化，直接拼接 5 份可能不足 64 字符导致 substring 越界；
+        // 用零填充补齐到 64 字符，保证 lookupHash 长度稳定且仍为合法十六进制。
+        String lookupHash = (nanoHex + "0".repeat(64)).substring(0, 64);
         long apiKeyId = insertApiKey(tenantId, userId, lookupHash);
 
         outboxService.record(tenantId, "API_KEY", apiKeyId, "CREATED", null);
@@ -502,8 +525,12 @@ class RuntimeProjectionIntegrationTest {
 
     private RuntimeOutboxEvent claimSingle(String workerId) {
         List<RuntimeOutboxEvent> events = runtimeMapper.claimDueBatch(workerId, 10);
-        assertThat(events).hasSize(1);
-        return events.getFirst();
+        // 应用启动会写入一次 FULL_REBUILD 意图；单测只投影当前用例显式写入的业务事件。
+        List<RuntimeOutboxEvent> businessEvents = events.stream()
+                .filter(event -> !"RUNTIME_NAMESPACE".equals(event.aggregateType()))
+                .toList();
+        assertThat(businessEvents).hasSize(1);
+        return businessEvents.getFirst();
     }
 
     private JsonNode readManifest(RuntimeScope scope) throws Exception {

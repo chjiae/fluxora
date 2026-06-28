@@ -18,10 +18,8 @@ public class CreditTransactionRow {
     private BigDecimal delta;
     private BigDecimal balanceBefore;
     private BigDecimal balanceAfter;
-    private BigDecimal frozenBalanceBefore;
-    private BigDecimal frozenBalanceAfter;
     private String transactionType;
-    private Long reservationId;
+    private Long billingSettlementId;
     private String reason;
     private Long operatorId;
     private String operatorName;
@@ -49,14 +47,10 @@ public class CreditTransactionRow {
     public void setBalanceBefore(BigDecimal balanceBefore) { this.balanceBefore = balanceBefore; }
     public BigDecimal getBalanceAfter() { return balanceAfter; }
     public void setBalanceAfter(BigDecimal balanceAfter) { this.balanceAfter = balanceAfter; }
-    public BigDecimal getFrozenBalanceBefore() { return frozenBalanceBefore; }
-    public void setFrozenBalanceBefore(BigDecimal value) { this.frozenBalanceBefore = value; }
-    public BigDecimal getFrozenBalanceAfter() { return frozenBalanceAfter; }
-    public void setFrozenBalanceAfter(BigDecimal value) { this.frozenBalanceAfter = value; }
     public String getTransactionType() { return transactionType; }
     public void setTransactionType(String value) { this.transactionType = value; }
-    public Long getReservationId() { return reservationId; }
-    public void setReservationId(Long value) { this.reservationId = value; }
+    public Long getBillingSettlementId() { return billingSettlementId; }
+    public void setBillingSettlementId(Long value) { this.billingSettlementId = value; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
     public Long getOperatorId() { return operatorId; }

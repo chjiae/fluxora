@@ -4,10 +4,9 @@
     额度账户与流水 MyBatis 映射。
 
     关键安全约束：
-      1. adjustBalance 是 *唯一* 允许变更 user_credit_account.balance 的入口；
-         其 WHERE balance + delta >= 0 子句既校验余额不变量又作为原子操作
-         在 Postgres 中天然提供并发安全（行锁由 UPDATE 隐式持有），
-         不必额外 SELECT … FOR UPDATE。
+      1. adjustBalance 是管理员调整余额的唯一入口；管理员扣减仍使用
+         WHERE balance + delta >= 0 防止人工操作制造负余额。模型请求直接结算
+         走 BillingSettlementMapper，不复用本 SQL。
       2. 该语句用 <select affectData="true"> 而非 <update>：MyBatis 中只有
          <select> 才能映射 UPDATE…RETURNING 的行集；affectData=true 告知
          Spring 事务管理器这是一次"写"操作（MyBatis 3.5.12+ 支持）。
@@ -35,8 +34,6 @@
             t.tenant_code AS tenantCode,
             t.name AS tenantName,
             a.balance AS balance,
-            a.frozen_balance AS frozenBalance,
-            a.balance + a.frozen_balance AS totalBalance,
             a.created_at AS createdAt,
             a.updated_at AS updatedAt
         FROM user_credit_account a
@@ -48,9 +45,8 @@
 
     <!--
         原子调整余额并返回 before/after。
-        WHERE balance + delta >= 0 同时表达「余额非负不变量」与
-        「invariant-failed → 不更新（影响 0 行）」语义；service 收到 null 抛
-        CREDIT_INSUFFICIENT。
+        管理员扣减不允许把余额调成负数；模型请求已放行后的直接结算不走该 SQL，
+        因而可以按业务语义把余额扣成 0 或负数并触发运行时快照更新。
 
         affectData="true" 让 Spring 事务把这条语句视为写，与外层 @Transactional
         正确协作；flushCache="true" 让 MyBatis 一级缓存失效（虽然本调用不依赖缓存）。
@@ -65,20 +61,16 @@
         WHERE user_id = #{userId}
           AND balance + #{delta} &gt;= 0
         RETURNING balance - #{delta}   AS balance_before,
-                  balance              AS balance_after,
-                  frozen_balance       AS frozen_balance_before,
-                  frozen_balance       AS frozen_balance_after
+                  balance              AS balance_after
     </select>
 
     <!-- 插入流水；与 adjustBalance 在同一 service @Transactional 内执行 -->
     <insert id="insertTransaction" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO credit_transaction
             (tenant_id, user_id, direction, delta, balance_before, balance_after,
-             frozen_balance_before, frozen_balance_after,
              reason, operator_id, operator_name, created_at)
         VALUES
             (#{tenantId}, #{userId}, #{direction}, #{delta}, #{balanceBefore}, #{balanceAfter},
-             #{frozenBalanceBefore}, #{frozenBalanceAfter},
              #{reason}, #{operatorId}, #{operatorName}, NOW())
     </insert>
 
@@ -96,10 +88,8 @@
             x.delta AS delta,
             x.balance_before AS balanceBefore,
             x.balance_after AS balanceAfter,
-            x.frozen_balance_before AS frozenBalanceBefore,
-            x.frozen_balance_after AS frozenBalanceAfter,
             x.transaction_type AS transactionType,
-            x.reservation_id AS reservationId,
+            x.billing_settlement_id AS billingSettlementId,
             x.reason AS reason,
             x.operator_id AS operatorId,
             x.operator_name AS operatorName,
@@ -162,17 +152,15 @@
         LIMIT #{limit}
     </select>
 
-    <!-- 卡密充值流水：与 insertTransaction 同模式，额外写入 source + card_id -->
+    <!-- 卡密充值流水：与 insertTransaction 同模式，额外写入 transaction_type + card_id -->
     <insert id="insertCardRedemptionTransaction" useGeneratedKeys="true" keyProperty="txn.id">
         INSERT INTO credit_transaction
             (tenant_id, user_id, direction, delta, balance_before, balance_after,
-             frozen_balance_before, frozen_balance_after,
-             reason, source, card_id, operator_id, operator_name, created_at)
+             reason, source, transaction_type, card_id, operator_id, operator_name, created_at)
         VALUES
             (#{txn.tenantId}, #{txn.userId}, #{txn.direction}, #{txn.delta},
              #{txn.balanceBefore}, #{txn.balanceAfter},
-             #{txn.frozenBalanceBefore}, #{txn.frozenBalanceAfter},
-             #{txn.reason}, 'CARD_REDEEM', #{cardId},
+             #{txn.reason}, 'CARD_REDEEM', 'CARD_REDEEM', #{cardId},
              #{txn.operatorId}, #{txn.operatorName}, NOW())
     </insert>
 
@@ -188,11 +176,6 @@
                 <if test="tenantId != null">AND a.tenant_id = #{tenantId}</if>
                 <if test="userId != null">AND a.user_id = #{userId}</if>
             ), 0)                                                                                AS total_balance,
-            COALESCE((SELECT SUM(a.frozen_balance) FROM user_credit_account a
-                WHERE 1 = 1
-                <if test="tenantId != null">AND a.tenant_id = #{tenantId}</if>
-                <if test="userId != null">AND a.user_id = #{userId}</if>
-            ), 0)                                                                                AS total_frozen_balance,
             COALESCE((SELECT SUM(x.delta) FROM credit_transaction x WHERE x.direction = 'CREDIT'
                 <if test="tenantId != null">AND x.tenant_id = #{tenantId}</if>
                 <if test="userId != null">AND x.user_id = #{userId}</if>

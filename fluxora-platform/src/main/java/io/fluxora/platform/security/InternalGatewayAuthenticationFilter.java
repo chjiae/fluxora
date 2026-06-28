@@ -16,7 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Gateway 内部结算接口的最小服务认证：时间戳 + requestId nonce + HMAC。
- * requestId 同时受数据库唯一约束保护，捕获后的完全重放最多得到同一幂等结果，不能二次冻结。
+ * requestId 同时受数据库唯一约束保护，捕获后的完全重放最多得到同一幂等结算结果。
  */
 @Component
 public class InternalGatewayAuthenticationFilter extends OncePerRequestFilter {

@@ -109,7 +109,7 @@ const hasFilter = computed(() => false)
       <header class="redeem-hd">
         <h2><CreditCard :size="16" class="hd-icon" /> 输入卡密</h2>
         <div class="balance-pill" v-if="account">
-          可用余额 <strong>{{ account.balance }}</strong>
+          当前余额 <strong>{{ account.balance }}</strong>
         </div>
       </header>
       <div class="redeem-input-row">

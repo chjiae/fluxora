@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  直接结算 SQL：request_id 是唯一幂等键；成功结算直接扣减真实余额，允许余额变为 0 或负数。
+  未知 usage 只进入待对账，不自动归类为免扣。
+-->
+<mapper namespace="io.fluxora.platform.billing.settlement.BillingSettlementMapper">
+  <sql id="settlementColumns">
+    id,request_id AS requestId,tenant_id AS tenantId,user_id AS userId,api_key_id AS apiKeyId,
+    currency_code AS currencyCode,actual_amount AS actualAmount,outstanding_amount AS outstandingAmount,
+    status,reason_code AS reasonCode,tenant_model_id AS tenantModelId,tenant_model_code AS tenantModelCode,
+    inbound_protocol AS inboundProtocol,endpoint,price_version AS priceVersion,
+    input_price_per_million AS inputPricePerMillion,output_price_per_million AS outputPricePerMillion,
+    cache_write_price_per_million AS cacheWritePricePerMillion,
+    cache_read_price_per_million AS cacheReadPricePerMillion,
+    upstream_dispatch_state AS upstreamDispatchState,finalized_at AS finalizedAt,
+    reconciled_at AS reconciledAt,reconciled_by AS reconciledBy,reconciliation_note AS reconciliationNote,
+    created_at AS createdAt,updated_at AS updatedAt
+  </sql>
+
+  <select id="findByRequestId" resultType="io.fluxora.platform.billing.settlement.BillingSettlementRow">
+    SELECT <include refid="settlementColumns"/> FROM billing_settlement WHERE request_id=#{requestId}
+  </select>
+
+  <select id="findByRequestIdForUpdate" resultType="io.fluxora.platform.billing.settlement.BillingSettlementRow">
+    SELECT <include refid="settlementColumns"/> FROM billing_settlement WHERE request_id=#{requestId} FOR UPDATE
+  </select>
+
+  <select id="insertSettlement" resultType="long" affectData="true" flushCache="true">
+    INSERT INTO billing_settlement(request_id,tenant_id,user_id,api_key_id,currency_code,actual_amount,
+      outstanding_amount,status,reason_code,tenant_model_id,tenant_model_code,inbound_protocol,endpoint,
+      price_version,input_price_per_million,output_price_per_million,cache_write_price_per_million,
+      cache_read_price_per_million,upstream_dispatch_state,finalized_at)
+    VALUES(#{event.requestId},#{event.tenantId},#{event.userId},#{event.apiKeyId},#{event.currencyCode},
+      #{actualAmount},#{outstandingAmount},#{status},#{reasonCode},#{event.tenantModelId},#{event.tenantModelCode},
+      #{event.inboundProtocol},#{event.endpoint},#{event.priceVersion},#{event.inputPricePerMillion},
+      #{event.outputPricePerMillion},#{event.cacheWritePricePerMillion},#{event.cacheReadPricePerMillion},
+      #{dispatchState},CASE WHEN #{status} IN ('SETTLED','NO_CHARGE') THEN NOW() ELSE NULL END)
+    ON CONFLICT(request_id) DO NOTHING
+    RETURNING id
+  </select>
+
+  <!-- 直接结算的唯一扣费出口：不带 balance >= amount 条件，允许已放行请求把余额扣到 0 或负数。 -->
+  <select id="debitWallet" resultType="io.fluxora.platform.billing.settlement.BillingWalletMutation"
+          affectData="true" flushCache="true">
+    UPDATE user_credit_account SET balance=balance-#{amount},updated_at=NOW()
+    WHERE tenant_id=#{tenantId} AND user_id=#{userId}
+    RETURNING balance+#{amount} AS balance_before,balance AS balance_after
+  </select>
+
+  <insert id="insertBillingTransaction">
+    INSERT INTO credit_transaction(tenant_id,user_id,direction,delta,balance_before,balance_after,
+      reason,source,transaction_type,billing_settlement_id,operator_id,operator_name,created_at)
+    VALUES(#{tenantId},#{userId},#{direction},#{delta},#{balanceBefore},#{balanceAfter},
+      #{reason},'BILLING',#{transactionType},#{billingSettlementId},#{userId},'API 请求自动结算',NOW())
+  </insert>
+
+  <insert id="markStaleStartedPending">
+    INSERT INTO billing_settlement(request_id,tenant_id,user_id,api_key_id,currency_code,actual_amount,
+      outstanding_amount,status,reason_code,tenant_model_id,tenant_model_code,inbound_protocol,endpoint,
+      price_version,input_price_per_million,output_price_per_million,cache_write_price_per_million,
+      cache_read_price_per_million,upstream_dispatch_state)
+    SELECT log.request_id,log.tenant_id,log.user_id,log.api_key_id,'CNY',NULL,0,'RECONCILIATION_PENDING',
+      'TERMINAL_EVENT_TIMEOUT',log.tenant_model_id,log.tenant_model_code,log.inbound_protocol,log.endpoint,
+      1,0,0,NULL,NULL,'UNKNOWN'
+    FROM relay_request_log log
+    WHERE log.request_status='STARTED' AND log.started_at &lt; #{olderThan}
+    ON CONFLICT(request_id) DO NOTHING
+  </insert>
+
+  <select id="findPendingPage" resultType="io.fluxora.platform.billing.settlement.BillingSettlementRow">
+    SELECT <include refid="settlementColumns"/> FROM billing_settlement WHERE status='RECONCILIATION_PENDING'
+    <if test="tenantId != null">AND tenant_id=#{tenantId}</if>
+    ORDER BY created_at ASC,id ASC LIMIT #{limit} OFFSET #{offset}
+  </select>
+
+  <select id="countPending" resultType="long">
+    SELECT COUNT(*) FROM billing_settlement WHERE status='RECONCILIATION_PENDING'
+    <if test="tenantId != null">AND tenant_id=#{tenantId}</if>
+  </select>
+
+  <update id="markManualSettled">
+    UPDATE billing_settlement SET status='SETTLED',actual_amount=#{actualAmount},outstanding_amount=0,
+      reason_code='MANUAL_SETTLE',finalized_at=NOW(),reconciled_at=NOW(),reconciled_by=#{operatorId},
+      reconciliation_note=#{note},updated_at=NOW()
+    WHERE request_id=#{requestId} AND status='RECONCILIATION_PENDING'
+  </update>
+
+  <update id="markManualNoCharge">
+    UPDATE billing_settlement SET status='NO_CHARGE',actual_amount=0,outstanding_amount=0,
+      reason_code='MANUAL_NO_CHARGE',finalized_at=NOW(),reconciled_at=NOW(),reconciled_by=#{operatorId},
+      reconciliation_note=#{note},updated_at=NOW()
+    WHERE request_id=#{requestId} AND status='RECONCILIATION_PENDING'
+  </update>
+</mapper>

@@ -4,15 +4,15 @@ import { NButton } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import MetricStrip from '@/components/MetricStrip.vue'
 import {
-  confirmRelease,
+  confirmNoCharge,
   confirmSettle,
   listPendingReconciliations,
-  type BillingReservationView,
+  type BillingSettlementView,
   type ReconciliationActionRequest,
 } from '@/services/reconciliation'
 
 const message = useMessage()
-const rows = ref<BillingReservationView[]>([])
+const rows = ref<BillingSettlementView[]>([])
 const total = ref(0)
 const page = ref(1)
 const size = ref(20)
@@ -20,8 +20,8 @@ const tenantId = ref<number | undefined>()
 const loading = ref(false)
 
 const actionOpen = ref(false)
-const actionType = ref<'release' | 'settle'>('release')
-const actionTarget = ref<BillingReservationView | null>(null)
+const actionType = ref<'noCharge' | 'settle'>('noCharge')
+const actionTarget = ref<BillingSettlementView | null>(null)
 const actionForm = ref<{ finalAmount: string; reason: string }>({ finalAmount: '', reason: '' })
 const actionFormRef = ref<FormInst | null>(null)
 const submitting = ref(false)
@@ -29,7 +29,7 @@ const submitting = ref(false)
 const rules: FormRules = {
   finalAmount: [{
     validator: (_r, v) => {
-      if (actionType.value === 'release') return true
+      if (actionType.value === 'noCharge') return true
       if (!v) return new Error('请输入确认结算金额')
       const n = Number(v)
       if (Number.isNaN(n) || n < 0) return new Error('结算金额不能为负数')
@@ -61,9 +61,8 @@ onMounted(load)
 
 const metricItems = computed(() => [
   { label: '待对账记录', value: total.value },
-  { label: '当前页冻结金额', value: sum(rows.value.map(x => x.reservationAmount)) },
   { label: '当前页待确认实扣', value: sum(rows.value.map(x => x.actualAmount)) },
-  { label: '当前页超额风险', value: sum(rows.value.map(x => x.outstandingAmount)), tone: 'warn' as const },
+  { label: '当前页差异金额', value: sum(rows.value.map(x => x.outstandingAmount)), tone: 'warn' as const },
 ])
 
 function sum(values: Array<string | null>) {
@@ -72,13 +71,13 @@ function sum(values: Array<string | null>) {
 }
 function time(v: string | null | undefined) { return v ? v.slice(0, 16).replace('T', ' ') : '—' }
 function status(v: string) {
-  return ({ RECONCILIATION_PENDING: '待对账', RESERVED: '已冻结', SETTLED: '已结算', RELEASED: '已释放' } as Record<string, string>)[v] || v
+  return ({ RECONCILIATION_PENDING: '待对账', SETTLED: '已结算', NO_CHARGE: '免扣' } as Record<string, string>)[v] || v
 }
-function openAction(row: BillingReservationView, type: 'release' | 'settle') {
+function openAction(row: BillingSettlementView, type: 'noCharge' | 'settle') {
   actionType.value = type
   actionTarget.value = row
   actionForm.value = {
-    finalAmount: type === 'settle' ? (row.actualAmount ?? row.reservationAmount) : '',
+    finalAmount: type === 'settle' ? (row.actualAmount ?? '') : '',
     reason: '',
   }
   actionOpen.value = true
@@ -94,9 +93,9 @@ async function submitAction() {
   if (actionType.value === 'settle') payload.finalAmount = actionForm.value.finalAmount
   submitting.value = true
   try {
-    if (actionType.value === 'release') {
-      await confirmRelease(actionTarget.value.requestId, payload)
-      message.success('已确认释放冻结金额')
+    if (actionType.value === 'noCharge') {
+      await confirmNoCharge(actionTarget.value.requestId, payload)
+      message.success('已确认免扣')
     } else {
       await confirmSettle(actionTarget.value.requestId, payload)
       message.success('已确认结算')
@@ -110,20 +109,19 @@ async function submitAction() {
   }
 }
 
-const columns = computed<DataTableColumns<BillingReservationView>>(() => [
+const columns = computed<DataTableColumns<BillingSettlementView>>(() => [
   { title: '请求时间', key: 'createdAt', width: 150, render: row => time(row.createdAt) },
   { title: '请求 ID', key: 'requestId', minWidth: 220, render: row => h('span', { class: 'mono' }, row.requestId) },
   { title: '租户 / 用户', key: 'tenantUser', width: 130, render: row => `${row.tenantId} / ${row.userId}` },
   { title: '模型', key: 'tenantModelCode', width: 130 },
   { title: '状态', key: 'status', width: 90, render: row => h('span', { class: 'badge warn' }, status(row.status)) },
   { title: '投递', key: 'upstreamDispatchState', width: 120, render: row => row.upstreamDispatchState || '—' },
-  { title: '冻结金额', key: 'reservationAmount', width: 120, align: 'right', render: row => h('span', { class: 'mono' }, row.reservationAmount) },
   { title: '实际金额', key: 'actualAmount', width: 120, align: 'right', render: row => h('span', { class: 'mono' }, row.actualAmount ?? '待确认') },
-  { title: '待补差额', key: 'outstandingAmount', width: 120, align: 'right', render: row => h('span', { class: 'mono' }, row.outstandingAmount) },
+  { title: '差异金额', key: 'outstandingAmount', width: 120, align: 'right', render: row => h('span', { class: 'mono' }, row.outstandingAmount) },
   { title: '原因', key: 'reasonCode', minWidth: 150, render: row => h('span', { class: 'muted' }, row.reasonCode || '—') },
   { title: '操作', key: '__actions', width: 170, fixed: 'right',
     render: row => h('div', { class: 'actions' }, [
-      h(NButton, { size: 'small', onClick: () => openAction(row, 'release') }, { default: () => '释放' }),
+      h(NButton, { size: 'small', onClick: () => openAction(row, 'noCharge') }, { default: () => '免扣' }),
       h(NButton, { size: 'small', type: 'primary', ghost: true, onClick: () => openAction(row, 'settle') }, { default: () => '结算' }),
     ]),
   },
@@ -137,7 +135,7 @@ const pageCount = computed(() => Math.max(1, Math.ceil(total.value / size.value)
     <header class="page-hdr">
       <div>
         <h1>余额对账</h1>
-        <p>处理未知投递、用量缺失、超出预冻结金额或超时未闭环的请求。人工动作会写入审计流水。</p>
+        <p>处理未知投递、用量缺失或超时未闭环的请求。人工动作会写入审计流水。</p>
       </div>
     </header>
 
@@ -160,17 +158,17 @@ const pageCount = computed(() => Math.max(1, Math.ceil(total.value / size.value)
 
     <n-modal v-model:show="actionOpen" preset="card" style="width:min(520px,calc(100vw - 32px))" :bordered="false">
       <template #header>
-        {{ actionType === 'release' ? '确认释放冻结金额' : '确认最终结算' }}
+        {{ actionType === 'noCharge' ? '确认免扣' : '确认最终结算' }}
       </template>
       <n-form ref="actionFormRef" :model="actionForm" :rules="rules" label-placement="top">
         <n-form-item v-if="actionType === 'settle'" label="最终结算金额" path="finalAmount">
-          <n-input v-model:value="actionForm.finalAmount" placeholder="不得超过预冻结金额" />
+          <n-input v-model:value="actionForm.finalAmount" placeholder="请输入人工确认金额" />
         </n-form-item>
         <n-form-item label="对账原因" path="reason">
-          <n-input v-model:value="actionForm.reason" type="textarea" :autosize="{minRows:2,maxRows:4}" placeholder="例如 上游未返回用量，确认释放；或人工核验用量后确认结算" />
+          <n-input v-model:value="actionForm.reason" type="textarea" :autosize="{minRows:2,maxRows:4}" placeholder="例如 上游未实际执行，确认免扣；或人工核验用量后确认结算" />
         </n-form-item>
       </n-form>
-      <p class="hint">不会自动追扣超出预冻结的金额；超额请求需保留待对账并由线下流程处理。</p>
+      <p class="hint">人工结算会写入审计记录；免扣仅用于确认无需向用户扣费的请求。</p>
       <template #footer>
         <div class="modal-foot">
           <n-button @click="closeAction">取消</n-button>

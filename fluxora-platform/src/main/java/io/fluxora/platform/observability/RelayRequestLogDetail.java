@@ -12,5 +12,5 @@ public record RelayRequestLogDetail(String requestId, String tenantModelCode, St
                                     BigDecimal inputPricePerMillion, BigDecimal outputPricePerMillion,
                                     BigDecimal cacheWritePricePerMillion, BigDecimal cacheReadPricePerMillion,
                                     BigDecimal theoreticalAmount, String pricingStatus, String upstreamDispatchState,
-                                    String reservationStatus, BigDecimal reservationAmount, BigDecimal actualAmount,
-                                    BigDecimal releasedAmount) { }
+                                    String billingStatus, BigDecimal actualAmount,
+                                    BigDecimal outstandingAmount) { }

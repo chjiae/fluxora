@@ -16,9 +16,9 @@
 --
 -- 2. user_credit_account 表：用户额度账户
 --    - 一对一对应 TENANT 作用域用户；PLATFORM 用户不创建账户
---    - balance 用 DECIMAL(20,4)（16 整数位 + 4 小数位），CHECK 保证非负
---    - 余额变更只能由 CreditService 走 UPDATE…WHERE balance + delta >= 0
---      RETURNING 单语句完成；本表无独立修改接口
+--    - balance 用 DECIMAL(20,4)（16 整数位 + 4 小数位），可为正数、0 或负数
+--    - 管理员扣减仍由 CreditService 走 UPDATE…WHERE balance + delta >= 0
+--      RETURNING 单语句完成；模型请求终态由直接结算 SQL 扣费，可把余额扣到负数
 --
 -- 3. credit_transaction 表：额度流水（不可篡改）
 --    - 仅 INSERT；后端不提供 UPDATE / DELETE SQL；表无 deleted_at / updated_at
@@ -84,15 +84,14 @@ CREATE TABLE IF NOT EXISTS user_credit_account (
     user_id     BIGINT         NOT NULL REFERENCES user_account (id),
     balance     DECIMAL(20, 4) NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_credit_balance_non_negative CHECK (balance >= 0)
+    updated_at  TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 
-COMMENT ON TABLE  user_credit_account            IS '用户额度账户：与 TENANT 作用域用户一对一对应；本轮仅有可用余额一列，未来可扩展冻结/已用额度';
+COMMENT ON TABLE  user_credit_account            IS '用户额度账户：与 TENANT 作用域用户一对一对应；余额是模型请求准入和结算的唯一金额事实源';
 COMMENT ON COLUMN user_credit_account.id         IS '主键，自增序列';
 COMMENT ON COLUMN user_credit_account.tenant_id  IS '所属租户：方便按租户聚合统计与跨租户隔离';
 COMMENT ON COLUMN user_credit_account.user_id    IS '所属用户：与 user_account.id 一对一；通过部分唯一索引保证';
-COMMENT ON COLUMN user_credit_account.balance    IS '可用余额：DECIMAL(20,4) 精确存储；CHECK 保证非负；变更必须经 CreditService 的原子 SQL';
+COMMENT ON COLUMN user_credit_account.balance    IS '当前真实余额：DECIMAL(20,4) 精确存储；余额大于 0 才允许新模型请求，已放行请求直接结算后可变为 0 或负数';
 COMMENT ON COLUMN user_credit_account.created_at IS '账户创建时间';
 COMMENT ON COLUMN user_credit_account.updated_at IS '最后更新时间（每次余额调整后更新）';
 

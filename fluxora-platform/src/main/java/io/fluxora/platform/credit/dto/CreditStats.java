@@ -12,7 +12,6 @@ import java.math.BigDecimal;
 public record CreditStats(
         long totalAccounts,
         BigDecimal totalBalance,
-        BigDecimal totalFrozenBalance,
         BigDecimal totalCredits,
         BigDecimal totalDebits,
         long transactionCount

@@ -79,6 +79,37 @@ class GatewayRuntimeBehaviorTest {
     }
 
     @Test
+    void blockedBillingEligibilityMustRejectBeforeRouteResolution() {
+        MemorySource source = new MemorySource();
+        String apiKey = "flx_AbCdEf12_0123456789abcdefghijklmnopqrstuv";
+        String lookupHash = new ApiKeyLookupHasher(SECRET).hash(apiKey);
+        source.put(RuntimeScopeType.AUTH_API_KEY, lookupHash, apiKeySnapshot(lookupHash, true));
+        source.put(RuntimeScopeType.AUTH_USER, "7:9",
+                userSnapshot(7, 9, true).put("billingEligibility", "BLOCKED_INSUFFICIENT_BALANCE"));
+        source.put(RuntimeScopeType.AUTH_TENANT, "7", tenantSnapshot(7, true));
+
+        Exception exception = assertThrows(Exception.class, () -> await(authenticator(source).authenticate(apiKey)));
+
+        assertEquals(GatewayFailure.Type.INSUFFICIENT_BALANCE, gatewayFailure(exception).type());
+        assertEquals(0, source.loads(RuntimeScopeType.TENANT_MODEL_ROUTE, RouteScopeKey.of(7, "OPENAI", "gpt-demo")));
+    }
+
+    @Test
+    void allowedBillingEligibilityMustAuthenticateNormally() throws Exception {
+        MemorySource source = new MemorySource();
+        String apiKey = "flx_AbCdEf12_0123456789abcdefghijklmnopqrstuv";
+        String lookupHash = new ApiKeyLookupHasher(SECRET).hash(apiKey);
+        source.put(RuntimeScopeType.AUTH_API_KEY, lookupHash, apiKeySnapshot(lookupHash, true));
+        source.put(RuntimeScopeType.AUTH_USER, "7:9",
+                userSnapshot(7, 9, true).put("billingEligibility", "ALLOWED"));
+        source.put(RuntimeScopeType.AUTH_TENANT, "7", tenantSnapshot(7, true));
+
+        AuthenticatedPrincipal principal = await(authenticator(source).authenticate(apiKey));
+
+        assertEquals(new AuthenticatedPrincipal(5, 7, 9), principal);
+    }
+
+    @Test
     void sameModelCodeMustResolveToDifferentTenantRouteScopes() throws Exception {
         MemorySource source = new MemorySource();
         String modelCode = "gpt-demo";
@@ -397,7 +428,8 @@ class GatewayRuntimeBehaviorTest {
     private JsonObject userSnapshot(long tenantId, long userId, boolean enabled) {
         return new JsonObject().put("schemaVersion", 1).put("runtimeVersion", 1).put("generatedAt", "2026-01-01T00:00:00Z")
                 .put("tenantId", tenantId).put("userId", userId).put("enabled", enabled)
-                .put("userStatus", enabled ? "ENABLED" : "DISABLED");
+                .put("userStatus", enabled ? "ENABLED" : "DISABLED")
+                .put("billingEligibility", enabled ? "ALLOWED" : "BLOCKED_USER_STATUS");
     }
 
     private JsonObject tenantSnapshot(long tenantId, boolean enabled) {

@@ -65,26 +65,23 @@ watch(page, () => loadTxns())
 onMounted(async () => { await Promise.all([loadAccount(), loadTxns()]) })
 
 const metricItems = computed(() => [
-  { label: '可用余额', value: account.value?.balance ?? null },
-  { label: '冻结余额', value: account.value?.frozenBalance ?? null, tone: 'warn' as const },
-  { label: '账户总额', value: account.value?.totalBalance ?? null },
+  { label: '当前余额', value: account.value?.balance ?? null },
   { label: '流水总数', value: total.value },
 ])
+const isInsufficient = computed(() => account.value != null && Number(account.value.balance) <= 0)
 
 function formatType(row: CreditTransactionView) {
   const byType: Record<string, string> = {
     MANUAL_ADJUSTMENT: row.direction === 'CREDIT' ? '人工增加' : '人工扣减',
-    RESERVE: '预冻结',
-    SETTLE: '结算',
-    RELEASE: '释放',
+    CARD_REDEEM: '卡密充值',
+    MODEL_USAGE: '模型结算',
   }
   return byType[row.transactionType] || (row.direction === 'CREDIT' ? '增加' : '扣减')
 }
 function amountClass(row: CreditTransactionView) {
-  return row.transactionType === 'RELEASE' || row.direction === 'CREDIT' ? 'credit' : 'debit'
+  return row.direction === 'CREDIT' ? 'credit' : 'debit'
 }
 function formatAmount(row: CreditTransactionView) {
-  // 前端纯展示，后端始终返回正数 amount；释放归还可用余额显示为正向变更。
   return (amountClass(row) === 'credit' ? '+' : '-') + row.amount
 }
 function timeAgo(iso: string | null | undefined) {
@@ -104,9 +101,6 @@ const columns = computed<DataTableColumns<CreditTransactionView>>(() => [
   },
   { title: '变更后', key: 'balanceAfter', width: 120, align: 'right',
     render: (row) => h('span', { class: 'cell-num' }, row.balanceAfter),
-  },
-  { title: '冻结后', key: 'frozenBalanceAfter', width: 120, align: 'right',
-    render: (row) => h('span', { class: 'cell-num' }, row.frozenBalanceAfter ?? '—'),
   },
   { title: '原因', key: 'reason', minWidth: 180,
     render: (row) => h('span', { class: 'cell-muted' }, row.reason),
@@ -136,11 +130,12 @@ function resetFilters() {
     <header class="page-hdr">
       <div class="page-hdr-text">
         <h1>我的额度</h1>
-        <p>查看你的可用额度、冻结额度和历史流水。冻结额度来自正在结算或待对账的 API 请求。</p>
+        <p>查看你的当前余额和历史流水。</p>
       </div>
     </header>
 
     <MetricStrip :items="metricItems" :loading="accountLoading" />
+    <p v-if="isInsufficient" class="balance-alert">当前额度不足，暂时无法发起新的模型请求，请充值后重试。</p>
 
     <div class="toolbar">
       <label class="search">
@@ -177,6 +172,7 @@ function resetFilters() {
 .page-hdr-text h1{margin:0;font-size:22px;font-weight:650;letter-spacing:-.01em}
 .page-hdr-text p{margin:4px 0 0;color:var(--text-muted);font-size:13px}
 .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.balance-alert{margin:0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--danger) 24%,var(--border));border-radius:8px;background:color-mix(in srgb,var(--danger) 8%,transparent);color:var(--danger);font-size:13px}
 .search{position:relative;display:flex;align-items:center;flex:1 1 280px;max-width:360px}
 .search-icon{position:absolute;left:10px;color:var(--text-muted);pointer-events:none}
 .search-input{width:100%;height:34px;padding:0 32px;font:inherit;font-size:13.5px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;outline:none}

@@ -3,7 +3,7 @@
 --   输入 Token 上限、输出 Token 上限、缓存写入 Token 上限、缓存读取 Token 上限。
 -- 真实上游的上下文、输入、输出限制由上游最终裁决。
 -- 用户请求中的协议原生 max_tokens 等参数仍按现有协议逻辑透传。
--- 模型能力字段、四类价格、四类 usage、预冻结、结算和对账不受本次删除影响。
+-- 模型能力字段、四类价格、四类 usage、结算和对账不受本次删除影响。
 
 -- 1. 删除 V17 放宽版 CHECK 约束
 ALTER TABLE tenant_model DROP CONSTRAINT IF EXISTS chk_tenant_model_token_limits;

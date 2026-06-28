@@ -8,6 +8,7 @@ import io.fluxora.platform.credit.mapper.BalanceAdjustResult;
 import io.fluxora.platform.credit.mapper.CreditMapper;
 import io.fluxora.platform.identity.entity.UserAccount;
 import io.fluxora.platform.identity.mapper.IdentityMapper;
+import io.fluxora.platform.runtime.RuntimeOutboxService;
 import io.fluxora.platform.tenant.Tenant;
 import io.fluxora.platform.tenant.TenantException;
 import io.fluxora.platform.tenant.TenantMapper;
@@ -52,6 +53,7 @@ public class CardService {
     private final CreditMapper creditMapper;
     private final IdentityMapper identityMapper;
     private final TenantMapper tenantMapper;
+    private final RuntimeOutboxService runtimeOutboxService;
     private final CardHashingService hashingService;
     private final CardCodeGenerator generator;
     private final int batchMaxCount;
@@ -60,6 +62,7 @@ public class CardService {
                        CreditMapper creditMapper,
                        IdentityMapper identityMapper,
                        TenantMapper tenantMapper,
+                       RuntimeOutboxService runtimeOutboxService,
                        CardHashingService hashingService,
                        CardCodeGenerator generator,
                        @Value("${fluxora.security.card.batch-max-count:1000}") int batchMaxCount) {
@@ -67,6 +70,7 @@ public class CardService {
         this.creditMapper = creditMapper;
         this.identityMapper = identityMapper;
         this.tenantMapper = tenantMapper;
+        this.runtimeOutboxService = runtimeOutboxService;
         this.hashingService = hashingService;
         this.generator = generator;
         this.batchMaxCount = batchMaxCount;
@@ -256,7 +260,7 @@ public class CardService {
      *   6. 原子 UPDATE：SET REDEEMED + bind user + check ENABLED + check 批次 ENABLED + check 未过期
      *      0 行 → 二次读 + 根据具体状态映射错误码
      *   7. 余额 += 面额：复用 creditMapper.adjustBalance（与 CARD_REDEEM 流水同事务）
-     *   8. 写流水 source=CARD_REDEEM, card_id=cardId；DB 部分唯一索引兜底防重复
+     *   8. 写流水 transaction_type=CARD_REDEEM, card_id=cardId；DB 部分唯一索引兜底防重复
      *   9. 任一失败回滚整事务
      */
     @Transactional
@@ -331,7 +335,7 @@ public class CardService {
             throw new CardException(BusinessErrorCode.CREDIT_ACCOUNT_NOT_FOUND);
         }
 
-        // 8. 写卡密充值流水（source=CARD_REDEEM, card_id=card.id）
+        // 8. 写卡密充值流水（transaction_type=CARD_REDEEM, card_id=card.id）
         //    DB 部分唯一索引 uk_credit_txn_card 兜底防重复入账：
         //    如果某个 bug 让此处被调用第二次，DuplicateKeyException 整事务回滚。
         CreditTransaction txn = new CreditTransaction();
@@ -345,8 +349,10 @@ public class CardService {
         txn.setOperatorId(currentUser.getId());
         txn.setOperatorName(currentUser.getDisplayName() != null
                 ? currentUser.getDisplayName() : currentUser.getUsername());
-        // 通过扩展接口写入 source / card_id
+        // 通过扩展接口写入 transaction_type / card_id
         creditMapper.insertCardRedemptionTransaction(txn, card.getId());
+        publishEligibilityIfCrossed(currentUser.getTenantId(), currentUser.getId(),
+                adjust.balanceBefore(), adjust.balanceAfter());
 
         log.info("卡密已核销：cardId={}, prefix={}, userId={}, amount={}, balanceAfter={}",
                 card.getId(), card.getCardPrefix(), currentUser.getId(),
@@ -444,6 +450,14 @@ public class CardService {
         if (user == null || !"TENANT".equals(user.getScopeType())) return false;
         return identityMapper.findRolesByUserId(user.getId()).stream()
                 .anyMatch(r -> TENANT_ADMIN_ROLE.equals(r.getCode()));
+    }
+
+    private void publishEligibilityIfCrossed(Long tenantId, Long userId, BigDecimal before, BigDecimal after) {
+        boolean wasAllowed = before.compareTo(BigDecimal.ZERO) > 0;
+        boolean isAllowed = after.compareTo(BigDecimal.ZERO) > 0;
+        if (wasAllowed != isAllowed) {
+            runtimeOutboxService.record(tenantId, "USER_ACCOUNT", userId, "BILLING_ELIGIBILITY_CHANGED", null);
+        }
     }
 
     private static String blankToNull(String s) { return s == null || s.isBlank() ? null : s.trim(); }

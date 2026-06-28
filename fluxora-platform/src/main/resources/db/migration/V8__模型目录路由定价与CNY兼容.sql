@@ -1,5 +1,5 @@
 -- Fluxora V8：上游模型候选、平台模型目录、租户发布、控制面路由与价格版本。
--- 本迁移只扩展控制面；不执行真实上游转发、网关同步、扣费或余额冻结。
+-- 本迁移只扩展控制面；不执行真实上游转发、网关同步或扣费。
 
 -- 既有账务资产安全归属到当前唯一结算币种 CNY；保留字段而非重建历史数据，便于未来多币种钱包扩展。
 ALTER TABLE tenant ADD COLUMN IF NOT EXISTS settlement_currency_code VARCHAR(3) NOT NULL DEFAULT 'CNY';
