@@ -54,7 +54,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Long userId = Long.parseLong(claims.getSubject());
 
             UserAccount user = identityMapper.findById(userId).orElse(null);
-            if (user == null || !user.isEnabled()) {
+            // JWT 指向的用户已不存在（如 DB 重置后旧 token 仍有效）：清除 cookie
+            // 并放行请求，由后续的登录端点或 Spring Security 入口点决定响应。
+            if (user == null) {
+                clearAuthCookie(response);
+                filterChain.doFilter(request, response);
+                return;
+            }
+            if (!user.isEnabled()) {
                 SecurityExceptionHandler.writeErrorResponse(response, 401,
                         BusinessErrorCode.AUTH_ACCOUNT_DISABLED);
                 return;
@@ -96,6 +103,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * 清除认证 Cookie（Max-Age=0），用于 JWT 指向的用户已不存在时
+     * 让浏览器丢弃旧 token，使后续请求回到未认证状态。
+     */
+    private void clearAuthCookie(HttpServletResponse response) {
+        Cookie cookie = new Cookie(COOKIE_NAME, "");
+        cookie.setHttpOnly(true);
+        cookie.setSecure(false);
+        cookie.setPath("/");
+        cookie.setMaxAge(0);
+        response.addCookie(cookie);
     }
 
     private String extractTokenFromCookie(HttpServletRequest request) {
