@@ -1,9 +1,46 @@
+# Fluxora Docker Compose 部署编排
+#
+# 网络架构：
+#   nginx（对外唯一 HTTP 入口 :80）→ web / platform / gateway 均为内网服务，
+#   不映射宿主端口。所有流量经由 nginx 统一代理、路由与负载均衡。
+#
+# 扩缩 Gateway：
+#   docker compose up --scale gateway=3
+#   nginx 通过 Docker 内建 DNS（127.0.0.11）动态解析 gateway 容器 IP 并轮询，
+#   新实例在 DNS TTL（30s）内自动感知，无需重启 nginx。
+
 services:
+
+  # =========================================================================
+  # 统一入口 — Nginx 反向代理
+  # =========================================================================
+  nginx:
+    image: nginx:1.27-alpine
+    pull_policy: never
+    container_name: fluxora-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      web:
+        condition: service_started
+      platform:
+        condition: service_started
+      gateway:
+        condition: service_started
+    restart: unless-stopped
+
+  # =========================================================================
+  # 控制台后端 — Platform（Spring Boot，单实例）
+  # =========================================================================
   platform:
     build:
       context: .
       dockerfile: fluxora-platform/Dockerfile
+    container_name: fluxora-platform
     environment:
+      # ---- 应用配置 ----
       PLATFORM_PORT: ${PLATFORM_PORT:-8080}
       POSTGRES_HOST: ${POSTGRES_HOST:-host.docker.internal}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -15,21 +52,47 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       APIKEY_LOOKUP_SECRET: ${APIKEY_LOOKUP_SECRET:-fluxora-apikey-lookup-secret-for-local-development-only-please-override}
       FLUXORA_RUNTIME_CREDENTIAL_KEY: ${FLUXORA_RUNTIME_CREDENTIAL_KEY:-cnVudGltZS1jcmVkZW50aWFsLWtleS0wMTIzNDU2Nzg=}
-    ports: ["${PLATFORM_PORT:-8080}:8080"]
+      # ---- JVM 参数 ----
+      # Platform 场景：Spring Boot 控制台后端，CRUD + 认证 + 管理 API
+      #   - G1GC，暂停目标 200ms（管理后台对延迟不敏感）
+      #   - 768m 固定堆（Xms=Xmx 避免运行时扩缩触发 Full GC）
+      #   - 64m CodeCache（Spring 运行时大量动态代理与字节码生成）
+      JAVA_OPTS: ${PLATFORM_JAVA_OPTS:--Xms768m -Xmx768m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:+ParallelRefProcEnabled -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp -XX:ReservedCodeCacheSize=64m -Dfile.encoding=UTF-8 -Djava.awt.headless=true}
+    # 不映射宿主端口 — 仅 nginx 通过内网访问
+    restart: unless-stopped
+
+  # =========================================================================
+  # AI 中继网关 — Gateway（Vert.x，支持水平扩缩）
+  # =========================================================================
   gateway:
     build:
       context: .
       dockerfile: fluxora-gateway/Dockerfile
+    # 不指定 container_name，允许 --scale 创建多个实例
     environment:
+      # ---- 应用配置 ----
       GATEWAY_PORT: ${GATEWAY_PORT:-8081}
       REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       APIKEY_LOOKUP_SECRET: ${APIKEY_LOOKUP_SECRET:-fluxora-apikey-lookup-secret-for-local-development-only-please-override}
       FLUXORA_RUNTIME_CREDENTIAL_KEY: ${FLUXORA_RUNTIME_CREDENTIAL_KEY:-cnVudGltZS1jcmVkZW50aWFsLWtleS0wMTIzNDU2Nzg=}
-    ports: ["${GATEWAY_PORT:-8081}:8081"]
+      # ---- JVM 参数 ----
+      # Gateway 场景：Vert.x 非阻塞 AI 中继，SSE 流式响应，支持水平扩缩
+      #   - G1GC，暂停目标 50ms（流式输出对延迟敏感）
+      #   - 512m 固定堆（7 个 L1 缓存各 20K 上限 + Vert.x 连接缓冲）
+      #   - 2m RegionSize（小堆用小 Region 减少碎片）
+      JAVA_OPTS: ${GATEWAY_JAVA_OPTS:--Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=2m -XX:+UseStringDeduplication -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp -Dfile.encoding=UTF-8 -Djava.awt.headless=true}
+    # 不映射宿主端口 — Gateway 通过 nginx 内网代理，多实例时避免端口冲突
+    restart: unless-stopped
+
+  # =========================================================================
+  # 前端 SPA — Web（Vue.js + 内建 nginx 静态文件服务）
+  # =========================================================================
   web:
     build:
       context: fluxora-web
       dockerfile: Dockerfile
-    ports: ["${WEB_PORT:-5173}:80"]
+    container_name: fluxora-web
+    # 不映射宿主端口 — 仅顶层 nginx 通过内网代理
+    restart: unless-stopped

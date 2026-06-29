@@ -1,7 +1,9 @@
 import axios from 'axios'
 
+// 生产环境（Docker / nginx 反向代理）使用相对路径，由顶层 nginx 统一路由 /api/* → platform。
+// 本地开发直连 localhost:8080 的 Platform 实例，无需经过 nginx。
 const http = axios.create({
-  baseURL: 'http://localhost:8080',
+  baseURL: import.meta.env.PROD ? '' : 'http://localhost:8080',
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 })

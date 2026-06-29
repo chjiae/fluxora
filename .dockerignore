@@ -1,0 +1,30 @@
+# Fluxora 根目录 .dockerignore — 适用于 platform、gateway 的构建上下文
+# 避免本地构建产物和 IDE 文件进入 Docker 构建层，减小上下文体积
+
+# Maven 构建产物
+**/target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Node（根目录不放前端代码，防误伤）
+node_modules/
+
+# Docker 自身
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# 环境变量（不要打包本地密钥进镜像）
+.env
+.env.*
+
+# 其他
+*.md
+LICENSE

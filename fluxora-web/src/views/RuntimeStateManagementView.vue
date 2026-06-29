@@ -52,7 +52,7 @@ const stateStats = computed(() => {
 })
 
 const metricItems = computed(() => {
-  const items = [{ label: '故障总数', value: rows.value.length }]
+  const items: { label: string; value: number; tone?: 'plain' | 'warn' | 'danger' }[] = [{ label: '故障总数', value: rows.value.length }]
   for (const [label, count] of Object.entries(stateStats.value)) {
     const meta = Object.values(runtimeStateMeta).find(m => m.label === label)
     items.push({ label, value: count, tone: meta?.tone as 'danger' | 'warn' | undefined })
